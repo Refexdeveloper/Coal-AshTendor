@@ -22,6 +22,13 @@ type Data = {
     lastSync: { at: Date; by: string; summary: SyncSummary | null } | null;
     schedule: { everyHours: number; nextAt: Date | null; failed: { at: Date; message: string } | null };
   };
+  sso: {
+    ready: boolean;
+    ssoUrl: string;
+    cert: { subject: string; validTo: Date; expired: boolean } | null;
+    missing: string[];
+    register: { entityId: string; acsUrl: string; launchUrl: string; nameIdFormat: string };
+  };
 };
 
 type SyncSummary = { total: number; created: number; renamed: number; deactivated: number; unchanged: number; skippedAdmins: string[] };
@@ -46,7 +53,7 @@ export default function AdminPage() {
   const { data, error, reload } = useApi<Data>("/admin");
   if (actor.role !== "ADMIN") return <p className="panel">Administration is limited to the system administrator.</p>;
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
-  const { calendar, holidays, policies, settings, escalations, templates, users, tenderCount, tenders, refexone } = data;
+  const { calendar, holidays, policies, settings, escalations, templates, users, tenderCount, tenders, refexone, sso } = data;
   const days = new Set((calendar?.workingDays ?? "1,2,3,4,5").split(","));
   return (
     <>
@@ -172,6 +179,7 @@ export default function AdminPage() {
         </button>
       </form>
       <TenderData tenders={tenders} count={tenderCount} run={run} />
+      <RefexOneSsoPanel sso={sso} />
       <RefexOnePanel refexone={refexone} users={users} run={run} error={query.error} />
       <section className="panel stack" id="people">
         <h2>People</h2>
@@ -440,5 +448,86 @@ function PeopleTable({ users, run }: { users: PublicUser[]; run: Run }) {
       </div>
       {rows.length > shown.length ? <p className="muted">Showing the first {shown.length} of {rows.length}. Search to narrow the list.</p> : null}
     </>
+  );
+}
+
+function CopyValue({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <span className="sso-copy">
+      <code>{value}</code>
+      <button
+        type="button"
+        className="btn ghost"
+        onClick={() => {
+          void navigator.clipboard?.writeText(value).then(() => {
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1500);
+          });
+        }}
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </span>
+  );
+}
+
+/** Refex One single sign-on: what is configured, what is missing, and what to register in Refex One. */
+function RefexOneSsoPanel({ sso }: { sso: Data["sso"] }) {
+  const soon = sso.cert && !sso.cert.expired && sso.cert.validTo.getTime() - Date.now() < 30 * 864e5;
+  return (
+    <section className="panel stack refex-sync">
+      <header className="refex-sync-head">
+        <div>
+          <h2>Refex One sign-in</h2>
+          <p className="muted">
+            People sign in with their Refex One account, as in the P2P app. Every sign-in is checked against Refex One&apos;s signing certificate, so a
+            response that Refex One did not sign is refused. People new to this app wait for access in People below.
+          </p>
+        </div>
+        <span className={`pill ${sso.ready ? "good" : "warn"}`}>{sso.ready ? "Ready" : "Not ready"}</span>
+      </header>
+      {sso.missing.length ? (
+        <p className="banner warn">
+          Still to set in <code>server/.env</code> (then restart): {sso.missing.join(", ")}. The certificate comes from the SAML app&apos;s settings in Refex One.
+        </p>
+      ) : null}
+      {sso.cert?.expired ? <p className="banner bad">The Refex One certificate expired on {sso.cert.validTo.toLocaleDateString("en-IN", { dateStyle: "medium" })}. Sign-in will fail until it is replaced.</p> : null}
+      {soon ? <p className="banner warn">The Refex One certificate expires on {sso.cert!.validTo.toLocaleDateString("en-IN", { dateStyle: "medium" })}. Get the new one from Refex One before then.</p> : null}
+      <dl className="sso-grid">
+        <dt>Sign-in address</dt>
+        <dd>{sso.ssoUrl ? <code>{sso.ssoUrl}</code> : <span className="muted">Not set</span>}</dd>
+        <dt>Signing certificate</dt>
+        <dd>{sso.cert ? `${sso.cert.subject} · valid until ${sso.cert.validTo.toLocaleDateString("en-IN", { dateStyle: "medium" })}` : <span className="muted">Not set</span>}</dd>
+      </dl>
+      <h3>Enter these in the Refex One SAML app for Coal &amp; Ash</h3>
+      <dl className="sso-grid">
+        <dt>Entity ID / Audience</dt>
+        <dd>
+          <CopyValue value={sso.register.entityId} />
+        </dd>
+        <dt>ACS (reply) URL</dt>
+        <dd>
+          <CopyValue value={sso.register.acsUrl} />
+        </dd>
+        <dt>Home / launch URL</dt>
+        <dd>
+          <CopyValue value={sso.register.launchUrl} />
+        </dd>
+        <dt>Name ID format</dt>
+        <dd>{sso.register.nameIdFormat}</dd>
+      </dl>
+      <p className="muted">
+        These use the address this page was opened on. On Cloud Run, open Administration through the Cloud Run address (or set <code>REFEXONE_BASE_URL</code>) before
+        copying them.
+      </p>
+      {sso.ready ? (
+        <div className="actions">
+          <a className="btn ghost" href="/auth/refexone/launch" target="_blank" rel="noreferrer">
+            Try Refex One sign-in
+          </a>
+        </div>
+      ) : null}
+    </section>
   );
 }

@@ -1780,3 +1780,12 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 .refex-sync-schedule .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ash); flex-shrink: 0; }
 .refex-sync-schedule .dot.on { background: var(--moss); animation: syncPulse 2.4s ease-in-out infinite; }
 @keyframes syncPulse { 0%, 100% { box-shadow: 0 0 0 3px var(--moss-soft); } 50% { box-shadow: 0 0 0 7px var(--moss-soft); } }
+.sso-grid { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 10px 16px; margin: 0; align-items: center; }
+.sso-grid dt { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.sso-grid dd { margin: 0; min-width: 0; font-size: 0.88rem; overflow-wrap: anywhere; }
+.sso-grid code, .refex-sync code { font-size: 0.82rem; background: #f3f1ee; padding: 2px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+.sso-copy { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sso-copy code { min-width: 0; }
+.sso-copy .btn { padding: 4px 12px; font-size: 0.78rem; flex-shrink: 0; }
+.refex-sync h3 { margin: 6px 0 0; font-size: 0.95rem; }
+@media (max-width: 700px) { .sso-grid { grid-template-columns: minmax(0, 1fr); } }

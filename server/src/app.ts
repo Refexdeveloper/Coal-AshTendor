@@ -51,7 +51,7 @@ export function createApp() {
         .status(503)
         .type("html")
         .send(
-          `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Refex One</title></head><body style="font-family:sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem"><h1>Refex One is not configured</h1><p>Set REFEXONE_SSO_URL and REFEXONE_IDP_CERT on the server. The metadata address is /auth/refexone/saml and the reply address is /api/auth/refexone/saml/acs.</p><p><a href="/login?admin=1">Administrator sign-in</a></p></body></html>`,
+          `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Refex One</title></head><body style="font-family:sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem"><h1>Refex One is not configured</h1><p>Set REFEXONE_SAML_APP_ID (or REFEXONE_SSO_URL) and REFEXONE_IDP_CERT on the server, then restart it. The Administration page lists the addresses to register in Refex One.</p><p><a href="/login?admin=1">Administrator sign-in</a></p></body></html>`,
         );
       return;
     }

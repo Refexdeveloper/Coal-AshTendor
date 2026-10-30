@@ -1,3 +1,5 @@
+import { X509Certificate } from "crypto";
+import { readFileSync } from "fs";
 import type { Request } from "express";
 import { SAML, ValidateInResponseTo, generateServiceProviderMetadata, type Profile } from "@node-saml/node-saml";
 import { db } from "../db";
@@ -28,8 +30,30 @@ export function refexOneUrls(req: Request) {
   };
 }
 
+/**
+ * Refex One's sign-in address. Either REFEXONE_SSO_URL, or just the SAML app ID from Refex One
+ * (REFEXONE_SAML_APP_ID), which gives https://refexone.com/api/saml/<id>/sso as in the P2P app.
+ */
+export function ssoUrl() {
+  const direct = (process.env.REFEXONE_SSO_URL || "").trim();
+  if (direct) return direct;
+  const appId = (process.env.REFEXONE_SAML_APP_ID || "").trim();
+  if (!appId) return "";
+  const api = (process.env.REFEXONE_API_URL || "https://refexone.com/api").replace(/\/$/, "");
+  return `${api}/saml/${encodeURIComponent(appId)}/sso`;
+}
+
+/** Refex One's signing certificate: REFEXONE_IDP_CERT (PEM or one line), or a PEM file at REFEXONE_IDP_CERT_FILE. */
 function idpCert() {
-  const raw = process.env.REFEXONE_IDP_CERT || "";
+  let raw = process.env.REFEXONE_IDP_CERT || "";
+  const file = (process.env.REFEXONE_IDP_CERT_FILE || "").trim();
+  if (!raw.trim() && file) {
+    try {
+      raw = readFileSync(file, "utf8");
+    } catch {
+      raw = "";
+    }
+  }
   const text = raw.includes("\\n") ? raw.replace(/\\n/g, "\n") : raw;
   const body = text.trim();
   if (!body) return "";
@@ -38,7 +62,37 @@ function idpCert() {
 }
 
 export function refexOneReady() {
-  return Boolean((process.env.REFEXONE_SSO_URL || "").trim() && idpCert());
+  return Boolean(ssoUrl() && certInfo());
+}
+
+/** The configured certificate's subject and validity, or null when it is missing or unreadable. */
+function certInfo() {
+  const pem = idpCert();
+  if (!pem) return null;
+  try {
+    const cert = new X509Certificate(pem);
+    return { subject: cert.subject.replace(/\n/g, ", "), validTo: new Date(cert.validTo), expired: new Date(cert.validTo).getTime() < Date.now() };
+  } catch {
+    return null;
+  }
+}
+
+/** What the admin screen shows: what is set, what is missing, and the addresses to register in Refex One. */
+export function ssoStatus(req: Request) {
+  const urls = refexOneUrls(req);
+  const cert = certInfo();
+  const certGiven = Boolean(idpCert());
+  const missing: string[] = [];
+  if (!ssoUrl()) missing.push("REFEXONE_SAML_APP_ID (or REFEXONE_SSO_URL)");
+  if (!certGiven) missing.push("REFEXONE_IDP_CERT (or REFEXONE_IDP_CERT_FILE)");
+  else if (!cert) missing.push("a readable REFEXONE_IDP_CERT (the value is not a valid certificate)");
+  return {
+    ready: refexOneReady(),
+    ssoUrl: ssoUrl(),
+    cert: cert ? { subject: cert.subject, validTo: cert.validTo, expired: cert.expired } : null,
+    missing,
+    register: { entityId: urls.metadata, acsUrl: urls.acs, launchUrl: urls.launch, nameIdFormat: "Email address" },
+  };
 }
 
 function samlFor(req: Request) {
@@ -46,13 +100,16 @@ function samlFor(req: Request) {
   return new SAML({
     issuer: urls.metadata,
     callbackUrl: urls.acs,
-    entryPoint: (process.env.REFEXONE_SSO_URL || "").trim(),
+    entryPoint: ssoUrl(),
     idpIssuer: (process.env.REFEXONE_IDP_ISSUER || "").trim() || undefined,
     idpCert: idpCert(),
     audience: urls.metadata,
     identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
     disableRequestedAuthnContext: true,
-    wantAssertionsSigned: true,
+    // Refex One may sign the whole response or only the assertion. With these two off, node-saml still demands
+    // a valid signature: on the response, or else on the assertion itself. An unsigned response is never accepted.
+    wantAuthnResponseSigned: false,
+    wantAssertionsSigned: false,
     validateInResponseTo: ValidateInResponseTo.never,
     acceptedClockSkewMs: 5 * 60 * 1000,
   });
@@ -68,8 +125,18 @@ export function serviceProviderMetadata(req: Request) {
   });
 }
 
-export function safeNext(value: unknown) {
-  const next = typeof value === "string" ? value : "";
+export function safeNext(value: unknown, req?: Request) {
+  let next = typeof value === "string" ? value.trim() : "";
+  // Refex One may send back a full address (IdP-initiated sign-in): keep it only when it is this site.
+  if (/^https?:\/\//i.test(next) && req) {
+    try {
+      const target = new URL(next);
+      next = target.origin === new URL(publicBase(req)).origin ? `${target.pathname}${target.search}${target.hash}` : "/";
+    } catch {
+      next = "/";
+    }
+  }
+  if (next === "/login" || next.startsWith("/login?") || next.startsWith("/auth/refexone")) return "/";
   if (!next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\") || next.startsWith("/api")) return "/";
   return next;
 }
@@ -109,7 +176,7 @@ function emailFrom(profile: Profile) {
 }
 
 /** Checks the IdP's signed assertion and returns the matching active user. */
-export async function consumeRefexOne(req: Request, body: Record<string, string>) {
+export async function consumeRefexOne(req: Request, body: Record<string, string>): Promise<{ error: string } | { userId: string; next: string }> {
   if (!body.SAMLResponse) return { error: "Refex One did not send a sign-in response." };
   if (!refexOneReady()) return { error: "Refex One is not configured on this server." };
   const { profile } = await samlFor(req).validatePostResponseAsync(body);
@@ -121,5 +188,5 @@ export async function consumeRefexOne(req: Request, body: Record<string, string>
   if (!user.active) {
     return { error: `${email} is saved from Refex One. An administrator must allow this person to sign in and choose a role.` };
   }
-  return { userId: user.id, next: safeNext(body.RelayState) };
+  return { userId: user.id, next: safeNext(body.RelayState, req) };
 }

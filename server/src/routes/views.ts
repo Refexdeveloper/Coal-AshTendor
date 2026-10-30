@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { ssoStatus } from "../services/refexone";
 import { directoryConfigured, lastSync, syncSchedule } from "../services/refexone-directory";
 import type { Calendar } from "../utils/calendar";
 import { canEditFields, getCalendar, kickAutomation, readinessChecklist } from "../services/domain";
@@ -118,6 +119,7 @@ views.get("/admin", async (req, res) => {
     tenderCount: tenders.length,
     tenders,
     refexone: { configured: directoryConfigured(), lastSync: await lastSync(), schedule: await syncSchedule() },
+    sso: ssoStatus(req),
   });
 });
 
