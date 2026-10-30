@@ -2,8 +2,7 @@ import { db, type Lazy, type Tx, type WorkflowTask } from "../db";
 import { addBusinessMinutes, businessMinutesBetween, dayLengthMinutes, formatWhen, parseClock, type Calendar } from "../utils/calendar";
 import { effectiveValue, extractFields, parseDateTime, parseInr, type FieldHit, type PageText } from "./extract";
 import { NOT_FOUND, TENDER_FIELDS } from "../utils/fields";
-import { unlink } from "fs/promises";
-import { allowedUpload, pagesFromBuffer, sha256, storeFile } from "./files";
+import { allowedUpload, deleteStored, pagesFromBuffer, sha256, storeFile } from "./files";
 import { extractUploadedFile, overlayHits } from "./ocr";
 import { CLOSED_OVERALL, CREATOR_ROLES, EDITOR_ROLES, MANAGER_ROLES, OPEN_TASK } from "../utils/labels";
 import { emailsFor, notifyAddresses } from "./notify";
@@ -426,7 +425,7 @@ export async function createTender(
     return false;
   });
   if (logicalDup) {
-    await Promise.all(prepared.map((item) => (item.storedPath ? unlink(item.storedPath).catch(() => undefined) : undefined)));
+    await Promise.all(prepared.map((item) => (item.storedPath ? deleteStored(item.storedPath).catch(() => undefined) : undefined)));
     return { duplicate: true as const, tenderId: logicalDup.id, recordId: logicalDup.recordId };
   }
 

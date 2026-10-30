@@ -92,6 +92,18 @@ That builds the React client into `server/public` and starts the server, which s
 
 A running server picks up a new build without a restart: run `npm run build` again and refresh the browser.
 
+## GCP (Cloud Run)
+
+Same layout as [kavis-npi-portal](https://github.com/Refexdeveloper/kavis-npi-portal): one Cloud Run service serves the built client + API, with dedicated Cloud SQL and one private GCS docs bucket in project `master-diorama-489103-u2` / region `asia-south1`.
+
+```bash
+gcloud config set project master-diorama-489103-u2
+gcloud config set run/region asia-south1
+bash scripts/gcp-deploy.sh
+```
+
+Full resource names, env vars, and isolation notes: see [`GCP_HOSTING.md`](GCP_HOSTING.md).
+
 ## Checks
 
 ```bash

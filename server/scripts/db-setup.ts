@@ -2,26 +2,65 @@ import "../src/env";
 import { readFileSync } from "fs";
 import path from "path";
 import mysql from "mysql2/promise";
+import type { ConnectionOptions } from "mysql2/promise";
+import { cloudSqlSocketPath } from "../src/env";
 import { repoRoot } from "../src/utils/root";
 
 /**
  * Creates the MySQL database and the tables in schema.sql.
  * Existing tables are left alone; pass --reset to drop and recreate them.
  */
-async function main() {
-  const url = process.env.DATABASE_URL;
-  if (!url?.startsWith("mysql://")) throw new Error("DATABASE_URL must be a mysql:// connection string. See server/.env.example.");
-  const parsed = new URL(url);
-  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
-  if (!/^[A-Za-z0-9_$-]+$/.test(database)) throw new Error(`Unsupported database name "${database}".`);
+function connectionOptions(withoutDatabase = false): ConnectionOptions {
+  const database = process.env.DB_NAME || "";
+  const user = process.env.DB_USER || "";
+  const password = process.env.DB_PASSWORD || "";
+  const socketPath = cloudSqlSocketPath();
 
-  const connection = await mysql.createConnection({
+  if (socketPath && user && database) {
+    return {
+      socketPath,
+      user,
+      password,
+      ...(withoutDatabase ? {} : { database }),
+      multipleStatements: true,
+    };
+  }
+
+  const url = process.env.DATABASE_URL;
+  if (!url?.startsWith("mysql://")) {
+    throw new Error("Set DB_HOST/DB_NAME/DB_USER (or INSTANCE_CONNECTION_NAME for Cloud SQL). See server/.env.example.");
+  }
+  const parsed = new URL(url);
+  const name = decodeURIComponent(parsed.pathname.replace(/^\//, "")) || database;
+  const socketFromUrl = parsed.searchParams.get("socketPath");
+  if (socketFromUrl) {
+    return {
+      socketPath: socketFromUrl,
+      user: decodeURIComponent(parsed.username),
+      password: decodeURIComponent(parsed.password),
+      ...(withoutDatabase ? {} : { database: name }),
+      multipleStatements: true,
+    };
+  }
+  return {
     host: parsed.hostname,
     port: Number(parsed.port || 3306),
     user: decodeURIComponent(parsed.username),
     password: decodeURIComponent(parsed.password),
+    ...(withoutDatabase ? {} : { database: name }),
     multipleStatements: true,
-  });
+  };
+}
+
+async function main() {
+  const database = process.env.DB_NAME || (() => {
+    const url = process.env.DATABASE_URL;
+    if (!url?.startsWith("mysql://")) return "";
+    return decodeURIComponent(new URL(url).pathname.replace(/^\//, ""));
+  })();
+  if (!database || !/^[A-Za-z0-9_$-]+$/.test(database)) throw new Error(`Unsupported database name "${database}".`);
+
+  const connection = await mysql.createConnection(connectionOptions(true));
   await connection.query(`CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   await connection.query(`USE \`${database}\``);
 

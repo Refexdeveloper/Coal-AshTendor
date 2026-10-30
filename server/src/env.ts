@@ -19,10 +19,27 @@ if (!process.env.APP_URL) {
   if (appUrl) process.env.APP_URL = appUrl;
 }
 
-/** DB_* is the compose-style config. DATABASE_URL still wins when it is set. */
-if (!process.env.DATABASE_URL && process.env.DB_HOST && process.env.DB_NAME && process.env.DB_USER) {
+/** Cloud SQL Unix socket when INSTANCE_CONNECTION_NAME (or DB_SOCKET_PATH) is set. */
+export function cloudSqlSocketPath() {
+  if (process.env.DB_SOCKET_PATH) return process.env.DB_SOCKET_PATH;
+  if (process.env.INSTANCE_CONNECTION_NAME) return `/cloudsql/${process.env.INSTANCE_CONNECTION_NAME}`;
+  return "";
+}
+
+/**
+ * DB_* is the compose-style config. DATABASE_URL still wins when it is set.
+ * For Cloud SQL on Cloud Run, prefer INSTANCE_CONNECTION_NAME + DB_* (no TCP host).
+ */
+if (!process.env.DATABASE_URL && process.env.DB_NAME && process.env.DB_USER) {
   const user = encodeURIComponent(process.env.DB_USER);
   const password = encodeURIComponent(process.env.DB_PASSWORD || "");
-  const port = process.env.DB_PORT || "3306";
-  process.env.DATABASE_URL = `mysql://${user}:${password}@${process.env.DB_HOST}:${port}/${process.env.DB_NAME}`;
+  const database = process.env.DB_NAME;
+  const socket = cloudSqlSocketPath();
+  if (socket) {
+    // mysql2 accepts socket via pool options; keep a marker URL for scripts that parse it.
+    process.env.DATABASE_URL = `mysql://${user}:${password}@localhost/${database}?socketPath=${encodeURIComponent(socket)}`;
+  } else if (process.env.DB_HOST) {
+    const port = process.env.DB_PORT || "3306";
+    process.env.DATABASE_URL = `mysql://${user}:${password}@${process.env.DB_HOST}:${port}/${database}`;
+  }
 }

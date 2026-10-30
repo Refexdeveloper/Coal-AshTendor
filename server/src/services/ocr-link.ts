@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { readFileSync } from "fs";
 import path from "path";
-import { UPLOAD_ROOT, safeName } from "./files";
+import { safeName, storageKey } from "./files";
 import { repoRoot } from "../utils/root";
 
 const TEN_MINUTES = 10 * 60 * 1000;
@@ -28,8 +28,7 @@ export function ocrPublicBase() {
 
 /** Short-lived link the OCR service can download. The path is signed, not guessed. */
 export function ocrFileUrl(storedPath: string, fileName: string) {
-  const relative = path.relative(UPLOAD_ROOT, path.resolve(storedPath));
-  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Document path is outside the upload store.");
+  const relative = storageKey(storedPath);
   const payload = Buffer.from(JSON.stringify({ p: relative, exp: Date.now() + TEN_MINUTES }), "utf8").toString("base64url");
   const token = `${payload}.${sign(payload)}`;
   const base = ocrPublicBase();
@@ -46,10 +45,7 @@ export function pathFromOcrToken(token: string) {
   try {
     const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { p?: string; exp?: number };
     if (!parsed.p || !parsed.exp || parsed.exp < Date.now()) return null;
-    const resolved = path.resolve(UPLOAD_ROOT, parsed.p);
-    const root = path.resolve(UPLOAD_ROOT);
-    if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return null;
-    return resolved;
+    return storageKey(parsed.p);
   } catch {
     return null;
   }

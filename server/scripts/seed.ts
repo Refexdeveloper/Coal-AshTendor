@@ -13,7 +13,7 @@ const calendar: Calendar = {
   holidays: new Set(),
 };
 
-async function main() {
+export async function seed() {
   const { db } = await import("../src/db");
   const { createTender } = await import("../src/services/domain");
   const { storeFile, sha256 } = await import("../src/services/files");
@@ -507,7 +507,9 @@ async function main() {
   console.log("Seeded Coal & Ash tenders.");
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  seed().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

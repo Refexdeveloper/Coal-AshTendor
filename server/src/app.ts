@@ -21,11 +21,20 @@ export function createApp() {
   app.use(express.json());
 
   app.get("/api/health", async (_req, res) => {
+    const { storageBackend, storageLabel } = await import("./services/files");
+    const clientReady = existsSync(path.join(repoRoot(), "public", "index.html"));
     try {
       await db.$queryRaw`SELECT 1`;
-      res.json({ ok: true, database: "up" });
+      res.json({
+        ok: true,
+        database: "up",
+        storage: storageBackend(),
+        storage_target: storageLabel(),
+        serve_client: clientReady,
+        cloud_sql: Boolean(process.env.INSTANCE_CONNECTION_NAME || process.env.DB_SOCKET_PATH),
+      });
     } catch {
-      res.status(503).json({ ok: false, database: "down" });
+      res.status(503).json({ ok: false, database: "down", storage: storageBackend(), serve_client: clientReady });
     }
   });
 

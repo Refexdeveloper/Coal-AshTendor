@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto";
-import type { Pool, ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import type { Pool, PoolOptions, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import mysql from "mysql2/promise";
-import "../env";
+import { cloudSqlSocketPath } from "../env";
 
 /** Rows the rest of the server already expects. Relations are attached when a query asks for them. */
 export interface User {
@@ -181,9 +181,41 @@ export interface Db {
 
 /** A connection the server can share. Transactions take one connection from this pool. */
 function createPool(): Pool {
+  const database = process.env.DB_NAME;
+  const user = process.env.DB_USER;
+  const password = process.env.DB_PASSWORD || "";
+  const socketPath = cloudSqlSocketPath();
+
+  if (socketPath && database && user) {
+    const options: PoolOptions = {
+      socketPath,
+      user,
+      password,
+      database,
+      timezone: "Z",
+      connectionLimit: Number(process.env.DB_POOL_SIZE || "10"),
+      dateStrings: false,
+    };
+    return mysql.createPool(options);
+  }
+
   const url = process.env.DATABASE_URL;
-  if (!url?.startsWith("mysql://")) throw new Error("DATABASE_URL must be a mysql:// connection string. See server/.env.example.");
+  if (!url?.startsWith("mysql://")) {
+    throw new Error("Set DB_HOST/DB_NAME/DB_USER (or INSTANCE_CONNECTION_NAME for Cloud SQL). See server/.env.example.");
+  }
   const parsed = new URL(url);
+  const socketFromUrl = parsed.searchParams.get("socketPath");
+  if (socketFromUrl) {
+    return mysql.createPool({
+      socketPath: socketFromUrl,
+      user: decodeURIComponent(parsed.username),
+      password: decodeURIComponent(parsed.password),
+      database: decodeURIComponent(parsed.pathname.replace(/^\//, "")),
+      timezone: "Z",
+      connectionLimit: Number(process.env.DB_POOL_SIZE || "10"),
+      dateStrings: false,
+    });
+  }
   return mysql.createPool({
     host: parsed.hostname,
     port: Number(parsed.port || 3306),
@@ -191,7 +223,7 @@ function createPool(): Pool {
     password: decodeURIComponent(parsed.password),
     database: decodeURIComponent(parsed.pathname.replace(/^\//, "")),
     timezone: "Z",
-    connectionLimit: 10,
+    connectionLimit: Number(process.env.DB_POOL_SIZE || "10"),
     dateStrings: false,
   });
 }
