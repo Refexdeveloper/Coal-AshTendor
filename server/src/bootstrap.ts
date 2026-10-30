@@ -6,8 +6,11 @@ import { cloudSqlSocketPath } from "./env";
 import { repoRoot } from "./utils/root";
 
 /**
- * On Cloud Run first boot, create the schema when the database is empty, then seed
+ * On Cloud Run first boot, create tables when the database is empty, then seed
  * when there are no users. Set AUTO_DB_SETUP=false to skip entirely.
+ *
+ * Does not CREATE DATABASE — Cloud SQL app users usually lack that privilege.
+ * Create the database once with gcloud / root, then point DB_NAME at it.
  */
 export async function ensureDatabaseReady() {
   if (process.env.AUTO_DB_SETUP === "false") return;
@@ -17,7 +20,7 @@ export async function ensureDatabaseReady() {
   if (!database || !user) return;
 
   const socketPath = cloudSqlSocketPath();
-  const options: ConnectionOptions = socketPath
+  const base: ConnectionOptions = socketPath
     ? {
         socketPath,
         user,
@@ -33,10 +36,8 @@ export async function ensureDatabaseReady() {
       };
 
   let needsSeed = false;
-  const connection = await mysql.createConnection(options);
+  const connection = await mysql.createConnection({ ...base, database });
   try {
-    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-    await connection.query(`USE \`${database}\``);
     const [existing] = await connection.query("SHOW TABLES LIKE 'User'");
     if (!(existing as unknown[]).length) {
       const sql = readFileSync(path.join(repoRoot(), "schema.sql"), "utf8");
