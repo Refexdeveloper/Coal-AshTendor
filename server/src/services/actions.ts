@@ -191,6 +191,19 @@ export async function addHolidayAction(actor: User, formData: FormData): Promise
   return { ok: "Holiday saved" };
 }
 
+export async function deleteTenderAction(actor: User, formData: FormData): Promise<ActionState> {
+  const denied = adminOnly(actor);
+  if (denied) return denied;
+  const tenderId = String(formData.get("tenderId") || "");
+  if (!tenderId) return { error: "Choose a tender to remove." };
+  try {
+    const recordId = await domain.removeTender(actor, tenderId);
+    return { ok: `Removed ${recordId} and the records tied to it.` };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 export async function clearTendersAction(actor: User, formData: FormData): Promise<ActionState> {
   const denied = adminOnly(actor);
   if (denied) return denied;

@@ -1717,24 +1717,48 @@ export async function processAutomation() {
   }
 }
 
+function requireAdmin(actor: Actor) {
+  if (actor.role !== "ADMIN") throw new WorkflowError("Only a system administrator can remove tender data.");
+}
+
+async function deleteTenderRows(tx: Tx, tenderId?: string) {
+  const where = tenderId ? { tenderId } : undefined;
+  const tasks = await tx.workflowTask.findMany(tenderId ? { where: { tenderId } } : {});
+  const taskIds = tasks.map((task) => task.id);
+  if (taskIds.length) await tx.taskAction.deleteMany({ where: { taskId: { in: taskIds } } });
+  await tx.workflowTask.deleteMany(where ? { where } : {});
+  await tx.tenderField.deleteMany(where ? { where } : {});
+  await tx.tenderDocument.deleteMany(where ? { where } : {});
+  await tx.costingRecord.deleteMany(where ? { where } : {});
+  await tx.emdRecord.deleteMany(where ? { where } : {});
+  await tx.approvalRecord.deleteMany(where ? { where } : {});
+  await tx.bidSubmission.deleteMany(where ? { where } : {});
+  await tx.notificationLog.deleteMany(tenderId ? { where: { tenderId } } : { where: { tenderId: { not: null } } });
+  await tx.auditLog.deleteMany(tenderId ? { where: { tenderId } } : { where: { tenderId: { not: null } } });
+}
+
+/** Deletes one tender and the files, fields, tasks, costing, EMD, bids, emails, and history tied to it. */
+export async function removeTender(actor: Actor, tenderId: string) {
+  requireAdmin(actor);
+  const tender = await db.tender.findUnique({ where: { id: tenderId } });
+  if (!tender) throw new WorkflowError("That tender was not found.");
+  const documents = await db.tenderDocument.findMany({ where: { tenderId } });
+  await db.$transaction(async (tx) => {
+    await deleteTenderRows(tx, tenderId);
+    await tx.tender.delete({ where: { id: tenderId } });
+  });
+  await Promise.all(documents.map((document) => deleteStored(document.storedPath).catch(() => undefined)));
+  return tender.recordId;
+}
+
 /** Deletes every tender and the rows tied to it. Users, calendar, SLAs, and portals stay. */
 export async function removeAllTenderData(actor: Actor) {
-  if (actor.role !== "ADMIN") throw new WorkflowError("Only a system administrator can remove tender data.");
+  requireAdmin(actor);
   const documents = await db.tenderDocument.findMany();
-  const paths = documents.map((document) => document.storedPath).filter(Boolean);
   const removed = await db.$transaction(async (tx) => {
-    await tx.taskAction.deleteMany();
-    await tx.workflowTask.deleteMany();
-    await tx.tenderField.deleteMany();
-    await tx.tenderDocument.deleteMany();
-    await tx.costingRecord.deleteMany();
-    await tx.emdRecord.deleteMany();
-    await tx.approvalRecord.deleteMany();
-    await tx.bidSubmission.deleteMany();
-    await tx.notificationLog.deleteMany({ where: { tenderId: { not: null } } });
-    await tx.auditLog.deleteMany({ where: { tenderId: { not: null } } });
+    await deleteTenderRows(tx);
     return tx.tender.deleteMany();
   });
-  await Promise.all(paths.map((storedPath) => deleteStored(storedPath).catch(() => undefined)));
+  await Promise.all(documents.map((document) => deleteStored(document.storedPath).catch(() => undefined)));
   return removed.count;
 }

@@ -15,6 +15,7 @@ type Data = {
   templates: { id: string; event: string; subject: string; body: string }[];
   users: PublicUser[];
   tenderCount: number;
+  tenders: { id: string; recordId: string; projectName: string; clientName: string }[];
 };
 
 const DECISIONS = [
@@ -36,7 +37,7 @@ export default function AdminPage() {
   const { data, error, reload } = useApi<Data>("/admin");
   if (actor.role !== "ADMIN") return <p className="panel">Administration is limited to the system administrator.</p>;
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
-  const { calendar, holidays, policies, settings, escalations, templates, users, tenderCount } = data;
+  const { calendar, holidays, policies, settings, escalations, templates, users, tenderCount, tenders } = data;
   const days = new Set((calendar?.workingDays ?? "1,2,3,4,5").split(","));
   return (
     <>
@@ -161,7 +162,7 @@ export default function AdminPage() {
           Save settings
         </button>
       </form>
-      <ClearTenders count={tenderCount} run={run} />
+      <TenderData tenders={tenders} count={tenderCount} run={run} />
       <section className="panel">
         <h2>People</h2>
         <table>
@@ -199,15 +200,52 @@ export default function AdminPage() {
   );
 }
 
+function TenderData({
+  tenders,
+  count,
+  run,
+}: {
+  tenders: { id: string; recordId: string; projectName: string; clientName: string }[];
+  count: number;
+  run: (name: string) => (formData: FormData) => Promise<void>;
+}) {
+  return (
+    <section className="panel stack">
+      <h2>Tender data</h2>
+      <p className="muted">Remove one tender, or every tender. Files, fields, tasks, costing, EMD, bids, emails, and history tied to it go with it. People, the calendar, SLAs, and portals stay.</p>
+      {tenders.length === 0 ? <p className="empty">No tenders stored.</p> : null}
+      {tenders.map((tender) => (
+        <form
+          key={tender.id}
+          className="actions"
+          action={async (formData) => {
+            const label = tender.projectName || tender.recordId;
+            if (!window.confirm(`Remove ${tender.recordId}${label && label !== tender.recordId ? ` (${label})` : ""} and the records tied to it?`)) return;
+            await run("delete-tender")(formData);
+          }}
+        >
+          <input type="hidden" name="tenderId" value={tender.id} />
+          <span>
+            <b>{tender.recordId}</b>
+            {tender.projectName ? ` · ${tender.projectName}` : ""}
+            {tender.clientName ? <span className="muted"> · {tender.clientName}</span> : null}
+          </span>
+          <button className="btn ghost" type="submit">
+            Remove
+          </button>
+        </form>
+      ))}
+      <ClearTenders count={count} run={run} />
+    </section>
+  );
+}
+
 function ClearTenders({ count, run }: { count: number; run: (name: string) => (formData: FormData) => Promise<void> }) {
   const [phrase, setPhrase] = useState("");
   return (
-    <form action={run("clear-tenders")} className="panel stack">
+    <form action={run("clear-tenders")} className="stack">
       <h2>Remove all tender data</h2>
-      <p>
-        Deletes every tender and the files, fields, tasks, costing, EMD, bids, emails, and history tied to them. People, the calendar, SLAs, and portals stay. This cannot be undone.
-      </p>
-      <p>{count === 1 ? "1 tender is stored." : `${count} tenders are stored.`}</p>
+      <p>{count === 1 ? "1 tender is stored." : `${count} tenders are stored.`} This cannot be undone.</p>
       <label>
         Type REMOVE to confirm
         <input name="confirm" value={phrase} onChange={(event) => setPhrase(event.target.value)} autoComplete="off" />
