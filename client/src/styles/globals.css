@@ -1528,6 +1528,7 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 .dk-card-mark { position: absolute; right: -4px; bottom: -12px; width: 88px; height: 88px; fill: none; stroke: var(--c); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; opacity: 0.13; transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.4s; }
 .dk-card:hover .dk-card-mark { transform: rotate(-12deg) scale(1.18); opacity: 0.22; }
 .dk-card.hot { animation-name: cardRise, breathe; animation-duration: 0.85s, 2.8s; animation-iteration-count: 1, infinite; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1), ease-in-out; animation-fill-mode: both, none; }
+.dk-card.is-on { box-shadow: 0 0 0 2px var(--c), 0 18px 36px -18px color-mix(in srgb, var(--c) 70%, transparent); }
 
 /* filters */
 .dk-filters {
@@ -1658,6 +1659,7 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 .dk-health a.bad b { color: #dc2626; }
 .dk-health a.good b { color: #059669; }
 .dk-health a:hover { border-color: #cfe0f7; background: #f5f9ff; }
+.dk-health a.is-on { border-color: #0b4f8a; background: #f5f9ff; box-shadow: 0 0 0 2px #0b4f8a; }
 
 @media (max-width: 1280px) { .dk-main { grid-template-columns: minmax(0, 1fr); } .dk-side { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 1100px) { .dk-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dk-health { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

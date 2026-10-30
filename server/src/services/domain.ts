@@ -217,9 +217,11 @@ async function refreshMaster(tenderId: string, actor?: Actor) {
   const nextDeadline = parseDateTime(fieldValue("bid_submission_end"), calendar.timeZone);
   const previous = tender.bidSubmissionEnd?.getTime() ?? null;
   const next = nextDeadline?.getTime() ?? null;
-  const exemption = fieldValue("emd_exemption");
+  const emdType = tender.relevanceStatus === "APPROVED" ? tender.emdType : classifyEmd(tender.fields);
   const emdFromRecord = tender.emd?.completedAt ? parseInr(tender.emd.amount) : null;
-  const emdExposure = emdFromRecord != null ? emdFromRecord : exemption === "Yes" ? 0 : parseInr(fieldValue("emd_fee"));
+  // Only a clear exemption means nothing is payable. When the notice is unclear (exempt and an instrument
+  // both given), the EMD fee is still counted until the EMD clarification settles it.
+  const emdExposure = emdFromRecord != null ? emdFromRecord : emdType === "EXEMPTION" ? 0 : parseInr(fieldValue("emd_fee"));
   await db.tender.update({
     where: { id: tenderId },
     data: {
@@ -232,7 +234,7 @@ async function refreshMaster(tenderId: string, actor?: Actor) {
       bidOpeningAt: parseDateTime(fieldValue("bid_opening"), calendar.timeZone),
       estimatedValue: parseInr(fieldValue("estimated_cost")),
       emdExposure,
-      emdType: tender.relevanceStatus === "APPROVED" ? tender.emdType : classifyEmd(tender.fields),
+      emdType,
     },
   });
   if (previous && next && previous !== next) {

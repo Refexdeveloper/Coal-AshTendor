@@ -55,7 +55,21 @@ const FIELD_SECTIONS = [
   [31, 44, "Contract conditions"],
 ] as const;
 
-const FILTER_KEYS = ["period", "basis", "q", "client", "emd", "owner", "portal", "group"] as const;
+const FILTER_KEYS = ["period", "basis", "q", "client", "emd", "owner", "portal", "group", "card"] as const;
+
+/** Figure and pipeline cards. Each key is the same set the card counts, shown in the table below. */
+const CARD_LABEL: Record<string, string> = {
+  bids: "Bids submitted",
+  won: "Awarded tenders",
+  lost: "Lost tenders",
+  eval: "In evaluation",
+  due: "Upcoming deadlines",
+  rate: "Won and lost tenders",
+  active: "Active pipeline",
+  costing: "Approved final costing",
+  emd: "EMD exposure",
+  overdue: "Overdue tasks",
+};
 type FilterKey = (typeof FILTER_KEYS)[number];
 
 const ICONS: Record<string, ReactNode> = {
@@ -158,6 +172,8 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
   const [draft, setDraft] = useState(filter.q);
   const setFilter = (key: FilterKey, value: string) => {
     const next = new URLSearchParams(search);
+    if (key === "group") next.delete("card");
+    if (key === "card") next.delete("group");
     if (value && !(key === "period" && value === "all") && !(key === "basis" && value === "received")) next.set(key, value);
     else next.delete(key);
     setSearch(next, { replace: true, preventScrollReset: true });
@@ -168,10 +184,19 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
   };
   const stageHref = (key?: string, hash = "recent-tenders") => {
     const next = new URLSearchParams(search);
+    next.delete("card");
     if (key) next.set("group", key);
     else next.delete("group");
     const query = next.toString();
     return `/${query ? `?${query}` : ""}#${hash}`;
+  };
+  const cardHref = (key: string) => {
+    const next = new URLSearchParams(search);
+    next.delete("group");
+    if (filter.card === key) next.delete("card");
+    else next.set("card", key);
+    const query = next.toString();
+    return `/${query ? `?${query}` : ""}#recent-tenders`;
   };
 
   const period = resolvePeriod(filter.period || "all");
@@ -214,19 +239,38 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
 
   const cards = [
     { key: "total", label: "Total tenders", fx: "docs" as CardFx, value: tenders.length, note: `${active.length} active tenders`, icon: "doc", tone: "blue", href: stageHref() },
-    { key: "bids", label: "Bids submitted", fx: "send" as CardFx, value: bidsSubmitted, note: "Bids submitted", icon: "clock", tone: "violet", href: stageHref("submitted") },
-    { key: "won", label: "Awarded tenders", fx: "award" as CardFx, value: won, note: "Successfully awarded", icon: "trophy", tone: "green", href: stageHref("won") },
-    { key: "lost", label: "Lost tenders", fx: "lost" as CardFx, value: lost, note: "Not awarded", icon: "cross", tone: "red", href: stageHref("lost") },
-    { key: "eval", label: "In evaluation", fx: "hourglass" as CardFx, value: inEvaluation, note: "Under evaluation", icon: "hourglass", tone: "orange", href: stageHref("submitted") },
-    { key: "due", label: "Upcoming deadlines", fx: "pending" as CardFx, value: dueWeek.length, note: "In next 7 days", icon: "calendar", tone: "sky", href: stageHref(undefined, "deadlines") },
+    { key: "bids", label: "Bids submitted", fx: "send" as CardFx, value: bidsSubmitted, note: "Bids submitted", icon: "clock", tone: "violet", href: cardHref("bids") },
+    { key: "won", label: "Awarded tenders", fx: "award" as CardFx, value: won, note: "Successfully awarded", icon: "trophy", tone: "green", href: cardHref("won") },
+    { key: "lost", label: "Lost tenders", fx: "lost" as CardFx, value: lost, note: "Not awarded", icon: "cross", tone: "red", href: cardHref("lost") },
+    { key: "eval", label: "In evaluation", fx: "hourglass" as CardFx, value: inEvaluation, note: "Under evaluation", icon: "hourglass", tone: "orange", href: cardHref("eval") },
+    { key: "due", label: "Upcoming deadlines", fx: "pending" as CardFx, value: dueWeek.length, note: "In next 7 days", icon: "calendar", tone: "sky", href: cardHref("due") },
     { key: "value", label: "Total tender value", fx: "coins" as CardFx, value: sum(tenders, (t) => t.estimatedValue), money: true, note: "Estimated value", icon: "rupee", tone: "rose", href: stageHref() },
-    { key: "rate", label: "Win rate", fx: "target" as CardFx, value: winRate, suffix: "%", note: `${won} won · ${lost} lost`, icon: "target", tone: "teal", href: stageHref("won") },
+    { key: "rate", label: "Win rate", fx: "target" as CardFx, value: winRate, suffix: "%", note: `${won} won · ${lost} lost`, icon: "target", tone: "teal", href: cardHref("rate") },
   ];
 
-  const selected = GROUPS.find((item) => item.key === group);
-  const rows = (selected ? tenders.filter((tender) => selected.statuses.includes(tender.overallStatus)) : tenders)
+  const cardRows = (key: string): Row[] | null => {
+    if (key === "bids") return tenders.filter((tender) => tender.bidStatus.startsWith("BID_SUBMITTED"));
+    if (key === "won") return tenders.filter((tender) => tender.overallStatus === "WON");
+    if (key === "lost") return tenders.filter((tender) => tender.overallStatus === "LOST");
+    if (key === "eval") return tenders.filter((tender) => SUBMITTED.includes(tender.overallStatus));
+    if (key === "due") return dueWeek;
+    if (key === "rate") return tenders.filter((tender) => tender.overallStatus === "WON" || tender.overallStatus === "LOST");
+    if (key === "active") return active;
+    if (key === "costing") return tenders.filter((tender) => tender.costingStatus === "APPROVED");
+    if (key === "emd") return active.filter((tender) => tender.emdType !== "EXEMPTION");
+    if (key === "overdue") return tenders.filter((tender) => tender.tasks.some((task) => task.dueAt && task.dueAt.getTime() < now));
+    return null;
+  };
+  const focused = cardRows(filter.card);
+  const selected = focused ? undefined : GROUPS.find((item) => item.key === group);
+  const focusLabel = CARD_LABEL[filter.card] ?? "";
+  const rows = (focused ?? (selected ? tenders.filter((tender) => selected.statuses.includes(tender.overallStatus)) : tenders))
     .slice()
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    .sort((a, b) =>
+      filter.card === "due" && a.bidSubmissionEnd && b.bidSubmissionEnd
+        ? a.bidSubmissionEnd.getTime() - b.bidSubmissionEnd.getTime()
+        : b.createdAt.getTime() - a.createdAt.getTime(),
+    );
   const shownRows = allRows ? rows : rows.slice(0, 8);
 
   // Activity is assembled from what the records already carry: receipt, decisions, EMD, bids and outcomes.
@@ -293,7 +337,7 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
 
       <section className="dk-cards" aria-label="Tender figures">
         {cards.map((card, index) => (
-          <FxLink key={card.key} href={card.href} fx={card.fx} className={`dk-card ${card.tone}${card.key === "due" && dueWeek.length ? " hot" : ""}`} style={{ "--i": index } as CSSProperties}>
+          <FxLink key={card.key} href={card.href} fx={card.fx} className={`dk-card ${card.tone}${card.key === "due" && dueWeek.length ? " hot" : ""}${filter.card === card.key ? " is-on" : ""}`} style={{ "--i": index } as CSSProperties}>
             <span className="dk-card-icon">
               <Icon name={card.icon} />
             </span>
@@ -318,7 +362,7 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
           </span>
           <div>
             <h2>Pipeline by stage</h2>
-            <p>{tenders.length} tenders · click a stage card to filter the tenders below</p>
+            <p>{tenders.length} tenders · click a card to filter the tenders below</p>
           </div>
         </header>
         <div className="stage-legend dk-legend">
@@ -335,26 +379,26 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
           })}
         </div>
         <div className="dk-health">
-          <div>
+          <FxLink href={cardHref("active")} fx="pulse" className={filter.card === "active" ? "is-on" : ""}>
             <span>Active pipeline value</span>
             <b>{inr(sum(active, (t) => t.estimatedValue))}</b>
             <small>{active.length} active tenders</small>
-          </div>
-          <div>
+          </FxLink>
+          <FxLink href={cardHref("costing")} fx="pulse" className={filter.card === "costing" ? "is-on" : ""}>
             <span>Approved final costing</span>
             <b>{inr(sum(tenders.filter((t) => t.costingStatus === "APPROVED"), (t) => t.finalCostingValue))}</b>
             <small>{tenders.filter((t) => t.costingStatus === "APPROVED").length} costings approved</small>
-          </div>
-          <div>
+          </FxLink>
+          <FxLink href={cardHref("emd")} fx="pulse" className={filter.card === "emd" ? "is-on" : ""}>
             <span>EMD exposure</span>
             <b>{inr(sum(active.filter((t) => t.emdType !== "EXEMPTION"), (t) => t.emdExposure))}</b>
             <small>Guarantees and bonds in play</small>
-          </div>
-          <Link to="/register?overdue=yes" className={overdue ? "bad" : "good"}>
+          </FxLink>
+          <FxLink href={cardHref("overdue")} fx="pulse" className={`${overdue ? "bad" : "good"}${filter.card === "overdue" ? " is-on" : ""}`}>
             <span>Overdue tasks</span>
             <b>{overdue}</b>
             <small>{overdue ? "Past their working-time SLA" : "Everything on time"}</small>
-          </Link>
+          </FxLink>
         </div>
       </section>
       <form
@@ -447,7 +491,8 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
         </button>
         <div className="dk-showing">
           <p>
-            Showing <b>{tenders.length}</b> of {everyTender.length} tenders
+            Showing <b>{filter.card || selected ? rows.length : tenders.length}</b> of {everyTender.length} tenders
+            {focusLabel ? ` · ${focusLabel}` : ""}
             {period.from ? ` · ${byDeadline ? "bid deadline" : "received"} ${period.detail}` : ""}
           </p>
           <button type="button" className="dk-link" onClick={resetFilters} disabled={!activeFilters && !draft}>
@@ -464,12 +509,16 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
               <Icon name="doc" />
             </span>
             <div>
-              <h2>{selected ? `${selected.label} tenders` : "Recent tenders"}</h2>
-              <p>{selected ? `${rows.length} in this status · newest first` : "Latest tender activity"}</p>
+              <h2>{focusLabel || (selected ? `${selected.label} tenders` : "Recent tenders")}</h2>
+              <p>
+                {focusLabel || selected
+                  ? `${rows.length} shown · ${filter.card === "due" ? "soonest deadline first" : "newest first"}`
+                  : "Latest tender activity"}
+              </p>
             </div>
-            {selected ? (
+            {focusLabel || selected ? (
               <Link className="dk-ghost" to={stageHref()} preventScrollReset>
-                All statuses
+                All tenders
               </Link>
             ) : null}
             {rows.length > 8 ? (
