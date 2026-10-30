@@ -49,7 +49,7 @@ export default function RegisterPage() {
       {banner ? <p className={`banner ${banner.tone}`}>{banner.text}</p> : null}
       <form
         key={search.toString()}
-        className="actions"
+        className="filters"
         method="get"
         onSubmit={(event) => {
           event.preventDefault();
@@ -81,7 +81,7 @@ export default function RegisterPage() {
         ) : null}
       </form>
       <div className="table-wrap">
-        <table>
+        <table className="register-table">
           <thead>
             <tr>
               <th>Tender</th>
@@ -124,16 +124,24 @@ export default function RegisterPage() {
                           <TrashIcon />
                         </button>
                       ) : null}
-                      <div>
+                      <div className="reg-copy">
                         <Link to={`/tenders/${tender.id}`}>{tender.recordId}</Link>
-                        <div>{tender.projectName || "Untitled"}</div>
-                        <div className="muted">{tender.location}</div>
+                        <div className="reg-name" title={tender.projectName || "Untitled"}>
+                          {tender.projectName || "Untitled"}
+                        </div>
+                        {tender.location ? <div className="reg-meta">{tender.location}</div> : null}
                       </div>
                     </div>
                   </td>
                   <td>
-                    {tender.clientName || "—"}
-                    <div className="muted">{tender.tenderRef || tender.externalTenderId}</div>
+                    <div className="reg-client" title={tender.clientName || undefined}>
+                      {tender.clientName || "—"}
+                    </div>
+                    {tender.tenderRef || tender.externalTenderId ? (
+                      <div className="reg-meta" title={tender.tenderRef || tender.externalTenderId}>
+                        {tender.tenderRef || tender.externalTenderId}
+                      </div>
+                    ) : null}
                   </td>
                   <td>
                     {formatWhen(tender.bidSubmissionEnd, calendar.timeZone)}
@@ -146,8 +154,10 @@ export default function RegisterPage() {
                     {tender.tasks.length ? (
                       tender.tasks.map((task) => (
                         <div key={task.id}>
-                          {task.title}
-                          <div className={task.dueAt && task.dueAt < new Date() ? "text-bad" : "muted"}>{formatWhen(task.dueAt, calendar.timeZone)}</div>
+                          <div className="reg-stage" title={task.title}>
+                            {task.title}
+                          </div>
+                          <div className={task.dueAt && task.dueAt < new Date() ? "text-bad" : "reg-meta"}>{formatWhen(task.dueAt, calendar.timeZone)}</div>
                         </div>
                       ))
                     ) : (

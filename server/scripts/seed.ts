@@ -68,6 +68,7 @@ export async function seed() {
     ["sanjeev", "Sanjeev", "sanjeev@coalandash.local", "EMD_ISB"],
     ["depthead", "Department Head", "depthead@coalandash.local", "DEPT_HEAD"],
     ["submitter", "Bid Submitter", "submitter@coalandash.local", "BID_SUBMITTER"],
+    ["lokesh", "Lokesh B", "lokesh.b@refex.co.in", "BID_SUBMITTER"],
     ["dinesh", "Dinesh", "dinesh@coalandash.local", "GROUP_CEO"],
   ] as const;
   for (const [personKey, name, email, role] of people) {
