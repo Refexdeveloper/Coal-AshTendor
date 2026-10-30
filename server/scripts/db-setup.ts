@@ -1,15 +1,11 @@
 import "../src/env";
-import { execFileSync } from "child_process";
-import { existsSync } from "fs";
+import { readFileSync } from "fs";
 import path from "path";
 import mysql from "mysql2/promise";
 import { repoRoot } from "../src/lib/root";
 
 /**
- * Creates the MySQL database and tables from prisma/schema.prisma.
- *
- * Prisma writes `TEXT ... DEFAULT ''`, which MySQL rejects. MySQL 8.0.13+ accepts the same default
- * written as an expression, `DEFAULT ('')`, so the generated SQL is adjusted before it runs.
+ * Creates the MySQL database and the tables in schema.sql.
  * Existing tables are left alone; pass --reset to drop and recreate them.
  */
 async function main() {
@@ -44,13 +40,7 @@ async function main() {
     }
   }
 
-  const root = repoRoot();
-  const prismaBin = path.join(root, "node_modules", ".bin", "prisma");
-  const bin = existsSync(prismaBin) ? prismaBin : path.join(root, "..", "node_modules", ".bin", "prisma");
-  const sql = execFileSync(bin, ["migrate", "diff", "--from-empty", "--to-schema-datamodel", path.join(root, "prisma", "schema.prisma"), "--script"], {
-    encoding: "utf8",
-    env: process.env,
-  }).replace(/((?:LONG|MEDIUM)?TEXT NOT NULL) DEFAULT '([^']*)'/g, "$1 DEFAULT ('$2')");
+  const sql = readFileSync(path.join(repoRoot(), "schema.sql"), "utf8");
   await connection.query(sql);
   await connection.end();
   console.log(`Created the Coal & Ash tables in ${database}.`);

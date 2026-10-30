@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { readStored } from "../lib/files";
 import { pathFromOcrToken } from "../lib/ocr-link";
-import { prisma } from "../lib/prisma";
+import { db } from "../lib/db";
 import { requireActor } from "./auth";
 
 const MIME: Record<string, string> = {
@@ -19,7 +19,7 @@ export const files = Router();
 
 /** Stored tender documents, for signed-in users. */
 files.get("/documents/:id", requireActor, async (req, res) => {
-  const document = await prisma.tenderDocument.findUnique({ where: { id: req.params.id as string } });
+  const document = await db.tenderDocument.findUnique({ where: { id: req.params.id as string } });
   if (!document) {
     res.status(404).send("Not found");
     return;

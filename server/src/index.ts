@@ -4,7 +4,7 @@ import path from "path";
 import cookieParser from "cookie-parser";
 import express, { type ErrorRequestHandler } from "express";
 import multer from "multer";
-import { prisma } from "./lib/prisma";
+import { db } from "./lib/db";
 import { repoRoot } from "./lib/root";
 import { checkLogin } from "./services/actions";
 import { actionRoutes } from "./http/actions";
@@ -23,7 +23,7 @@ app.use(express.json());
 
 app.get("/api/health", async (_req, res) => {
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    await db.$queryRaw`SELECT 1`;
     res.json({ ok: true, database: "up" });
   } catch {
     res.status(503).json({ ok: false, database: "down" });
@@ -51,7 +51,7 @@ app.get("/api/auth/team", async (_req, res) => {
     res.json({ users: [] });
     return;
   }
-  const users = await prisma.user.findMany({ where: { active: true }, orderBy: { name: "asc" } }).catch(() => []);
+  const users = await db.user.findMany({ where: { active: true }, orderBy: { name: "asc" } }).catch(() => []);
   res.json({ users: users.map(publicUser) });
 });
 

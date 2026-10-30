@@ -8,9 +8,9 @@ Phase 2 portal scanning is configuration and an exception queue only. A discover
 
 ```
 client/   React 19 + Vite + React Router single-page app (port 5173)
-server/   Node.js + Express 5 API, Prisma ORM on MySQL (port 4000)
-  prisma/   schema.prisma (MySQL) and seed.ts
-  scripts/  db-setup.ts (creates the database and tables), check-domain.ts
+server/   Node.js + Express 5 API on MySQL (port 4000)
+  schema.sql  MySQL tables
+  scripts/    db-setup.ts (creates the database and tables), seed.ts, check-domain.ts
   data/     uploaded files (data/uploads) and the OCR tunnel address
 ```
 
@@ -61,9 +61,9 @@ You can also run each package on its own: `npm run dev` inside `server`, and `np
 
 `npm run db:reset` drops every table and seeds again. `db:setup` leaves existing tables alone.
 
-### Why db:setup and not prisma db push
+### Schema changes
 
-Prisma writes `TEXT ... DEFAULT ''`, which MySQL rejects. `server/scripts/db-setup.ts` generates the SQL from `schema.prisma`, rewrites those defaults as MySQL expression defaults (`DEFAULT ('')`), and runs it. After changing the schema on a database with real data, write the `ALTER TABLE` by hand or use `prisma migrate diff` against the live database and apply the same fix.
+`server/schema.sql` is the database. `npm run db:setup` creates any missing database and runs that file when the tables are not there yet. After editing `schema.sql` on a database that already has tables, apply the `ALTER TABLE` yourself, or run `npm run db:reset` when the data can be dropped and seeded again. Text columns use `DEFAULT ('')` because MySQL rejects `DEFAULT ''` on `TEXT`.
 
 ## OCR
 

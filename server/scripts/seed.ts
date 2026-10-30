@@ -14,26 +14,26 @@ const calendar: Calendar = {
 };
 
 async function main() {
-  const { prisma } = await import("../src/lib/prisma");
+  const { db } = await import("../src/lib/db");
   const { createTender } = await import("../src/lib/domain");
   const { storeFile, sha256 } = await import("../src/lib/files");
   const { textToPdf } = await import("../src/lib/pdf");
 
-  await prisma.crawlerException.deleteMany();
-  await prisma.crawlerRun.deleteMany();
-  await prisma.portal.deleteMany();
-  await prisma.tender.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.holiday.deleteMany();
-  await prisma.slaPolicy.deleteMany();
-  await prisma.escalationRecipient.deleteMany();
-  await prisma.emailTemplate.deleteMany();
-  await prisma.calendarSettings.deleteMany();
-  await prisma.appSettings.deleteMany();
+  await db.crawlerException.deleteMany();
+  await db.crawlerRun.deleteMany();
+  await db.portal.deleteMany();
+  await db.tender.deleteMany();
+  await db.user.deleteMany();
+  await db.holiday.deleteMany();
+  await db.slaPolicy.deleteMany();
+  await db.escalationRecipient.deleteMany();
+  await db.emailTemplate.deleteMany();
+  await db.calendarSettings.deleteMany();
+  await db.appSettings.deleteMany();
 
-  await prisma.calendarSettings.create({ data: { id: "default" } });
-  await prisma.appSettings.create({ data: { id: "default", nextSequence: 0 } });
-  await prisma.slaPolicy.createMany({
+  await db.calendarSettings.create({ data: { id: "default" } });
+  await db.appSettings.create({ data: { id: "default", nextSequence: 0 } });
+  await db.slaPolicy.createMany({
     data: [
       { stage: "RELEVANCE", durationValue: 24, durationUnit: "HOURS" },
       { stage: "DRAFT_COSTING", durationValue: 2, durationUnit: "DAYS", targetValue: 1, targetUnit: "DAYS" },
@@ -47,13 +47,13 @@ async function main() {
       { stage: "BUSINESS_DECISION", durationValue: 1, durationUnit: "DAYS" },
     ],
   });
-  await prisma.escalationRecipient.createMany({
+  await db.escalationRecipient.createMany({
     data: [
       { level: 1, label: "Workflow manager", email: "workflow.manager@coalandash.local" },
       { level: 2, label: "Business owner", email: "business.owner@coalandash.local" },
     ],
   });
-  await prisma.emailTemplate.createMany({ data: TEMPLATES });
+  await db.emailTemplate.createMany({ data: TEMPLATES });
 
   const passwordHash = bcrypt.hashSync("CoalAsh@2026", 10);
   const people = [
@@ -71,9 +71,9 @@ async function main() {
     ["dinesh", "Dinesh", "dinesh@coalandash.local", "GROUP_CEO"],
   ] as const;
   for (const [personKey, name, email, role] of people) {
-    await prisma.user.create({ data: { personKey, name, email, role, passwordHash } });
+    await db.user.create({ data: { personKey, name, email, role, passwordHash } });
   }
-  const user = Object.fromEntries((await prisma.user.findMany()).map((item) => [item.personKey, item]));
+  const user = Object.fromEntries((await db.user.findMany()).map((item) => [item.personKey, item]));
   const ids = (...keys: string[]) => JSON.stringify(keys.map((key) => user[key].id));
 
   const coordinator = user.coordinator;
@@ -88,7 +88,7 @@ async function main() {
   });
 
   async function fields(tenderId: string, values: Record<string, string>) {
-    await prisma.tenderField.createMany({
+    await db.tenderField.createMany({
       data: TENDER_FIELDS.map((field) => {
         const value = values[field.key] ?? "";
         return {
@@ -107,7 +107,7 @@ async function main() {
     });
   }
 
-  const pending = await prisma.tender.create({
+  const pending = await db.tender.create({
     data: {
       recordId: "CA-2026-0002",
       projectName: "Pond ash evacuation at Korba",
@@ -138,7 +138,7 @@ async function main() {
     emd_form: "Bank Guarantee",
     emd_exemption: "No",
   });
-  await prisma.workflowTask.create({
+  await db.workflowTask.create({
     data: {
       tenderId: pending.id,
       branch: "MAIN",
@@ -152,7 +152,7 @@ async function main() {
     },
   });
 
-  const overdue = await prisma.tender.create({
+  const overdue = await db.tender.create({
     data: {
       recordId: "CA-2026-0003",
       projectName: "Ash dyke raising at Ramagundam",
@@ -180,7 +180,7 @@ async function main() {
     bid_submission_end: "12/11/2026 15:00",
     emd_exemption: "Clarification Required",
   });
-  await prisma.workflowTask.create({
+  await db.workflowTask.create({
     data: {
       tenderId: overdue.id,
       branch: "MAIN",
@@ -194,7 +194,7 @@ async function main() {
     },
   });
 
-  const active = await prisma.tender.create({
+  const active = await db.tender.create({
     data: {
       recordId: "CA-2026-0004",
       projectName: "Fly ash utilisation at Chandrapur",
@@ -228,12 +228,12 @@ async function main() {
     emd_exemption: "No",
     estimated_cost: "Rs. 240000000",
   });
-  await prisma.approvalRecord.create({
+  await db.approvalRecord.create({
     data: { tenderId: active.id, stage: "RELEVANCE", decision: "APPROVED", approverId: user.vishesh.id, comments: "Relevant to the ash business." },
   });
-  await prisma.emdRecord.create({ data: { tenderId: active.id, instrumentType: "BG", preparationStatus: "NOT_STARTED" } });
+  await db.emdRecord.create({ data: { tenderId: active.id, instrumentType: "BG", preparationStatus: "NOT_STARTED" } });
   const draftDue = addBusinessMinutes(new Date(), 2 * 9 * 60, calendar);
-  await prisma.workflowTask.create({
+  await db.workflowTask.create({
     data: {
       tenderId: active.id,
       branch: "COSTING",
@@ -246,7 +246,7 @@ async function main() {
       baseAt: new Date(),
     },
   });
-  await prisma.workflowTask.create({
+  await db.workflowTask.create({
     data: {
       tenderId: active.id,
       branch: "EMD",
@@ -260,7 +260,7 @@ async function main() {
     },
   });
 
-  const ready = await prisma.tender.create({
+  const ready = await db.tender.create({
     data: {
       recordId: "CA-2026-0005",
       projectName: "Bottom ash transport to mine void",
@@ -296,10 +296,10 @@ async function main() {
     emd_form: "Bank Guarantee",
     emd_exemption: "No",
   });
-  await prisma.costingRecord.create({
+  await db.costingRecord.create({
     data: { tenderId: ready.id, version: 1, stage: "FINAL_COSTING", assumptions: "Rates checked against the last Sipat award.", amount: 91200000, createdById: user.vishesh.id },
   });
-  await prisma.emdRecord.create({
+  await db.emdRecord.create({
     data: {
       tenderId: ready.id,
       instrumentType: "BG",
@@ -311,14 +311,14 @@ async function main() {
       verifiedAt: new Date(),
     },
   });
-  await prisma.approvalRecord.createMany({
+  await db.approvalRecord.createMany({
     data: [
       { tenderId: ready.id, stage: "RELEVANCE", decision: "APPROVED", approverId: user.ranjana.id, comments: "Approved." },
       { tenderId: ready.id, stage: "DEPT_APPROVAL", decision: "APPROVED", approverId: user.depthead.id, comments: "Costing approved." },
     ],
   });
-  await prisma.bidSubmission.create({ data: { tenderId: ready.id, submitterId: user.submitter.id, status: "NOT_YET_SUBMITTED" } });
-  await prisma.workflowTask.create({
+  await db.bidSubmission.create({ data: { tenderId: ready.id, submitterId: user.submitter.id, status: "NOT_YET_SUBMITTED" } });
+  await db.workflowTask.create({
     data: {
       tenderId: ready.id,
       branch: "BID",
@@ -332,7 +332,7 @@ async function main() {
     },
   });
 
-  const won = await prisma.tender.create({
+  const won = await db.tender.create({
     data: {
       recordId: "CA-2026-0006",
       projectName: "Legacy ash mound removal",
@@ -371,7 +371,7 @@ async function main() {
   });
   const proof = await textToPdf("Portal acknowledgement\nTender: DVC/ASH/2026/04\nReference: DVC-ACK-7781\nSubmitted: 01/10/2026 14:12");
   const proofPath = await storeFile(won.id, "dvc-acknowledgement.pdf", proof);
-  const proofDoc = await prisma.tenderDocument.create({
+  const proofDoc = await db.tenderDocument.create({
     data: {
       tenderId: won.id,
       fileName: "dvc-acknowledgement.pdf",
@@ -384,7 +384,7 @@ async function main() {
       pageCount: 1,
     },
   });
-  await prisma.bidSubmission.create({
+  await db.bidSubmission.create({
     data: {
       tenderId: won.id,
       submitterId: user.submitter.id,
@@ -394,7 +394,7 @@ async function main() {
       evidenceDocumentId: proofDoc.id,
     },
   });
-  await prisma.emdRecord.create({
+  await db.emdRecord.create({
     data: {
       tenderId: won.id,
       instrumentType: "ISB",
@@ -407,7 +407,7 @@ async function main() {
     },
   });
 
-  await prisma.tender.create({
+  await db.tender.create({
     data: {
       recordId: "CA-2026-0007",
       projectName: "Small ash lifting at a private siding",
@@ -439,7 +439,7 @@ async function main() {
     },
   });
 
-  const missed = await prisma.tender.create({
+  const missed = await db.tender.create({
     data: {
       recordId: "CA-2026-0008",
       projectName: "Ash pond desilting package",
@@ -467,7 +467,7 @@ async function main() {
     tender_id: missed.externalTenderId,
     bid_submission_end: "20/10/2026 15:00",
   });
-  await prisma.workflowTask.create({
+  await db.workflowTask.create({
     data: {
       tenderId: missed.id,
       branch: "COSTING",
@@ -482,10 +482,10 @@ async function main() {
       breachSent: true,
     },
   });
-  await prisma.bidSubmission.create({ data: { tenderId: missed.id, status: "NOT_BID_DEADLINE_MISSED", submitterId: "" } });
+  await db.bidSubmission.create({ data: { tenderId: missed.id, status: "NOT_BID_DEADLINE_MISSED", submitterId: "" } });
 
-  await prisma.appSettings.update({ where: { id: "default" }, data: { nextSequence: 8 } });
-  const portal = await prisma.portal.create({
+  await db.appSettings.update({ where: { id: "default" }, data: { nextSequence: 8 } });
+  const portal = await db.portal.create({
     data: {
       name: "GeM",
       url: "https://gem.gov.in",
@@ -497,7 +497,7 @@ async function main() {
       lastStatus: "NOT_SCANNED",
     },
   });
-  await prisma.crawlerException.create({
+  await db.crawlerException.create({
     data: {
       portalId: portal.id,
       kind: "Authentication required",

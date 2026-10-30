@@ -1,7 +1,7 @@
 import { businessMinutesBetween, dayLengthMinutes, formatDuration } from "./calendar";
 import { getCalendar, kickAutomation } from "./domain";
 import { CLOSED_OVERALL } from "./labels";
-import { prisma } from "./prisma";
+import { db } from "./db";
 
 async function calendar() {
   return getCalendar();
@@ -10,8 +10,8 @@ async function calendar() {
 export async function loadDashboard() {
   await kickAutomation();
   const cal = await calendar();
-  const tenders = await prisma.tender.findMany();
-  const overdueTasks = await prisma.workflowTask.findMany({
+  const tenders = await db.tender.findMany();
+  const overdueTasks = await db.workflowTask.findMany({
     where: { status: "OVERDUE" },
     include: { tender: true },
     orderBy: { dueAt: "asc" },
@@ -47,7 +47,7 @@ export async function loadDashboard() {
     won: tenders.filter((tender) => tender.outcome === "WON").length,
     lost: tenders.filter((tender) => tender.outcome === "LOST").length,
     cancelled: tenders.filter((tender) => tender.outcome === "CANCELLED").length,
-    overdueCount: await prisma.workflowTask.count({ where: { status: "OVERDUE" } }),
+    overdueCount: await db.workflowTask.count({ where: { status: "OVERDUE" } }),
     overdueTasks,
     upcoming,
     recent: tenders.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()).slice(0, 6),
@@ -59,21 +59,21 @@ export async function loadReports() {
   await kickAutomation();
   const cal = await calendar();
   const day = dayLengthMinutes(cal);
-  const users = await prisma.user.findMany();
+  const users = await db.user.findMany();
   const nameOf = new Map(users.map((user) => [user.id, user.name]));
-  const tenders = await prisma.tender.findMany({ include: { approvals: true, tasks: true, emd: true } });
+  const tenders = await db.tender.findMany({ include: { approvals: true, tasks: true, emd: true } });
   const approvals = tenders.flatMap((tender) =>
     tender.approvals
-      .filter((approval) => approval.stage === "RELEVANCE" && approval.decision === "APPROVED")
-      .map((approval) => businessMinutesBetween(tender.createdAt, approval.createdAt, cal)),
+      .filter((approval: { stage: string; decision: string; createdAt: Date }) => approval.stage === "RELEVANCE" && approval.decision === "APPROVED")
+      .map((approval: { createdAt: Date }) => businessMinutesBetween(tender.createdAt, approval.createdAt, cal)),
   );
   const costing = tenders.flatMap((tender) => {
-    const start = tender.approvals.find((approval) => approval.stage === "RELEVANCE" && approval.decision === "APPROVED");
-    const end = tender.approvals.find((approval) => approval.stage === "DEPT_APPROVAL" && approval.decision === "APPROVED");
+    const start = tender.approvals.find((approval: { stage: string; decision: string; createdAt: Date }) => approval.stage === "RELEVANCE" && approval.decision === "APPROVED");
+    const end = tender.approvals.find((approval: { stage: string; decision: string; createdAt: Date }) => approval.stage === "DEPT_APPROVAL" && approval.decision === "APPROVED");
     return start && end ? [businessMinutesBetween(start.createdAt, end.createdAt, cal)] : [];
   });
   const emd = tenders.flatMap((tender) => {
-    const start = tender.approvals.find((approval) => approval.stage === "RELEVANCE" && approval.decision === "APPROVED");
+    const start = tender.approvals.find((approval: { stage: string; decision: string; createdAt: Date }) => approval.stage === "RELEVANCE" && approval.decision === "APPROVED");
     return start && tender.emd?.completedAt ? [businessMinutesBetween(start.createdAt, tender.emd.completedAt, cal)] : [];
   });
   const judged = tenders.flatMap((tender) => tender.tasks).filter((task) => task.slaMinutes > 0 && (task.status === "COMPLETED" || task.status === "OVERDUE" || (task.status === "CANCELLED" && task.wasOverdue)));
@@ -92,7 +92,7 @@ export async function loadReports() {
       byOwner.set(id, row);
     }
   }
-  const open = await prisma.workflowTask.findMany({ where: { status: { in: ["NOT_STARTED", "IN_PROGRESS", "OVERDUE", "RETURNED_FOR_REVISION"] } } });
+  const open = await db.workflowTask.findMany({ where: { status: { in: ["NOT_STARTED", "IN_PROGRESS", "OVERDUE", "RETURNED_FOR_REVISION"] } } });
   for (const task of open) {
     for (const id of JSON.parse(task.assigneeIds) as string[]) {
       const row = byOwner.get(id) ?? { onTime: 0, total: 0, open: 0 };
@@ -101,7 +101,7 @@ export async function loadReports() {
     }
   }
   const average = (values: number[]) => (values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null);
-  const internalMisses = tenders.filter((tender) => tender.deadlineMissed && tender.tasks.some((task) => task.wasOverdue)).length;
+  const internalMisses = tenders.filter((tender) => tender.deadlineMissed && tender.tasks.some((task: { wasOverdue: boolean }) => task.wasOverdue)).length;
   const decided = tenders.filter((tender) => tender.outcome === "WON" || tender.outcome === "LOST");
   const pipeline = Object.entries(
     tenders.reduce<Record<string, number>>((counts, tender) => {

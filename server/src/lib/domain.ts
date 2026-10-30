@@ -1,4 +1,4 @@
-import type { Prisma, WorkflowTask } from "@prisma/client";
+import { db, type Lazy, type Tx, type WorkflowTask } from "./db";
 import { addBusinessMinutes, businessMinutesBetween, dayLengthMinutes, formatWhen, parseClock, type Calendar } from "./calendar";
 import { effectiveValue, extractFields, parseDateTime, parseInr, type FieldHit, type PageText } from "./extract";
 import { NOT_FOUND, TENDER_FIELDS } from "./fields";
@@ -7,7 +7,6 @@ import { allowedUpload, pagesFromBuffer, sha256, storeFile } from "./files";
 import { extractUploadedFile, overlayHits } from "./ocr";
 import { CLOSED_OVERALL, CREATOR_ROLES, EDITOR_ROLES, MANAGER_ROLES, OPEN_TASK } from "./labels";
 import { emailsFor, notifyAddresses } from "./notify";
-import { prisma } from "./prisma";
 
 export class WorkflowError extends Error {
   constructor(message: string) {
@@ -23,8 +22,6 @@ export type Actor = {
   role: string;
   personKey: string;
 };
-
-type Tx = Prisma.TransactionClient;
 
 type FieldRow = {
   fieldKey: string;
@@ -46,14 +43,14 @@ const POLICY_FOR: Record<string, string> = {
 const EMD_READY = ["COMPLETED", "SUBMITTED_EVIDENCE"];
 
 export async function getCalendar(): Promise<Calendar> {
-  const settings = await prisma.calendarSettings.findUnique({ where: { id: "default" } });
-  const holidays = await prisma.holiday.findMany();
+  const settings = await db.calendarSettings.findUnique({ where: { id: "default" } });
+  const holidays = await db.holiday.findMany();
   const startMin = parseClock(settings?.workStart ?? "09:00");
   const endMin = parseClock(settings?.workEnd ?? "18:00");
   const days = (settings?.workingDays ?? "1,2,3,4,5")
     .split(",")
-    .map((day) => Number(day))
-    .filter((day) => day >= 1 && day <= 7);
+    .map((day: string) => Number(day))
+    .filter((day: number) => day >= 1 && day <= 7);
   return {
     timeZone: settings?.timezone ?? "Asia/Kolkata",
     startMin,
@@ -64,14 +61,14 @@ export async function getCalendar(): Promise<Calendar> {
 }
 
 async function minutesFor(stage: string, calendar: Calendar) {
-  const policy = await prisma.slaPolicy.findUnique({ where: { stage: POLICY_FOR[stage] ?? stage } });
+  const policy = await db.slaPolicy.findUnique({ where: { stage: POLICY_FOR[stage] ?? stage } });
   if (!policy) return dayLengthMinutes(calendar);
   if (policy.durationUnit === "HOURS") return policy.durationValue * 60;
   return policy.durationValue * dayLengthMinutes(calendar);
 }
 
 async function mustUser(personKey: string) {
-  const user = await prisma.user.findFirst({ where: { personKey, active: true } });
+  const user = await db.user.findFirst({ where: { personKey, active: true } });
   if (!user) throw new WorkflowError(`No active user is configured for ${personKey}.`);
   return user;
 }
@@ -93,7 +90,7 @@ function assertOpen(actor: Actor, task: { assigneeIds: string; status: string })
 }
 
 async function audit(
-  client: Tx | typeof prisma,
+  client: Tx,
   entry: {
     tenderId?: string;
     actor: Actor;
@@ -200,17 +197,17 @@ async function plannedDue(stage: string, calendar: Calendar, explicit?: Date | n
 }
 
 async function refreshMaster(tenderId: string, actor?: Actor) {
-  const tender = await prisma.tender.findUnique({ where: { id: tenderId }, include: { fields: true, emd: true } });
+  const tender = await db.tender.findUnique({ where: { id: tenderId }, include: { fields: true, emd: true } });
   if (!tender) return;
   const calendar = await getCalendar();
-  const fieldValue = (key: string) => valueOf(tender.fields.find((field) => field.fieldKey === key));
+  const fieldValue = (key: string) => valueOf(tender.fields.find((field: FieldRow) => field.fieldKey === key));
   const nextDeadline = parseDateTime(fieldValue("bid_submission_end"), calendar.timeZone);
   const previous = tender.bidSubmissionEnd?.getTime() ?? null;
   const next = nextDeadline?.getTime() ?? null;
   const exemption = fieldValue("emd_exemption");
   const emdFromRecord = tender.emd?.completedAt ? parseInr(tender.emd.amount) : null;
   const emdExposure = emdFromRecord != null ? emdFromRecord : exemption === "Yes" ? 0 : parseInr(fieldValue("emd_fee"));
-  await prisma.tender.update({
+  await db.tender.update({
     where: { id: tenderId },
     data: {
       projectName: fieldValue("project_name") || tender.projectName,
@@ -227,11 +224,11 @@ async function refreshMaster(tenderId: string, actor?: Actor) {
   });
   if (previous && next && previous !== next) {
     const detail = `${formatWhen(new Date(previous), calendar.timeZone)} → ${formatWhen(nextDeadline, calendar.timeZone)}`;
-    await prisma.workflowTask.updateMany({
+    await db.workflowTask.updateMany({
       where: { tenderId, stage: "BID_SUBMISSION", status: { in: OPEN_TASK } },
       data: { dueAt: nextDeadline },
     });
-    const watchers = await prisma.user.findMany({
+    const watchers = await db.user.findMany({
       where: { active: true, role: { in: ["COORDINATOR", "REVIEWER", "BID_SUBMITTER", "ADMIN"] } },
     });
     await notifyAddresses({
@@ -241,15 +238,15 @@ async function refreshMaster(tenderId: string, actor?: Actor) {
       extra: { detail, dueAt: formatWhen(nextDeadline, calendar.timeZone) },
     });
     if (actor) {
-      await audit(prisma, { tenderId, actor, action: "Deadline changed", entity: "Tender", detail });
+      await audit(db, { tenderId, actor, action: "Deadline changed", entity: "Tender", detail });
     }
   }
 }
 
 export async function applyExtraction(tenderId: string, pages: PageText[], actor: Actor, ocrHits?: Record<string, FieldHit>) {
   const hits = overlayHits(extractFields(pages), ocrHits);
-  const fields = await prisma.tenderField.findMany({ where: { tenderId } });
-  const writes: Prisma.PrismaPromise<unknown>[] = [];
+  const fields = await db.tenderField.findMany({ where: { tenderId } });
+  const writes: Lazy<unknown>[] = [];
   for (const field of fields) {
     const hit = hits[field.fieldKey];
     if (!hit || hit.status === "MISSING") continue;
@@ -257,7 +254,7 @@ export async function applyExtraction(tenderId: string, pages: PageText[], actor
       const current = effectiveValue(field);
       const differs = Boolean(hit.value && current && current.trim().toLowerCase() !== hit.value.trim().toLowerCase());
       writes.push(
-        prisma.tenderField.update({
+        db.tenderField.update({
           where: { id: field.id },
           data: differs
             ? {
@@ -276,7 +273,7 @@ export async function applyExtraction(tenderId: string, pages: PageText[], actor
     }
     if (field.extractedValue && field.extractedValue.trim().toLowerCase() !== hit.value.trim().toLowerCase()) {
       writes.push(
-        prisma.tenderField.update({
+        db.tenderField.update({
           where: { id: field.id },
           data: {
             validationStatus: "CONFLICT",
@@ -288,7 +285,7 @@ export async function applyExtraction(tenderId: string, pages: PageText[], actor
       continue;
     }
     writes.push(
-      prisma.tenderField.update({
+      db.tenderField.update({
         where: { id: field.id },
         data: {
           extractedValue: hit.value,
@@ -301,10 +298,10 @@ export async function applyExtraction(tenderId: string, pages: PageText[], actor
       }),
     );
   }
-  if (writes.length) await prisma.$transaction(writes);
+  if (writes.length) await db.$transaction(writes);
   await refreshMaster(tenderId, actor);
   const fromOcr = Object.values(ocrHits ?? {}).filter((hit) => hit.value).length;
-  await audit(prisma, {
+  await audit(db, {
     tenderId,
     actor,
     action: "Extracted tender fields",
@@ -317,7 +314,7 @@ export async function applyExtraction(tenderId: string, pages: PageText[], actor
 
 async function rememberManual(tenderId: string, key: string, value: string, actor: Actor) {
   if (!value.trim()) return;
-  await prisma.tenderField.update({
+  await db.tenderField.update({
     where: { tenderId_fieldKey: { tenderId, fieldKey: key } },
     data: {
       correctedValue: value.trim(),
@@ -387,7 +384,7 @@ export async function createTender(
   }
   const hashes = prepared.map((item) => item.hash);
   const hashDup = hashes.length
-    ? await prisma.tenderDocument.findFirst({ where: { sha256: { in: hashes } }, include: { tender: true } })
+    ? await db.tenderDocument.findFirst({ where: { sha256: { in: hashes } }, include: { tender: true } })
     : null;
   if (hashDup && !CLOSED_OVERALL.includes(hashDup.tender.overallStatus)) {
     return { duplicate: true as const, tenderId: hashDup.tenderId, recordId: hashDup.tender.recordId };
@@ -413,7 +410,7 @@ export async function createTender(
     if (!hit || hit.status === "MISSING" || hit.status === "CONFLICT") return "";
     return hit.value;
   };
-  const openTenders = await prisma.tender.findMany({
+  const openTenders = await db.tender.findMany({
     where: { overallStatus: { notIn: CLOSED_OVERALL } },
     select: { id: true, recordId: true, tenderRef: true, externalTenderId: true, clientName: true, portalName: true },
   });
@@ -433,13 +430,13 @@ export async function createTender(
     return { duplicate: true as const, tenderId: logicalDup.id, recordId: logicalDup.recordId };
   }
 
-  const settings = await prisma.appSettings.update({
+  const settings = await db.appSettings.update({
     where: { id: "default" },
     data: { nextSequence: { increment: 1 } },
   });
   const year = new Intl.DateTimeFormat("en", { timeZone: "Asia/Kolkata", year: "numeric" }).format(new Date());
   const recordId = `${settings.recordPrefix}-${year}-${String(settings.nextSequence).padStart(4, "0")}`;
-  const tender = await prisma.tender.create({
+  const tender = await db.tender.create({
     data: {
       recordId,
       projectName: input.projectName.trim(),
@@ -476,7 +473,7 @@ export async function createTender(
   for (const item of prepared) {
     if (!item.extracted.failed) anyText = true;
     if (item.ocrNote) ocrNotes.push(item.ocrNote);
-    const document = await prisma.tenderDocument.create({
+    const document = await db.tenderDocument.create({
       data: {
         tenderId: tender.id,
         fileName: item.file.name,
@@ -520,8 +517,8 @@ export async function createTender(
   await refreshMaster(tender.id, actor);
 
   const calendar = await getCalendar();
-  const coordinator = await prisma.user.findFirst({ where: { personKey: "coordinator", active: true } });
-  const vishesh = await prisma.user.findFirst({ where: { personKey: "vishesh", active: true } });
+  const coordinator = await db.user.findFirst({ where: { personKey: "coordinator", active: true } });
+  const vishesh = await db.user.findFirst({ where: { personKey: "vishesh", active: true } });
   const validationOwners =
     input.source === "CRAWLER"
       ? [vishesh?.id].filter((id): id is string => Boolean(id))
@@ -530,7 +527,7 @@ export async function createTender(
 
   const validationPlan = await plannedDue("DATA_VALIDATION", calendar);
   const exceptionPlan = await plannedDue("OCR_EXCEPTION", calendar);
-  const created = await prisma.$transaction(async (tx) => {
+  const created = await db.$transaction(async (tx) => {
     await tx.tender.update({
       where: { id: tender.id },
       data: { overallStatus: "DATA_VALIDATION_REQUIRED", ocrStatus: ocrFailed ? "FAILED" : "COMPLETED" },
@@ -584,7 +581,7 @@ function canEdit(actor: Actor) {
 /** Editors, or whoever holds an open validation or extraction-exception task on this tender (usually the uploader). */
 export async function canEditFields(actor: Actor, tenderId: string) {
   if (canEdit(actor)) return true;
-  const task = await prisma.workflowTask.findFirst({
+  const task = await db.workflowTask.findFirst({
     where: {
       tenderId,
       stage: { in: ["DATA_VALIDATION", "OCR_EXCEPTION"] },
@@ -596,7 +593,7 @@ export async function canEditFields(actor: Actor, tenderId: string) {
 }
 
 export async function updateFields(actor: Actor, tenderId: string, values: Record<string, string>) {
-  const tender = await prisma.tender.findUnique({ where: { id: tenderId }, include: { fields: true } });
+  const tender = await db.tender.findUnique({ where: { id: tenderId }, include: { fields: true } });
   if (!tender) throw new WorkflowError("Tender not found.");
   if (CLOSED_OVERALL.includes(tender.overallStatus)) throw new WorkflowError("Closed tenders keep their recorded fields.");
   if (!(await canEditFields(actor, tenderId))) throw new WorkflowError("Only the Tender Coordinator, a reviewer, or the person validating this tender can correct its fields.");
@@ -607,7 +604,7 @@ export async function updateFields(actor: Actor, tenderId: string, values: Recor
     const previous = effectiveValue(field);
     if (next === previous) continue;
     const status = next === NOT_FOUND ? "NOT_FOUND" : next ? "VALIDATED" : "MISSING";
-    await prisma.tenderField.update({
+    await db.tenderField.update({
       where: { id: field.id },
       data: {
         correctedValue: next,
@@ -620,7 +617,7 @@ export async function updateFields(actor: Actor, tenderId: string, values: Recor
     changes.push(`${field.label}: ${previous || "empty"} → ${next || "empty"}`);
   }
   if (changes.length) {
-    await audit(prisma, {
+    await audit(db, {
       tenderId,
       actor,
       action: "Corrected tender fields",
@@ -644,14 +641,14 @@ export async function updateFields(actor: Actor, tenderId: string, values: Recor
 
 export async function submitForRelevance(actor: Actor, taskId: string, confirmed: boolean) {
   if (!confirmed) throw new WorkflowError("Confirm that you have reviewed the extracted fields.");
-  const task = await prisma.workflowTask.findUnique({ where: { id: taskId }, include: { tender: { include: { fields: true } } } });
+  const task = await db.workflowTask.findUnique({ where: { id: taskId }, include: { tender: { include: { fields: true } } } });
   if (!task || task.stage !== "DATA_VALIDATION") throw new WorkflowError("Validation task not found.");
   assertOpen(actor, task);
-  const conflicts = task.tender.fields.filter((field) => field.validationStatus === "CONFLICT");
+  const conflicts = task.tender.fields.filter((field: { validationStatus: string; label: string }) => field.validationStatus === "CONFLICT");
   if (conflicts.length) {
-    throw new WorkflowError(`Resolve conflicting values before relevance review: ${conflicts.map((field) => field.label).join(", ")}.`);
+    throw new WorkflowError(`Resolve conflicting values before relevance review: ${conflicts.map((field: { label: string }) => field.label).join(", ")}.`);
   }
-  const current = (key: string) => valueOf(task.tender.fields.find((field) => field.fieldKey === key));
+  const current = (key: string) => valueOf(task.tender.fields.find((field: { fieldKey: string }) => field.fieldKey === key));
   if (!current("project_name")) throw new WorkflowError("Name of the Project is required before relevance review.");
   if (!current("client_name")) throw new WorkflowError("Client name is required before relevance review.");
   if (!current("bid_submission_end") || !task.tender.bidSubmissionEnd) {
@@ -666,7 +663,7 @@ export async function submitForRelevance(actor: Actor, taskId: string, confirmed
   const vishesh = await mustUser("vishesh");
   const ranjana = await mustUser("ranjana");
   const reviewers = task.tender.source === "CRAWLER" ? [vishesh.id] : [vishesh.id, ranjana.id];
-  const relevance = await prisma.$transaction(async (tx) => {
+  const relevance = await db.$transaction(async (tx) => {
     const closed = await tx.workflowTask.updateMany({
       where: { id: task.id, status: { in: OPEN_TASK } },
       data: { status: "COMPLETED", completedAt: new Date(), completedById: actor.id, decision: "SUBMITTED", comments: "Extraction reviewed." },
@@ -705,13 +702,13 @@ export async function submitForRelevance(actor: Actor, taskId: string, confirmed
 }
 
 export async function decideRelevance(actor: Actor, taskId: string, decision: "APPROVED" | "REJECTED", comments: string) {
-  const task = await prisma.workflowTask.findUnique({ where: { id: taskId }, include: { tender: { include: { fields: true } } } });
+  const task = await db.workflowTask.findUnique({ where: { id: taskId }, include: { tender: { include: { fields: true } } } });
   if (!task || task.stage !== "RELEVANCE") throw new WorkflowError("Relevance task not found.");
   assertOpen(actor, task);
   if (decision === "REJECTED" && comments.trim().length < 3) throw new WorkflowError("Rejection comments are required.");
   const calendar = await getCalendar();
   if (decision === "REJECTED") {
-    await prisma.$transaction(async (tx) => {
+    await db.$transaction(async (tx) => {
       const closed = await tx.workflowTask.updateMany({
         where: { id: task.id, status: { in: OPEN_TASK } },
         data: { status: "COMPLETED", decision: "REJECTED", comments: comments.trim(), completedById: actor.id, completedAt: new Date() },
@@ -751,13 +748,13 @@ export async function decideRelevance(actor: Actor, taskId: string, decision: "A
   const owners = await Promise.all(plan.owners.map((key) => mustUser(key)));
   const ranjana = await mustUser("ranjana");
   const sundar = await mustUser("sundarlingam");
-  const sales = await prisma.user.findMany({ where: { role: "SALES", active: true } });
-  const heads = await prisma.user.findMany({ where: { role: "DEPT_HEAD", active: true } });
+  const sales = await db.user.findMany({ where: { role: "SALES", active: true } });
+  const heads = await db.user.findMany({ where: { role: "DEPT_HEAD", active: true } });
   if (!sales.length) throw new WorkflowError("Add an active Sales user before approving tenders.");
   if (!heads.length) throw new WorkflowError("Add an active Department Head before approving tenders.");
   const draft = await plannedDue("DRAFT_COSTING", calendar);
   const emd = await plannedDue(plan.stage, calendar);
-  const tasks = await prisma.$transaction(async (tx) => {
+  const tasks = await db.$transaction(async (tx) => {
     const closed = await tx.workflowTask.updateMany({
       where: { id: task.id, status: { in: OPEN_TASK } },
       data: { status: "COMPLETED", decision: "APPROVED", comments: comments.trim(), completedById: actor.id, completedAt: new Date() },
@@ -831,15 +828,15 @@ export async function completeCosting(
   taskId: string,
   input: { intent: "complete" | "return"; notes: string; amount: string; file?: { name: string; type: string; buffer: Buffer } },
 ) {
-  const task = await prisma.workflowTask.findUnique({ where: { id: taskId } });
+  const task = await db.workflowTask.findUnique({ where: { id: taskId } });
   if (!task || !COSTING_DOC[task.stage]) throw new WorkflowError("Costing task not found.");
   assertOpen(actor, task);
   if (input.notes.trim().length < 3) throw new WorkflowError("Record the costing assumptions or the reason for return.");
   const calendar = await getCalendar();
   if (input.intent === "return") {
-    const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
+    const settings = await db.appSettings.findUnique({ where: { id: "default" } });
     const plan = settings?.revisionResetsSla === false ? { dueAt: task.dueAt, slaMinutes: task.slaMinutes } : await plannedDue(task.stage, calendar);
-    const returned = await prisma.workflowTask.updateMany({
+    const returned = await db.workflowTask.updateMany({
       where: { id: task.id, status: { in: OPEN_TASK } },
       data: {
         status: "RETURNED_FOR_REVISION",
@@ -854,8 +851,8 @@ export async function completeCosting(
       },
     });
     if (returned.count !== 1) throw new WorkflowError("This costing task was already completed.");
-    await prisma.tender.update({ where: { id: task.tenderId }, data: { costingStatus: "RETURNED" } });
-    await audit(prisma, { tenderId: task.tenderId, actor, action: "Returned costing for revision", entity: "WorkflowTask", detail: input.notes.trim() });
+    await db.tender.update({ where: { id: task.tenderId }, data: { costingStatus: "RETURNED" } });
+    await audit(db, { tenderId: task.tenderId, actor, action: "Returned costing for revision", entity: "WorkflowTask", detail: input.notes.trim() });
     return;
   }
   if (!input.file) throw new WorkflowError("Attach the costing sheet before completing this task.");
@@ -863,15 +860,15 @@ export async function completeCosting(
   const amount = parseInr(input.amount);
   if (task.stage === "FINAL_COSTING" && amount == null) throw new WorkflowError("Enter the final costing amount as a number, without crore or lakh wording.");
   const storedPath = await storeFile(task.tenderId, input.file.name, input.file.buffer);
-  const version = (await prisma.costingRecord.count({ where: { tenderId: task.tenderId } })) + 1;
+  const version = (await db.costingRecord.count({ where: { tenderId: task.tenderId } })) + 1;
   const nextStage =
     task.stage === "DRAFT_COSTING"
-      ? { stage: "SALES_INPUT", title: "Sales costing input", status: "SALES_PENDING", owners: (await prisma.user.findMany({ where: { role: "SALES", active: true } })).map((user) => user.id) }
+      ? { stage: "SALES_INPUT", title: "Sales costing input", status: "SALES_PENDING", owners: (await db.user.findMany({ where: { role: "SALES", active: true } })).map((user) => user.id) }
       : task.stage === "SALES_INPUT"
         ? { stage: "FINAL_COSTING", title: "Final costing", status: "FINAL_IN_PROGRESS", owners: [(await mustUser("vishesh")).id] }
-        : { stage: "DEPT_APPROVAL", title: "Department head approval", status: "PENDING_DEPT", owners: (await prisma.user.findMany({ where: { role: "DEPT_HEAD", active: true } })).map((user) => user.id) };
+        : { stage: "DEPT_APPROVAL", title: "Department head approval", status: "PENDING_DEPT", owners: (await db.user.findMany({ where: { role: "DEPT_HEAD", active: true } })).map((user) => user.id) };
   const plan = await plannedDue(nextStage.stage, calendar);
-  const created = await prisma.$transaction(async (tx) => {
+  const created = await db.$transaction(async (tx) => {
     const document = await tx.tenderDocument.create({
       data: {
         tenderId: task.tenderId,
@@ -936,14 +933,14 @@ export async function decideDepartment(
   comments: string,
   returnStage = "FINAL_COSTING",
 ) {
-  const task = await prisma.workflowTask.findUnique({ where: { id: taskId } });
+  const task = await db.workflowTask.findUnique({ where: { id: taskId } });
   if (!task || task.stage !== "DEPT_APPROVAL") throw new WorkflowError("Department approval task not found.");
   assertOpen(actor, task);
   if (decision !== "APPROVED" && comments.trim().length < 3) throw new WorkflowError("Comments are required when costing is rejected or returned.");
   const calendar = await getCalendar();
-  const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
+  const settings = await db.appSettings.findUnique({ where: { id: "default" } });
   if (decision === "APPROVED") {
-    await prisma.$transaction(async (tx) => {
+    await db.$transaction(async (tx) => {
       const closed = await tx.workflowTask.updateMany({
         where: { id: task.id, status: { in: OPEN_TASK } },
         data: { status: "COMPLETED", decision: "APPROVED", comments: comments.trim(), completedById: actor.id, completedAt: new Date() },
@@ -964,7 +961,7 @@ export async function decideDepartment(
     const vishesh = await mustUser("vishesh");
     const coordinator = await mustUser("coordinator");
     const plan = await plannedDue("BUSINESS_DECISION", calendar);
-    const follow = await prisma.$transaction(async (tx) => {
+    const follow = await db.$transaction(async (tx) => {
       const closed = await tx.workflowTask.updateMany({
         where: { id: task.id, status: { in: OPEN_TASK } },
         data: { status: "REJECTED", decision: "REJECTED", comments: comments.trim(), completedById: actor.id, completedAt: new Date() },
@@ -995,13 +992,13 @@ export async function decideDepartment(
       stage === "DRAFT_COSTING"
         ? [(await mustUser("ranjana")).id, (await mustUser("sundarlingam")).id]
         : stage === "SALES_INPUT"
-          ? (await prisma.user.findMany({ where: { role: "SALES", active: true } })).map((user) => user.id)
+          ? (await db.user.findMany({ where: { role: "SALES", active: true } })).map((user) => user.id)
           : [(await mustUser("vishesh")).id];
     const plan = settings?.revisionResetsSla === false && stage === "FINAL_COSTING"
       ? { dueAt: task.dueAt, slaMinutes: task.slaMinutes }
       : await plannedDue(stage, calendar);
     const title = stage === "DRAFT_COSTING" ? "Draft costing" : stage === "SALES_INPUT" ? "Sales costing input" : "Final costing";
-    const follow = await prisma.$transaction(async (tx) => {
+    const follow = await db.$transaction(async (tx) => {
       const closed = await tx.workflowTask.updateMany({
         where: { id: task.id, status: { in: OPEN_TASK } },
         data: { status: "COMPLETED", decision: "RETURNED", comments: comments.trim(), completedById: actor.id, completedAt: new Date() },
@@ -1031,7 +1028,7 @@ export async function decideDepartment(
     tenderId: task.tenderId,
     taskId: task.id,
     event: "APPROVAL_DECISION",
-    addresses: await emailsFor([actor.id, (await prisma.tender.findUnique({ where: { id: task.tenderId } }))?.createdById || ""]),
+    addresses: await emailsFor([actor.id, (await db.tender.findUnique({ where: { id: task.tenderId } }))?.createdById || ""]),
     extra: { decision: decision === "RETURNED" ? "Returned for revision" : decision === "APPROVED" ? "Approved" : "Rejected", comments: comments.trim() },
   });
 }
@@ -1052,15 +1049,15 @@ export async function saveEmdProgress(
     file?: { name: string; type: string; buffer: Buffer };
   },
 ) {
-  const task = await prisma.workflowTask.findUnique({ where: { id: taskId }, include: { tender: { include: { emd: true } } } });
+  const task = await db.workflowTask.findUnique({ where: { id: taskId }, include: { tender: { include: { emd: true } } } });
   if (!task || task.branch !== "EMD" || task.stage === "EMD_CLARIFICATION") throw new WorkflowError("EMD task not found.");
   assertOpen(actor, task);
-  const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
+  const settings = await db.appSettings.findUnique({ where: { id: "default" } });
   let documentId = task.tender.emd?.documentId || "";
   if (input.file) {
     if (!allowedUpload(input.file.name, input.file.type)) throw new WorkflowError("Evidence must be a PDF, text file, or image.");
     const storedPath = await storeFile(task.tenderId, input.file.name, input.file.buffer);
-    const document = await prisma.tenderDocument.create({
+    const document = await db.tenderDocument.create({
       data: {
         tenderId: task.tenderId,
         fileName: input.file.name,
@@ -1092,16 +1089,16 @@ export async function saveEmdProgress(
 
   const bothRequired = Boolean(settings?.bgRequiresBoth && task.stage === "EMD_BG" && input.intent === "complete");
   if (bothRequired) {
-    const prior = await prisma.taskAction.findFirst({ where: { taskId: task.id, userId: actor.id, action: "COMPLETE" } });
+    const prior = await db.taskAction.findFirst({ where: { taskId: task.id, userId: actor.id, action: "COMPLETE" } });
     if (!prior) {
-      await prisma.taskAction.create({
+      await db.taskAction.create({
         data: { taskId: task.id, userId: actor.id, action: "COMPLETE", comments: input.notes.trim() },
       });
     }
-    const actions = await prisma.taskAction.findMany({ where: { taskId: task.id, action: "COMPLETE" } });
+    const actions = await db.taskAction.findMany({ where: { taskId: task.id, action: "COMPLETE" } });
     const done = new Set(actions.map((action) => action.userId));
     if (!parseIds(task.assigneeIds).every((id) => done.has(id))) {
-      await prisma.emdRecord.update({
+      await db.emdRecord.update({
         where: { tenderId: task.tenderId },
         data: {
           amount: input.amount.trim(),
@@ -1115,9 +1112,9 @@ export async function saveEmdProgress(
           authorityNote: input.authorityNote.trim(),
         },
       });
-      await prisma.workflowTask.update({ where: { id: task.id }, data: { status: "IN_PROGRESS", comments: input.notes.trim() } });
-      await prisma.tender.update({ where: { id: task.tenderId }, data: { emdStatus: "VERIFICATION_PENDING" } });
-      await audit(prisma, { tenderId: task.tenderId, actor, action: "Verified part of the bank guarantee", entity: "EmdRecord", detail: "Waiting for the second Accounts owner." });
+      await db.workflowTask.update({ where: { id: task.id }, data: { status: "IN_PROGRESS", comments: input.notes.trim() } });
+      await db.tender.update({ where: { id: task.tenderId }, data: { emdStatus: "VERIFICATION_PENDING" } });
+      await audit(db, { tenderId: task.tenderId, actor, action: "Verified part of the bank guarantee", entity: "EmdRecord", detail: "Waiting for the second Accounts owner." });
       return;
     }
   }
@@ -1127,7 +1124,7 @@ export async function saveEmdProgress(
     : input.submittedToAuthority
       ? "SUBMITTED_EVIDENCE"
       : "COMPLETED";
-  await prisma.emdRecord.update({
+  await db.emdRecord.update({
     where: { tenderId: task.tenderId },
     data: {
       amount: input.amount.trim(),
@@ -1144,23 +1141,23 @@ export async function saveEmdProgress(
     },
   });
   if (input.intent === "save") {
-    await prisma.workflowTask.updateMany({
+    await db.workflowTask.updateMany({
       where: { id: task.id, status: { in: OPEN_TASK } },
       data: { status: "IN_PROGRESS", comments: input.notes.trim() },
     });
-    await prisma.tender.update({ where: { id: task.tenderId }, data: { emdStatus: emdStatus === "PENDING_BG" || emdStatus === "PENDING_ISB" || emdStatus === "EXEMPTION_VERIFICATION" ? "IN_PROGRESS" : emdStatus } });
+    await db.tender.update({ where: { id: task.tenderId }, data: { emdStatus: emdStatus === "PENDING_BG" || emdStatus === "PENDING_ISB" || emdStatus === "EXEMPTION_VERIFICATION" ? "IN_PROGRESS" : emdStatus } });
     return;
   }
-  await prisma.workflowTask.updateMany({
+  await db.workflowTask.updateMany({
     where: { id: task.id, status: { in: OPEN_TASK } },
     data: { status: "COMPLETED", decision: "COMPLETED", comments: input.notes.trim(), completedById: actor.id, completedAt: new Date() },
   });
   const exposure = parseInr(input.amount);
-  await prisma.tender.update({
+  await db.tender.update({
     where: { id: task.tenderId },
     data: { emdStatus, emdExposure: task.stage === "EMD_EXEMPTION" ? 0 : exposure ?? undefined },
   });
-  await audit(prisma, { tenderId: task.tenderId, actor, action: "Completed EMD preparation", entity: "EmdRecord", detail: input.notes.trim() });
+  await audit(db, { tenderId: task.tenderId, actor, action: "Completed EMD preparation", entity: "EmdRecord", detail: input.notes.trim() });
   await notifyAddresses({
     tenderId: task.tenderId,
     taskId: task.id,
@@ -1172,7 +1169,7 @@ export async function saveEmdProgress(
 }
 
 export async function resolveEmdClarification(actor: Actor, taskId: string, choice: string, comments: string) {
-  const task = await prisma.workflowTask.findUnique({ where: { id: taskId } });
+  const task = await db.workflowTask.findUnique({ where: { id: taskId } });
   if (!task || task.stage !== "EMD_CLARIFICATION") throw new WorkflowError("Clarification task not found.");
   assertOpen(actor, task);
   if (comments.trim().length < 3) throw new WorkflowError("Record why this EMD type was selected.");
@@ -1188,7 +1185,7 @@ export async function resolveEmdClarification(actor: Actor, taskId: string, choi
     kind === "EXEMPTION" ? "Exemption" :
     kind === "DD" ? "Demand Draft" :
     kind === "ONLINE" ? "Online Payment" : "Other";
-  const follow = await prisma.$transaction(async (tx) => {
+  const follow = await db.$transaction(async (tx) => {
     const closed = await tx.workflowTask.updateMany({
       where: { id: task.id, status: { in: OPEN_TASK } },
       data: { status: "COMPLETED", decision: kind, comments: comments.trim(), completedById: actor.id, completedAt: new Date() },
@@ -1269,7 +1266,7 @@ export function readinessGaps(tender: ReadinessInput) {
 }
 
 export async function evaluateReadiness(tenderId: string) {
-  const tender = await prisma.tender.findUnique({ where: { id: tenderId }, include: { fields: true, documents: true } });
+  const tender = await db.tender.findUnique({ where: { id: tenderId }, include: { fields: true, documents: true } });
   if (!tender) return;
   if (["BID_EVIDENCE_RECORDED", "BID_EVIDENCE_PENDING", "WON", "LOST", "CANCELLED"].includes(tender.overallStatus)) return;
   if (CLOSED_OVERALL.includes(tender.overallStatus)) return;
@@ -1280,12 +1277,12 @@ export async function evaluateReadiness(tenderId: string) {
   const gaps = readinessGaps(tender);
   if (gaps.length) {
     if (tender.overallStatus === "READY_TO_BID") {
-      await prisma.tender.update({ where: { id: tender.id }, data: { overallStatus: "APPROVED_IN_PROGRESS" } });
+      await db.tender.update({ where: { id: tender.id }, data: { overallStatus: "APPROVED_IN_PROGRESS" } });
     }
     return;
   }
   const calendar = await getCalendar();
-  const task = await prisma.$transaction(async (tx) => {
+  const task = await db.$transaction(async (tx) => {
     await tx.tender.update({ where: { id: tender.id }, data: { overallStatus: "READY_TO_BID" } });
     return createTask(tx, {
       tenderId: tender.id,
@@ -1312,17 +1309,17 @@ export async function assignSubmitter(actor: Actor, tenderId: string, submitterI
   if (!MANAGER_ROLES.includes(actor.role)) {
     throw new WorkflowError("You cannot assign the bid submitter.");
   }
-  const submitter = await prisma.user.findFirst({ where: { id: submitterId, active: true } });
+  const submitter = await db.user.findFirst({ where: { id: submitterId, active: true } });
   if (!submitter) throw new WorkflowError("Choose an active user as the bid submitter.");
-  const tender = await prisma.tender.findUnique({ where: { id: tenderId } });
+  const tender = await db.tender.findUnique({ where: { id: tenderId } });
   if (!tender || CLOSED_OVERALL.includes(tender.overallStatus)) throw new WorkflowError("This tender cannot take a new submitter.");
-  await prisma.tender.update({ where: { id: tenderId }, data: { submitterId } });
-  await prisma.bidSubmission.upsert({
+  await db.tender.update({ where: { id: tenderId }, data: { submitterId } });
+  await db.bidSubmission.upsert({
     where: { tenderId },
     create: { tenderId, submitterId, status: tender.bidStatus },
     update: { submitterId },
   });
-  await audit(prisma, { tenderId, actor, action: "Assigned bid submitter", entity: "Tender", detail: submitter.name });
+  await audit(db, { tenderId, actor, action: "Assigned bid submitter", entity: "Tender", detail: submitter.name });
   await evaluateReadiness(tenderId);
 }
 
@@ -1338,12 +1335,12 @@ export async function recordBid(
     file?: { name: string; type: string; buffer: Buffer };
   },
 ) {
-  const tender = await prisma.tender.findUnique({ where: { id: tenderId }, include: { bid: true } });
+  const tender = await db.tender.findUnique({ where: { id: tenderId }, include: { bid: true } });
   if (!tender) throw new WorkflowError("Tender not found.");
   if (["WON", "LOST", "CANCELLED", "REJECTED_CLOSED", "CLOSED_BUSINESS", "NOT_BID_DEADLINE_MISSED"].includes(tender.overallStatus)) {
     throw new WorkflowError("This tender is already closed.");
   }
-  const task = await prisma.workflowTask.findFirst({
+  const task = await db.workflowTask.findFirst({
     where: { tenderId, stage: "BID_SUBMISSION", status: { in: OPEN_TASK } },
   });
   const assignee = task ? parseIds(task.assigneeIds).includes(actor.id) : tender.submitterId === actor.id;
@@ -1364,7 +1361,7 @@ export async function recordBid(
   if (input.file) {
     if (!allowedUpload(input.file.name, input.file.type)) throw new WorkflowError("Evidence must be a PDF, text file, or image.");
     const storedPath = await storeFile(tenderId, input.file.name, input.file.buffer);
-    const document = await prisma.tenderDocument.create({
+    const document = await db.tenderDocument.create({
       data: {
         tenderId,
         fileName: input.file.name,
@@ -1392,7 +1389,7 @@ export async function recordBid(
         : tender.overallStatus === "READY_TO_BID"
           ? "READY_TO_BID"
           : tender.overallStatus;
-  await prisma.bidSubmission.upsert({
+  await db.bidSubmission.upsert({
     where: { tenderId },
     create: {
       tenderId,
@@ -1415,14 +1412,14 @@ export async function recordBid(
       notes: input.notes.trim(),
     },
   });
-  await prisma.tender.update({ where: { id: tenderId }, data: { bidStatus: input.status, overallStatus: overall } });
+  await db.tender.update({ where: { id: tenderId }, data: { bidStatus: input.status, overallStatus: overall } });
   if (input.status === "BID_SUBMITTED_EVIDENCE_RECORDED" && task) {
-    await prisma.workflowTask.updateMany({
+    await db.workflowTask.updateMany({
       where: { id: task.id, status: { in: OPEN_TASK } },
       data: { status: "COMPLETED", decision: usingException ? "EXCEPTION" : "EVIDENCE", completedById: actor.id, completedAt: new Date(), comments: input.notes.trim() },
     });
   }
-  await audit(prisma, {
+  await audit(db, {
     tenderId,
     actor,
     action: "Recorded bid submission",
@@ -1430,7 +1427,7 @@ export async function recordBid(
     detail: `${input.status}${usingException ? ` exception: ${input.exceptionReason.trim()}` : ""}`,
   });
   if (input.status === "BID_SUBMITTED_EVIDENCE_PENDING") {
-    const coordinator = await prisma.user.findFirst({ where: { personKey: "coordinator", active: true } });
+    const coordinator = await db.user.findFirst({ where: { personKey: "coordinator", active: true } });
     await notifyAddresses({
       tenderId,
       event: "SUBMISSION_EVIDENCE_MISSING",
@@ -1444,9 +1441,9 @@ export async function closeBusiness(actor: Actor, tenderId: string, reason: stri
     throw new WorkflowError("You cannot close this tender.");
   }
   if (reason.trim().length < 3) throw new WorkflowError("Record the business reason for not bidding.");
-  const tender = await prisma.tender.findUnique({ where: { id: tenderId } });
+  const tender = await db.tender.findUnique({ where: { id: tenderId } });
   if (!tender || CLOSED_OVERALL.includes(tender.overallStatus)) throw new WorkflowError("This tender is already closed.");
-  await prisma.$transaction(async (tx) => {
+  await db.$transaction(async (tx) => {
     await tx.tender.update({
       where: { id: tenderId },
       data: { overallStatus: "CLOSED_BUSINESS", closureReason: reason.trim(), closedAt: new Date() },
@@ -1460,9 +1457,9 @@ export async function recordOutcome(actor: Actor, tenderId: string, outcome: "WO
   if (!MANAGER_ROLES.includes(actor.role)) {
     throw new WorkflowError("You cannot record the tender outcome.");
   }
-  const tender = await prisma.tender.findUnique({ where: { id: tenderId } });
+  const tender = await db.tender.findUnique({ where: { id: tenderId } });
   if (!tender) throw new WorkflowError("Tender not found.");
-  await prisma.$transaction(async (tx) => {
+  await db.$transaction(async (tx) => {
     await tx.tender.update({
       where: { id: tenderId },
       data: {
@@ -1479,15 +1476,15 @@ export async function recordOutcome(actor: Actor, tenderId: string, outcome: "WO
 }
 
 export async function completeException(actor: Actor, taskId: string, comments: string) {
-  const task = await prisma.workflowTask.findUnique({ where: { id: taskId } });
+  const task = await db.workflowTask.findUnique({ where: { id: taskId } });
   if (!task || task.stage !== "OCR_EXCEPTION") throw new WorkflowError("Exception task not found.");
   assertOpen(actor, task);
   if (comments.trim().length < 3) throw new WorkflowError("Record how the extraction failure was handled.");
-  await prisma.workflowTask.updateMany({
+  await db.workflowTask.updateMany({
     where: { id: task.id, status: { in: OPEN_TASK } },
     data: { status: "COMPLETED", comments: comments.trim(), completedById: actor.id, completedAt: new Date(), decision: "HANDLED" },
   });
-  await audit(prisma, { tenderId: task.tenderId, actor, action: "Closed extraction exception", entity: "WorkflowTask", detail: comments.trim() });
+  await audit(db, { tenderId: task.tenderId, actor, action: "Closed extraction exception", entity: "WorkflowTask", detail: comments.trim() });
 }
 
 export async function addDocuments(
@@ -1497,7 +1494,7 @@ export async function addDocuments(
   docType = "SUPPORTING",
 ) {
   if (!files.length) throw new WorkflowError("Choose a file to upload.");
-  const tender = await prisma.tender.findUnique({ where: { id: tenderId } });
+  const tender = await db.tender.findUnique({ where: { id: tenderId } });
   if (!tender || CLOSED_OVERALL.includes(tender.overallStatus)) throw new WorkflowError("Documents cannot be added to a closed tender.");
   if (!canEdit(actor) && actor.id !== tender.createdById) throw new WorkflowError("You cannot add documents to this tender.");
   const pages: PageText[] = [];
@@ -1507,13 +1504,13 @@ export async function addDocuments(
     if (file.buffer.length > 20 * 1024 * 1024) throw new WorkflowError(`${file.name} is larger than 20 MB.`);
     if (!allowedUpload(file.name, file.type)) throw new WorkflowError(`${file.name} must be a PDF, text file, or image.`);
     const hash = sha256(file.buffer);
-    const same = await prisma.tenderDocument.findFirst({ where: { tenderId, sha256: hash } });
+    const same = await db.tenderDocument.findFirst({ where: { tenderId, sha256: hash } });
     if (same) throw new WorkflowError(`${file.name} is already stored on this tender.`);
     const storedPath = await storeFile(tenderId, file.name, file.buffer);
     const extracted = await pagesFromBuffer(file.buffer, file.type, file.name);
     if (!extracted.failed) anyText = true;
-    const version = (await prisma.tenderDocument.count({ where: { tenderId, docType } })) + 1;
-    const document = await prisma.tenderDocument.create({
+    const version = (await db.tenderDocument.count({ where: { tenderId, docType } })) + 1;
+    const document = await db.tenderDocument.create({
       data: {
         tenderId,
         fileName: file.name,
@@ -1540,18 +1537,18 @@ export async function addDocuments(
   }
   if (pages.length || Object.keys(ocrHits).length) await applyExtraction(tenderId, pages, actor, ocrHits);
   if ((anyText || Object.keys(ocrHits).length) && tender.ocrStatus === "FAILED") {
-    await prisma.tender.update({ where: { id: tenderId }, data: { ocrStatus: "COMPLETED" } });
+    await db.tender.update({ where: { id: tenderId }, data: { ocrStatus: "COMPLETED" } });
   }
-  await audit(prisma, { tenderId, actor, action: "Uploaded documents", entity: "TenderDocument", detail: files.map((file) => file.name).join(", ") });
+  await audit(db, { tenderId, actor, action: "Uploaded documents", entity: "TenderDocument", detail: files.map((file) => file.name).join(", ") });
 }
 
 async function markMissed(tenderId: string, source: string) {
-  const tender = await prisma.tender.findUnique({ where: { id: tenderId } });
+  const tender = await db.tender.findUnique({ where: { id: tenderId } });
   if (!tender || CLOSED_OVERALL.includes(tender.overallStatus)) return;
   if (["BID_SUBMITTED_EVIDENCE_PENDING", "BID_SUBMITTED_EVIDENCE_RECORDED"].includes(tender.bidStatus)) return;
   if (!tender.bidSubmissionEnd || tender.bidSubmissionEnd.getTime() > Date.now()) return;
   const calendar = await getCalendar();
-  await prisma.$transaction(async (tx) => {
+  await db.$transaction(async (tx) => {
     await tx.tender.update({
       where: { id: tenderId },
       data: {
@@ -1569,7 +1566,7 @@ async function markMissed(tenderId: string, source: string) {
       update: { status: "NOT_BID_DEADLINE_MISSED" },
     });
   });
-  const coordinator = await prisma.user.findFirst({ where: { personKey: "coordinator", active: true } });
+  const coordinator = await db.user.findFirst({ where: { personKey: "coordinator", active: true } });
   await notifyAddresses({
     tenderId,
     event: "DEADLINE_MISSED",
@@ -1594,15 +1591,15 @@ export function kickAutomation() {
 
 export async function processAutomation() {
   const calendar = await getCalendar();
-  const settings = await prisma.appSettings.findUnique({ where: { id: "default" } });
+  const settings = await db.appSettings.findUnique({ where: { id: "default" } });
   const now = new Date();
-  const tasks = await prisma.workflowTask.findMany({ where: { status: { in: OPEN_TASK } }, include: { tender: true } });
+  const tasks = await db.workflowTask.findMany({ where: { status: { in: OPEN_TASK } }, include: { tender: true } });
   for (const task of tasks) {
     if (CLOSED_OVERALL.includes(task.tender.overallStatus) || task.slaMinutes <= 0 || !task.dueAt) continue;
     const elapsed = businessMinutesBetween(task.baseAt, now, calendar);
     const ratio = elapsed / task.slaMinutes;
     if (ratio >= 0.5 && !task.reminder50Sent) {
-      const claimed = await prisma.workflowTask.updateMany({ where: { id: task.id, reminder50Sent: false }, data: { reminder50Sent: true } });
+      const claimed = await db.workflowTask.updateMany({ where: { id: task.id, reminder50Sent: false }, data: { reminder50Sent: true } });
       if (claimed.count === 1) {
         await notifyAddresses({
           tenderId: task.tenderId,
@@ -1614,7 +1611,7 @@ export async function processAutomation() {
       }
     }
     if (ratio >= 0.75 && !task.reminder75Sent) {
-      const claimed = await prisma.workflowTask.updateMany({ where: { id: task.id, reminder75Sent: false }, data: { reminder75Sent: true } });
+      const claimed = await db.workflowTask.updateMany({ where: { id: task.id, reminder75Sent: false }, data: { reminder75Sent: true } });
       if (claimed.count === 1) {
         await notifyAddresses({
           tenderId: task.tenderId,
@@ -1626,16 +1623,16 @@ export async function processAutomation() {
       }
     }
     if (now.getTime() > task.dueAt.getTime() && !task.breachSent) {
-      const claimed = await prisma.workflowTask.updateMany({
+      const claimed = await db.workflowTask.updateMany({
         where: { id: task.id, breachSent: false, status: { in: OPEN_TASK } },
         data: { breachSent: true, wasOverdue: true, status: "OVERDUE" },
       });
       if (claimed.count === 1) {
-        if (task.stage === "RELEVANCE") await prisma.tender.update({ where: { id: task.tenderId }, data: { relevanceOverdue: true } });
-        if (task.branch === "EMD") await prisma.tender.update({ where: { id: task.tenderId }, data: { emdStatus: "OVERDUE" } });
-        const level1 = await prisma.escalationRecipient.findMany({ where: { level: 1 } });
+        if (task.stage === "RELEVANCE") await db.tender.update({ where: { id: task.tenderId }, data: { relevanceOverdue: true } });
+        if (task.branch === "EMD") await db.tender.update({ where: { id: task.tenderId }, data: { emdStatus: "OVERDUE" } });
+        const level1 = await db.escalationRecipient.findMany({ where: { level: 1 } });
         if (!level1.length) {
-          await prisma.auditLog.create({
+          await db.auditLog.create({
             data: { tenderId: task.tenderId, action: "Escalation recipient missing", entity: "Notification", detail: task.title, actorName: "System" },
           });
         }
@@ -1651,9 +1648,9 @@ export async function processAutomation() {
     if (task.breachSent && !task.breachLevel2Sent && task.dueAt) {
       const overdueFor = businessMinutesBetween(task.dueAt, now, calendar);
       if (overdueFor >= (settings?.level2AfterMinutes ?? 240)) {
-        const claimed = await prisma.workflowTask.updateMany({ where: { id: task.id, breachLevel2Sent: false }, data: { breachLevel2Sent: true } });
+        const claimed = await db.workflowTask.updateMany({ where: { id: task.id, breachLevel2Sent: false }, data: { breachLevel2Sent: true } });
         if (claimed.count === 1) {
-          const level2 = await prisma.escalationRecipient.findMany({ where: { level: 2 } });
+          const level2 = await db.escalationRecipient.findMany({ where: { level: 2 } });
           await notifyAddresses({
             tenderId: task.tenderId,
             taskId: task.id,
@@ -1668,10 +1665,10 @@ export async function processAutomation() {
 
   const hours = (settings?.bidReminderHours ?? "72,24,4")
     .split(",")
-    .map((item) => Number(item.trim()))
-    .filter((item) => Number.isFinite(item) && item > 0)
-    .sort((a, b) => b - a);
-  const tenders = await prisma.tender.findMany({
+    .map((item: string) => Number(item.trim()))
+    .filter((item: number) => Number.isFinite(item) && item > 0)
+    .sort((a: number, b: number) => b - a);
+  const tenders = await db.tender.findMany({
     where: { bidSubmissionEnd: { not: null }, overallStatus: { notIn: CLOSED_OVERALL } },
   });
   for (const tender of tenders) {
@@ -1685,9 +1682,9 @@ export async function processAutomation() {
     for (const hour of hours) {
       if (remainingHours > hour) continue;
       const event = `BID_DEADLINE_${hour}H`;
-      const existing = await prisma.notificationLog.findFirst({ where: { tenderId: tender.id, eventType: event } });
+      const existing = await db.notificationLog.findFirst({ where: { tenderId: tender.id, eventType: event } });
       if (existing) continue;
-      const coordinator = await prisma.user.findFirst({ where: { personKey: "coordinator", active: true } });
+      const coordinator = await db.user.findFirst({ where: { personKey: "coordinator", active: true } });
       await notifyAddresses({
         tenderId: tender.id,
         event,

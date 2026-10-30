@@ -1,4 +1,4 @@
-import { prisma } from "./prisma";
+import { db } from "./db";
 
 export const TEMPLATES: { event: string; subject: string; body: string }[] = [
   {
@@ -177,10 +177,10 @@ export async function notifyAddresses(options: {
   }
   if (!unique.size) return;
 
-  const tender = await prisma.tender.findUnique({ where: { id: options.tenderId } });
+  const tender = await db.tender.findUnique({ where: { id: options.tenderId } });
   if (!tender) return;
   const templateKey = options.templateEvent ?? options.event;
-  const template = (await prisma.emailTemplate.findUnique({ where: { event: templateKey } })) ??
+  const template = (await db.emailTemplate.findUnique({ where: { event: templateKey } })) ??
     TEMPLATES.find((item) => item.event === templateKey);
   const subjectTpl = template?.subject ?? options.event;
   const bodyTpl = template?.body ?? "{{projectName}} ({{recordId}})\n{{link}}";
@@ -201,7 +201,7 @@ export async function notifyAddresses(options: {
     const subject = fill(subjectTpl, vars);
     const body = fill(bodyTpl, vars);
     const status = await deliver({ to: address.email, toName: address.name, subject, text: body, link: vars.link });
-    await prisma.notificationLog.create({
+    await db.notificationLog.create({
       data: {
         tenderId: tender.id,
         taskId: options.taskId ?? "",
@@ -218,6 +218,6 @@ export async function notifyAddresses(options: {
 
 export async function emailsFor(userIds: string[]) {
   if (!userIds.length) return [];
-  const users = await prisma.user.findMany({ where: { id: { in: userIds }, active: true } });
+  const users = await db.user.findMany({ where: { id: { in: userIds }, active: true } });
   return users.map((user) => ({ email: user.email, name: user.name }));
 }

@@ -1,6 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import type { User } from "@prisma/client";
-import { prisma } from "../lib/prisma";
+import { db, type User } from "../lib/db";
 import { COOKIE, readSession, signSession } from "../lib/token";
 import { allowedOrigins } from "./cors";
 
@@ -13,7 +12,7 @@ declare module "express-serve-static-core" {
 export async function loadActor(req: Request) {
   const userId = await readSession(req.cookies?.[COOKIE]);
   if (!userId) return null;
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const user = await db.user.findUnique({ where: { id: userId } });
   return user?.active ? user : null;
 }
 

@@ -1,6 +1,5 @@
 import bcrypt from "bcryptjs";
-import type { User } from "@prisma/client";
-import { prisma } from "../lib/prisma";
+import { db, type User } from "../lib/db";
 import { WorkflowError } from "../lib/domain";
 import * as domain from "../lib/domain";
 import { TEMPLATES } from "../lib/notify";
@@ -30,7 +29,7 @@ async function filesFrom(formData: FormData, name: string) {
 /** Returns the user when the credentials match an active account; the caller sets the session cookie. */
 export async function checkLogin(emailInput: string, password: string) {
   const email = emailInput.trim().toLowerCase();
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await db.user.findUnique({ where: { email } });
   if (!user?.active || !(await bcrypt.compare(password, user.passwordHash))) return null;
   return user;
 }
@@ -164,7 +163,7 @@ export async function saveCalendarAction(actor: User, formData: FormData): Promi
   const denied = adminOnly(actor);
   if (denied) return denied;
   const days = formData.getAll("days").map(String).filter((day) => /^[1-7]$/.test(day));
-  await prisma.calendarSettings.upsert({
+  await db.calendarSettings.upsert({
     where: { id: "default" },
     update: {
       workStart: String(formData.get("workStart") || "09:00"),
@@ -188,27 +187,27 @@ export async function addHolidayAction(actor: User, formData: FormData): Promise
   const date = String(formData.get("date") || "");
   const name = String(formData.get("name") || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !name) return { error: "Enter a holiday date and name" };
-  await prisma.holiday.upsert({ where: { date }, update: { name }, create: { date, name } });
+  await db.holiday.upsert({ where: { date }, update: { name }, create: { date, name } });
   return { ok: "Holiday saved" };
 }
 
 export async function deleteHolidayAction(actor: User, formData: FormData): Promise<ActionState> {
   const denied = adminOnly(actor);
   if (denied) return denied;
-  await prisma.holiday.delete({ where: { id: String(formData.get("id") || "") } }).catch(() => null);
+  await db.holiday.delete({ where: { id: String(formData.get("id") || "") } }).catch(() => null);
   return { ok: "Holiday removed" };
 }
 
 export async function saveSlaAction(actor: User, formData: FormData): Promise<ActionState> {
   const denied = adminOnly(actor);
   if (denied) return denied;
-  const policies = await prisma.slaPolicy.findMany();
+  const policies = await db.slaPolicy.findMany();
   for (const policy of policies) {
     const value = Number(formData.get(`value_${policy.stage}`));
     const unit = String(formData.get(`unit_${policy.stage}`) || policy.durationUnit);
     if (!Number.isFinite(value) || value <= 0) continue;
     if (unit !== "HOURS" && unit !== "DAYS") continue;
-    await prisma.slaPolicy.update({ where: { id: policy.id }, data: { durationValue: value, durationUnit: unit } });
+    await db.slaPolicy.update({ where: { id: policy.id }, data: { durationValue: value, durationUnit: unit } });
   }
   return { ok: "SLA policy saved" };
 }
@@ -216,7 +215,7 @@ export async function saveSlaAction(actor: User, formData: FormData): Promise<Ac
 export async function saveSettingsAction(actor: User, formData: FormData): Promise<ActionState> {
   const denied = adminOnly(actor);
   if (denied) return denied;
-  await prisma.appSettings.update({
+  await db.appSettings.update({
     where: { id: "default" },
     data: {
       bgRequiresBoth: formData.get("bgRequiresBoth") === "yes",
@@ -229,13 +228,13 @@ export async function saveSettingsAction(actor: User, formData: FormData): Promi
   for (const level of levels) {
     const email = String(formData.get(`escalation_${level}`) || "").trim();
     const label = level === 1 ? "Workflow manager" : "Business owner";
-    const existing = await prisma.escalationRecipient.findFirst({ where: { level } });
+    const existing = await db.escalationRecipient.findFirst({ where: { level } });
     if (!email) {
-      if (existing) await prisma.escalationRecipient.delete({ where: { id: existing.id } });
+      if (existing) await db.escalationRecipient.delete({ where: { id: existing.id } });
       continue;
     }
-    if (existing) await prisma.escalationRecipient.update({ where: { id: existing.id }, data: { email, label } });
-    else await prisma.escalationRecipient.create({ data: { level, email, label } });
+    if (existing) await db.escalationRecipient.update({ where: { id: existing.id }, data: { email, label } });
+    else await db.escalationRecipient.create({ data: { level, email, label } });
   }
   return { ok: "Workflow settings saved" };
 }
@@ -245,7 +244,7 @@ export async function saveTemplateAction(actor: User, formData: FormData): Promi
   if (denied) return denied;
   const event = String(formData.get("event") || "");
   if (!TEMPLATES.some((template) => template.event === event)) return { error: "Unknown template" };
-  await prisma.emailTemplate.update({
+  await db.emailTemplate.update({
     where: { event },
     data: { subject: String(formData.get("subject") || ""), body: String(formData.get("body") || "") },
   });
@@ -258,7 +257,7 @@ export async function savePortalAction(actor: User, formData: FormData): Promise
   const name = String(formData.get("name") || "").trim();
   const url = String(formData.get("url") || "").trim();
   if (!name || !url) return { error: "Portal name and URL are required" };
-  await prisma.portal.create({
+  await db.portal.create({
     data: {
       name,
       url,
@@ -276,9 +275,9 @@ export async function savePortalAction(actor: User, formData: FormData): Promise
 export async function togglePortalAction(actor: User, formData: FormData): Promise<ActionState> {
   const denied = adminOnly(actor);
   if (denied) return denied;
-  const portal = await prisma.portal.findUnique({ where: { id: String(formData.get("id") || "") } });
+  const portal = await db.portal.findUnique({ where: { id: String(formData.get("id") || "") } });
   if (!portal) return { error: "Portal not found" };
-  await prisma.portal.update({ where: { id: portal.id }, data: { enabled: !portal.enabled } });
+  await db.portal.update({ where: { id: portal.id }, data: { enabled: !portal.enabled } });
   return { ok: "Portal updated" };
 }
 
@@ -289,8 +288,8 @@ export async function logExceptionAction(actor: User, formData: FormData): Promi
   const kind = String(formData.get("kind") || "").trim();
   const detail = String(formData.get("detail") || "").trim();
   if (!kind || !detail) return { error: "Exception type and detail are required" };
-  await prisma.crawlerException.create({ data: { portalId, kind, detail, tenderHint: String(formData.get("tenderHint") || "") } });
-  await prisma.portal.update({ where: { id: portalId }, data: { lastStatus: "EXCEPTION", lastError: detail, lastScanAt: new Date() } }).catch(() => null);
+  await db.crawlerException.create({ data: { portalId, kind, detail, tenderHint: String(formData.get("tenderHint") || "") } });
+  await db.portal.update({ where: { id: portalId }, data: { lastStatus: "EXCEPTION", lastError: detail, lastScanAt: new Date() } }).catch(() => null);
   return { ok: "Exception recorded" };
 }
 

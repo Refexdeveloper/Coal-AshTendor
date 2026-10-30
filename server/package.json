@@ -8,13 +8,11 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "check": "tsx scripts/check-domain.ts",
-    "db:generate": "prisma generate",
-    "db:setup": "prisma generate && tsx scripts/db-setup.ts && tsx prisma/seed.ts",
-    "db:reset": "prisma generate && tsx scripts/db-setup.ts --reset && tsx prisma/seed.ts",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:setup": "tsx scripts/db-setup.ts && tsx scripts/seed.ts",
+    "db:reset": "tsx scripts/db-setup.ts --reset && tsx scripts/seed.ts",
+    "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
-    "@prisma/client": "^6.16.2",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
@@ -30,7 +28,6 @@
     "@types/multer": "^2.0.0",
     "@types/node": "^24.6.0",
     "@types/nodemailer": "^7.0.1",
-    "prisma": "^6.16.2",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
   }
