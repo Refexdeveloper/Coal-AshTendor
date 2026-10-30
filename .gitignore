@@ -1,0 +1,9 @@
+node_modules
+dist
+server/data
+.env
+*.tsbuildinfo
+*.tar.gz
+.next
+server/public
+.DS_Store

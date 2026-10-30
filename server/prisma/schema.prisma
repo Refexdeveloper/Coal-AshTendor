@@ -1,0 +1,327 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String
+  personKey    String   @unique
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+}
+
+model CalendarSettings {
+  id          String @id @default("default")
+  timezone    String @default("Asia/Kolkata")
+  workStart   String @default("09:00")
+  workEnd     String @default("18:00")
+  workingDays String @default("1,2,3,4,5")
+}
+
+model Holiday {
+  id   String @id @default(cuid())
+  date String @unique
+  name String
+}
+
+model SlaPolicy {
+  id            String @id @default(cuid())
+  stage         String @unique
+  durationValue Int
+  durationUnit  String
+  targetValue   Int?
+  targetUnit    String?
+}
+
+model EscalationRecipient {
+  id    String @id @default(cuid())
+  level Int
+  label String
+  email String
+}
+
+model AppSettings {
+  id                 String @id @default("default")
+  bgRequiresBoth     Boolean @default(false)
+  revisionResetsSla  Boolean @default(true)
+  bidReminderHours   String  @default("72,24,4")
+  level2AfterMinutes Int     @default(240)
+  recordPrefix       String  @default("CA")
+  nextSequence       Int     @default(0)
+}
+
+model EmailTemplate {
+  id      String @id @default(cuid())
+  event   String @unique
+  subject String @db.Text
+  body    String @db.LongText
+}
+
+model Tender {
+  id                String    @id @default(cuid())
+  recordId          String    @unique
+  projectName       String    @default("") @db.Text
+  tenderRef         String    @default("") @db.Text
+  externalTenderId  String    @default("") @db.Text
+  clientName        String    @default("") @db.Text
+  portalName        String    @default("") @db.Text
+  location          String    @default("") @db.Text
+  bidSubmissionEnd  DateTime?
+  bidOpeningAt      DateTime?
+  estimatedValue    Float?
+  finalCostingValue Float?
+  emdExposure       Float?
+  emdType           String    @default("UNCLEAR")
+  overallStatus     String
+  relevanceStatus   String    @default("NOT_STARTED")
+  costingStatus     String    @default("NOT_STARTED")
+  emdStatus         String    @default("NOT_STARTED")
+  bidStatus         String    @default("NOT_YET_SUBMITTED")
+  approvalStatus    String    @default("NOT_STARTED")
+  source            String    @default("MANUAL")
+  ocrStatus         String    @default("PENDING")
+  duplicateOfId     String?
+  duplicateWarning  String    @default("") @db.Text
+  relevanceOverdue  Boolean   @default(false)
+  deadlineMissed    Boolean   @default(false)
+  closureReason     String    @default("") @db.Text
+  outcome           String    @default("")
+  outcomeNotes      String    @default("") @db.Text
+  createdById       String
+  submitterId       String?
+  closedAt          DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  documents     TenderDocument[]
+  fields        TenderField[]
+  tasks         WorkflowTask[]
+  costings      CostingRecord[]
+  emd           EmdRecord?
+  approvals     ApprovalRecord[]
+  bid           BidSubmission?
+  notifications NotificationLog[]
+  audits        AuditLog[]
+
+  @@index([overallStatus])
+  @@index([bidSubmissionEnd])
+}
+
+model TenderDocument {
+  id           String   @id @default(cuid())
+  tenderId     String
+  tender       Tender   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  fileName     String @db.Text
+  storedPath   String @db.Text
+  mimeType     String
+  sizeBytes    Int
+  sha256       String   @default("")
+  docType      String
+  version      Int      @default(1)
+  uploadedById String
+  uploadedAt   DateTime @default(now())
+  textExtract  String   @default("") @db.LongText
+  pageCount    Int      @default(0)
+
+  @@index([tenderId])
+  @@index([sha256])
+}
+
+model TenderField {
+  id               String    @id @default(cuid())
+  tenderId         String
+  tender           Tender    @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  fieldNo          Int
+  fieldKey         String
+  label            String @db.Text
+  extractedValue   String    @default("") @db.Text
+  correctedValue   String    @default("") @db.Text
+  correctedAt      DateTime?
+  sourceDocumentId String    @default("")
+  sourcePage       String    @default("")
+  confidence       Float?
+  validationStatus String    @default("MISSING")
+  conflictNote     String    @default("") @db.Text
+  correctedById    String    @default("")
+  critical         Boolean   @default(false)
+
+  @@unique([tenderId, fieldKey])
+}
+
+model WorkflowTask {
+  id               String    @id @default(cuid())
+  tenderId         String
+  tender           Tender    @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  branch           String
+  stage            String
+  title            String @db.Text
+  status           String
+  assigneeIds      String
+  dueAt            DateTime?
+  slaMinutes       Int       @default(0)
+  baseAt           DateTime
+  reminder50Sent   Boolean   @default(false)
+  reminder75Sent   Boolean   @default(false)
+  breachSent       Boolean   @default(false)
+  breachLevel2Sent Boolean   @default(false)
+  wasOverdue       Boolean   @default(false)
+  decision         String    @default("") @db.Text
+  comments         String    @default("") @db.Text
+  completedById    String    @default("")
+  completedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  actions          TaskAction[]
+
+  @@index([tenderId])
+  @@index([status])
+}
+
+model TaskAction {
+  id        String       @id @default(cuid())
+  taskId    String
+  task      WorkflowTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  action    String
+  comments  String       @default("") @db.Text
+  createdAt DateTime     @default(now())
+}
+
+model CostingRecord {
+  id          String   @id @default(cuid())
+  tenderId    String
+  tender      Tender   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  version     Int
+  stage       String
+  assumptions String   @default("") @db.Text
+  amount      Float?
+  documentId  String   @default("")
+  createdById String
+  createdAt   DateTime @default(now())
+}
+
+model EmdRecord {
+  id                   String    @id @default(cuid())
+  tenderId             String    @unique
+  tender               Tender    @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  instrumentType       String
+  amount               String    @default("") @db.Text
+  beneficiary          String    @default("") @db.Text
+  referenceNumber      String    @default("") @db.Text
+  preparationStatus    String    @default("NOT_STARTED")
+  exemptionBasis       String    @default("") @db.Text
+  documentId           String    @default("")
+  verifiedAt           DateTime?
+  completedAt          DateTime?
+  submittedToAuthority Boolean   @default(false)
+  authorityNote        String    @default("") @db.Text
+  notes                String    @default("") @db.Text
+}
+
+model ApprovalRecord {
+  id         String   @id @default(cuid())
+  tenderId   String
+  tender     Tender   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  taskId     String   @default("")
+  stage      String
+  decision   String
+  approverId String
+  comments   String   @default("") @db.Text
+  createdAt  DateTime @default(now())
+}
+
+model BidSubmission {
+  id                      String    @id @default(cuid())
+  tenderId                String    @unique
+  tender                  Tender    @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  submitterId             String    @default("")
+  status                  String
+  submittedAt             DateTime?
+  referenceNumber         String    @default("") @db.Text
+  evidenceDocumentId      String    @default("")
+  exceptionReason         String    @default("") @db.Text
+  exceptionAuthorizedById String    @default("")
+  notes                   String    @default("") @db.Text
+  updatedAt               DateTime  @updatedAt
+}
+
+model NotificationLog {
+  id             String   @id @default(cuid())
+  tenderId       String?
+  tender         Tender?  @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  taskId         String   @default("")
+  eventType      String
+  recipientEmail String
+  recipientName  String   @default("") @db.Text
+  subject        String @db.Text
+  body           String @db.LongText
+  status         String
+  createdAt      DateTime @default(now())
+
+  @@index([tenderId])
+  @@index([recipientEmail])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenderId  String?
+  tender    Tender?  @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  actorId   String   @default("")
+  actorName String   @default("") @db.Text
+  action    String @db.Text
+  entity    String
+  detail    String   @default("") @db.Text
+  before    String   @default("") @db.LongText
+  after     String   @default("") @db.LongText
+  createdAt DateTime @default(now())
+
+  @@index([tenderId])
+}
+
+model Portal {
+  id             String    @id @default(cuid())
+  name           String @db.Text
+  url            String @db.Text
+  category       String    @default("") @db.Text
+  keywords       String    @default("") @db.Text
+  frequencyHours Int       @default(24)
+  enabled        Boolean   @default(false)
+  accessMethod   String    @default("UNVALIDATED")
+  lastScanAt     DateTime?
+  lastStatus     String    @default("NOT_SCANNED")
+  lastError      String    @default("") @db.Text
+  createdAt      DateTime  @default(now())
+  runs           CrawlerRun[]
+}
+
+model CrawlerRun {
+  id           String             @id @default(cuid())
+  portalId     String
+  portal       Portal             @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  startedAt    DateTime           @default(now())
+  finishedAt   DateTime?
+  status       String
+  discovered   Int                @default(0)
+  errorSummary String             @default("") @db.Text
+  exceptions   CrawlerException[]
+}
+
+model CrawlerException {
+  id             String      @id @default(cuid())
+  runId          String?
+  run            CrawlerRun? @relation(fields: [runId], references: [id], onDelete: Cascade)
+  portalId       String      @default("")
+  kind           String @db.Text
+  detail         String @db.Text
+  tenderHint     String      @default("") @db.Text
+  resolved       Boolean     @default(false)
+  followUpTaskId String      @default("")
+  createdAt      DateTime    @default(now())
+}

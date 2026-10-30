@@ -1,0 +1,4 @@
+SALES COSTING INPUT (test)
+Market rate seen in last 3 tenders: Rs. 495 to Rs. 560 per MT
+Recommended margin: 8 percent
+Competitors expected: 4

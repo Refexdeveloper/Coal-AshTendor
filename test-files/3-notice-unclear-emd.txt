@@ -1,0 +1,45 @@
+MAHARASHTRA STATE POWER GENERATION CO. LTD
+Name of the Project: Bottom ash disposal at Koradi Thermal Power Station
+Tender reference number: MAHAGENCO/KTPS/ASH/2026/77
+Tender ID: 2026_MAHA_557077
+Client name: MAHAGENCO
+Work description: Lifting and disposal of bottom ash from the ash pond to the approved dumping area.
+Location: Koradi, Maharashtra
+Bid submission end date: 22/01/2027 15:00
+Bid opening date: 22/01/2027 16:00
+Pre-bid conference date and time: 20/11/2026 11:00
+Hard copy submission date: 22/01/2027 13:00
+Estimated cost: Rs. 54000000
+Tender fee: Rs. 11800
+EMD fee: Rs. 1080000
+EMD form process: Clarification Required
+EMD exemption: Clarification Required
+Performance fee starting (PBG): 10 percent of contract value
+Mode of submission: Electronic
+Hard copy required: Yes
+Contract period: 24 months
+Number of envelopes: 2
+Pre-qualification criteria - technical: Completed at least 2 similar ash handling works in the last 7 years.
+Pre-qualification criteria - financial: Average annual turnover of Rs. 15 crore in the last 3 years.
+Consortium / JV allowed: No
+Bid validity: 120 days
+Contact person: Senior Manager (Ash Handling)
+Contact details: ash.tenders@example.in
+GeM/e-procurement Ref: https://eprocure.example.in/tender/2026_MAHA_557077
+Registration on tender portal: Yes
+Reverse auction: No
+Acceptance of L1 rates parameters: L1 rates may be offered to the next two bidders.
+Scope of work: Lifting and disposal of bottom ash from the ash pond to the approved dumping area.
+GST: 18 percent extra
+Penalties: As per general conditions of contract.
+Mobilization period: 21 days
+Mode of measurement: Metric tonne
+Measurement of load: Weighbridge at plant gate
+Contract price type: Fixed
+Price variation: Not applicable
+Security deposit: 5 percent of contract value
+Liquidated damages: 0.5 percent per week capped at 10 percent
+Payment terms: Monthly bills paid within 30 days of certification.
+Penalty recovery: Recovered from running bills.
+Quantity deviation: Plus or minus 25 percent
+Defect liability: 12 months

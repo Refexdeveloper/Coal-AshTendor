@@ -1,0 +1,5 @@
+DRAFT COSTING (test)
+Transport rate: Rs. 520 per MT
+Quantity: 1,80,000 MT
+Draft total: Rs. 9,36,00,000
+Assumptions: diesel at Rs. 92/litre, 25 MT trucks, 2 trips per day.

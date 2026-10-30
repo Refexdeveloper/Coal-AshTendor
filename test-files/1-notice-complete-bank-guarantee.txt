@@ -1,0 +1,45 @@
+CHHATTISGARH STATE POWER GENERATION CO. LTD
+Name of the Project: Fly ash transportation from Korba West to cement plants
+Tender reference number: CSPGCL/KW/ASH/2026/101
+Tender ID: 2026_CSPGCL_884101
+Client name: CSPGCL
+Work description: Loading and transportation of dry fly ash from silos to cement plants within 300 km.
+Location: Korba West, Chhattisgarh
+Bid submission end date: 15/01/2027 15:00
+Bid opening date: 15/01/2027 16:00
+Pre-bid conference date and time: 20/11/2026 11:00
+Hard copy submission date: 15/01/2027 13:00
+Estimated cost: Rs. 98000000
+Tender fee: Rs. 11800
+EMD fee: Rs. 1960000
+EMD form process: Bank Guarantee
+EMD exemption: No
+Performance fee starting (PBG): 10 percent of contract value
+Mode of submission: Electronic
+Hard copy required: Yes
+Contract period: 24 months
+Number of envelopes: 2
+Pre-qualification criteria - technical: Completed at least 2 similar ash handling works in the last 7 years.
+Pre-qualification criteria - financial: Average annual turnover of Rs. 15 crore in the last 3 years.
+Consortium / JV allowed: No
+Bid validity: 120 days
+Contact person: Senior Manager (Ash Handling)
+Contact details: ash.tenders@example.in
+GeM/e-procurement Ref: https://eprocure.example.in/tender/2026_CSPGCL_884101
+Registration on tender portal: Yes
+Reverse auction: No
+Acceptance of L1 rates parameters: L1 rates may be offered to the next two bidders.
+Scope of work: Loading and transportation of dry fly ash from silos to cement plants within 300 km.
+GST: 18 percent extra
+Penalties: As per general conditions of contract.
+Mobilization period: 21 days
+Mode of measurement: Metric tonne
+Measurement of load: Weighbridge at plant gate
+Contract price type: Fixed
+Price variation: Not applicable
+Security deposit: 5 percent of contract value
+Liquidated damages: 0.5 percent per week capped at 10 percent
+Payment terms: Monthly bills paid within 30 days of certification.
+Penalty recovery: Recovered from running bills.
+Quantity deviation: Plus or minus 25 percent
+Defect liability: 12 months

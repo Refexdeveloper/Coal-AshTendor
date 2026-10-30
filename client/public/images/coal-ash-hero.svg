@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 420" preserveAspectRatio="xMaxYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f5f4f2"/>
+      <stop offset="0.55" stop-color="#ebe8e4"/>
+      <stop offset="1" stop-color="#d9d4ce"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.78" cy="0.72" r="0.35">
+      <stop offset="0" stop-color="#f97316" stop-opacity="0.45"/>
+      <stop offset="0.5" stop-color="#ea580c" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#ea580c" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="far" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a8a29e"/>
+      <stop offset="1" stop-color="#78716c"/>
+    </linearGradient>
+    <linearGradient id="mid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#57534e"/>
+      <stop offset="1" stop-color="#3a3532"/>
+    </linearGradient>
+    <linearGradient id="near" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#292524"/>
+      <stop offset="1" stop-color="#141211"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="420" fill="url(#sky)"/>
+  <rect width="1600" height="420" fill="url(#glow)"/>
+  <!-- stacks and smoke -->
+  <g fill="#78716c" opacity="0.55">
+    <rect x="1020" y="120" width="26" height="170" rx="3"/>
+    <rect x="1068" y="150" width="22" height="140" rx="3"/>
+  </g>
+  <g fill="#a8a29e" opacity="0.35">
+    <circle cx="1036" cy="100" r="22"/><circle cx="1060" cy="76" r="28"/><circle cx="1096" cy="58" r="34"/><circle cx="1140" cy="48" r="30"/>
+    <circle cx="1080" cy="132" r="16"/><circle cx="1100" cy="112" r="20"/>
+  </g>
+  <!-- ash heaps (far) -->
+  <path d="M760 420 C860 300 940 250 1040 262 C1130 272 1180 230 1260 210 C1350 188 1450 240 1600 220 V420 Z" fill="url(#far)" opacity="0.8"/>
+  <!-- coal heap (mid) -->
+  <path d="M900 420 C980 340 1060 300 1150 300 C1230 300 1270 262 1340 258 C1430 252 1500 300 1600 290 V420 Z" fill="url(#mid)"/>
+  <!-- coal heap (near) -->
+  <path d="M1040 420 C1110 372 1180 344 1260 346 C1330 348 1380 320 1450 322 C1520 324 1560 350 1600 346 V420 Z" fill="url(#near)"/>
+  <!-- coal facets -->
+  <g fill="#44403c" opacity="0.9">
+    <polygon points="1180,372 1204,360 1220,378 1196,388"/>
+    <polygon points="1300,356 1326,346 1338,366 1312,374"/>
+    <polygon points="1420,344 1446,338 1452,358 1428,362"/>
+    <polygon points="1500,360 1520,352 1534,368 1512,376"/>
+  </g>
+  <!-- embers -->
+  <g fill="#f97316">
+    <circle cx="1230" cy="364" r="3"/><circle cx="1360" cy="340" r="2.5"/><circle cx="1470" cy="352" r="3"/>
+    <circle cx="1290" cy="300" r="2"/><circle cx="1400" cy="280" r="1.8"/><circle cx="1520" cy="300" r="2.2"/>
+  </g>
+  <g fill="#fdba74" opacity="0.8">
+    <circle cx="1250" cy="250" r="1.6"/><circle cx="1330" cy="230" r="1.4"/><circle cx="1440" cy="210" r="1.8"/><circle cx="1180" cy="270" r="1.4"/>
+  </g>
+</svg>

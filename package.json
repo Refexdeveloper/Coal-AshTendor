@@ -1,0 +1,24 @@
+{
+  "name": "coal-ash",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w coal-ash-server & npm run dev -w coal-ash-client; wait",
+    "dev:client": "npm run dev -w coal-ash-client",
+    "dev:server": "npm run dev -w coal-ash-server",
+    "mysql:start": "sh ~/coal-ash-mysql/start.sh",
+    "mysql:stop": "sh ~/coal-ash-mysql/stop.sh",
+    "build": "npm run build -w coal-ash-client",
+    "start": "npm run start -w coal-ash-server",
+    "typecheck": "npm run typecheck -w coal-ash-server && npm run typecheck -w coal-ash-client",
+    "check": "npm run check -w coal-ash-server",
+    "db:setup": "npm run db:setup -w coal-ash-server",
+    "db:reset": "npm run db:reset -w coal-ash-server",
+    "db:seed": "npm run db:seed -w coal-ash-server",
+    "serve": "npm run build && npm run start"
+  }
+}
