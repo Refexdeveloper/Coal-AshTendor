@@ -12,9 +12,9 @@ import type { ActionState } from "../utils/action-state";
 export type Action = (actor: User, formData: FormData) => Promise<ActionState>;
 
 function failure(error: unknown): ActionState {
-  if (error instanceof WorkflowError) return { error: error.message };
   console.error(error);
-  return { error: "The action could not be completed." };
+  const message = error instanceof Error && error.message ? error.message : "The action could not be completed.";
+  return { error: message };
 }
 
 async function filesFrom(formData: FormData, name: string) {

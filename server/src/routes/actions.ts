@@ -49,6 +49,7 @@ actionRoutes.post("/:name", upload.any(), async (req, res) => {
     res.json((await action(req.actor!, formDataOf(req))) ?? null);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "The action could not be completed." });
+    const message = error instanceof Error && error.message ? error.message : "The action could not be completed.";
+    res.status(500).json({ error: message });
   }
 });

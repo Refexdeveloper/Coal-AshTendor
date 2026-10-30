@@ -54,15 +54,26 @@ export function CreateForm() {
   return (
     <div className="stack">
       {failed ? (
-        <p className="banner bad">
-          {failed.error}
-          {failed.tenderId ? (
-            <>
-              {" "}
-              <Link to={`/tenders/${failed.tenderId}?tab=details`}>Open that tender</Link>
-            </>
+        <div className="stack">
+          <p className="banner bad">
+            {failed.error}
+            {failed.tenderId ? (
+              <>
+                {" "}
+                <Link to={`/tenders/${failed.tenderId}?tab=details`}>Open that tender</Link>
+              </>
+            ) : null}
+          </p>
+          {failed.exchange ? (
+            <section className="panel stack">
+              <h2>Network</h2>
+              <p className="muted">The same POST the browser sent, and the response the server returned.</p>
+              <pre className="network-hit">{`${failed.exchange.method} ${failed.exchange.url}\n\n${failed.exchange.request}`}</pre>
+              <p className="muted">Response {failed.exchange.status || "failed before a status"}</p>
+              <pre className="ocr-json">{failed.exchange.response}</pre>
+            </section>
           ) : null}
-        </p>
+        </div>
       ) : null}
       <form ref={formRef} action={action} className="panel upload-card">
         <Reading />

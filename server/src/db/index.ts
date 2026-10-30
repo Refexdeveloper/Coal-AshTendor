@@ -399,6 +399,7 @@ async function insertRow(runner: Runner, table: string, data: Row) {
   const nested = Object.entries(row).filter(([, value]) => isPlain(value) && "create" in value);
   for (const [key] of nested) delete row[key];
   const columns = Object.entries(row).filter(([, value]) => value !== undefined);
+  if (TOUCHED.has(table) && !columns.some(([key]) => key === "updatedAt")) columns.push(["updatedAt", new Date()]);
   const params = columns.map(([, value]) => bind(value));
   await runner.query(
     `INSERT INTO ${quote(table)} (${columns.map(([key]) => quote(key)).join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`,

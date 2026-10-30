@@ -62,16 +62,35 @@ export function revalidate() {
   return Promise.all([...loaders].map((load) => load())).then(() => undefined);
 }
 
+function requestSummary(formData: FormData) {
+  return [...formData.entries()]
+    .map(([key, value]) => (value instanceof File ? `${key}: ${value.name} (${value.size} bytes, ${value.type || "unknown type"})` : `${key}: ${String(value)}`))
+    .join("\n");
+}
+
 /** Posts a form to /api/actions/<name>, refreshes the data on screen, then returns the action's result. */
 export async function postAction(name: string, formData: FormData): Promise<ActionState> {
-  let result: ActionState;
+  const url = apiUrl(`/actions/${name}`);
+  const request = requestSummary(formData);
+  let response: Response;
   try {
-    result = await apiPost<ActionState>(`/actions/${name}`, formData);
+    response = await fetch(url, { method: "POST", credentials: "include", body: formData });
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "The action could not be completed." };
+    const message = error instanceof Error ? error.message : "The action could not be completed.";
+    return { error: message, exchange: { method: "POST", url, status: 0, request, response: message } };
   }
+  const text = await response.text();
+  let body: ActionState = null;
+  try {
+    body = text ? (JSON.parse(text, reviveDates) as ActionState) : null;
+  } catch {
+    body = { error: text.slice(0, 500) || `Request failed (${response.status})` };
+  }
+  if (response.status === 401) toSignIn();
+  const exchange = { method: "POST", url, status: response.status, request, response: text.slice(0, 8000) };
+  if (!response.ok) return { error: body?.error || `Request failed (${response.status})`, exchange };
   await revalidate();
-  return result;
+  return body?.error ? { ...body, exchange } : body;
 }
 
 /** Fetches `/api${path}` and keeps it current; the last good data stays on screen while it refreshes. */

@@ -155,7 +155,14 @@ function renderHtml(subject: string, body: string, link: string, intendedFor: st
 }
 
 /** Sends one message, honouring MAIL_REDIRECT_TO. Returns the delivery status for the log. */
-export async function deliver(message: { to: string; toName: string; subject: string; text: string; link: string }) {
+export async function deliver(message: {
+  to: string;
+  toName: string;
+  subject: string;
+  text: string;
+  link: string;
+  attachments?: { filename: string; content: string; contentType: string }[];
+}) {
   const config = mailConfig();
   if (!mailReady()) return "LOGGED";
   const redirected = config.redirectTo && config.redirectTo.toLowerCase() !== message.to.toLowerCase();
@@ -167,6 +174,7 @@ export async function deliver(message: { to: string; toName: string; subject: st
       subject: redirected ? `[for ${message.toName}] ${message.subject}` : message.subject,
       text: intendedFor ? `Test mode: addressed to ${intendedFor}.\n\n${message.text}` : message.text,
       html: renderHtml(message.subject, message.text, message.link, intendedFor),
+      attachments: message.attachments,
     });
     return "SENT";
   } catch (error) {
@@ -230,6 +238,11 @@ export async function notifyAddresses(options: {
   }
 }
 
+function safeFile(name: string) {
+  const base = name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "-").replace(/-+/g, "-").slice(0, 80);
+  return base || "upload";
+}
+
 /** Inbox that receives the raw OCR JSON. Override with OCR_RESULT_EMAIL. */
 export function ocrResultEmail() {
   return (process.env.OCR_RESULT_EMAIL || "sathishkumar.r@refex.co.in").trim();
@@ -244,7 +257,15 @@ export async function mailOcrResult(tenderId: string, fileName: string, raw: str
   const subject = `${tender.recordId} OCR result JSON`;
   const text = `OCR result for ${fileName} on ${tender.projectName || "Untitled tender"} (${tender.recordId}).\n\n${raw}`;
   const link = `${process.env.APP_URL || "http://localhost:5173"}/tenders/${tender.id}?tab=details`;
-  const status = await deliver({ to: email, toName: "Sathishkumar", subject, text, link });
+  if (!mailReady()) console.error(`OCR result for ${fileName} was not emailed to ${email}: set SMTP_PASS in server/.env.`);
+  const status = await deliver({
+    to: email,
+    toName: "Sathishkumar",
+    subject,
+    text,
+    link,
+    attachments: [{ filename: `${safeFile(fileName)}-ocr-response.json`, content: raw, contentType: "application/json" }],
+  });
   await db.notificationLog.create({
     data: {
       tenderId: tender.id,

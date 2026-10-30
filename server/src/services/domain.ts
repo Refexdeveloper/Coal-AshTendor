@@ -414,6 +414,7 @@ export async function createTender(
     } catch (error) {
       console.error(error);
       item.ocrNote = "The extraction service did not return fields.";
+      item.ocrRaw = error instanceof Error ? error.message : "OCR request failed.";
     }
   }
   const preview = overlayHits(
@@ -488,21 +489,19 @@ export async function createTender(
   for (const item of prepared) {
     if (!item.extracted.failed) anyText = true;
     if (item.ocrNote) ocrNotes.push(item.ocrNote);
-    const document = await db.tenderDocument.create({
-      data: {
-        tenderId: tender.id,
-        fileName: item.file.name,
-        storedPath: item.storedPath,
-        mimeType: item.file.type || "application/octet-stream",
-        sizeBytes: item.file.buffer.length,
-        sha256: item.hash,
-        docType: "NOTICE",
-        version: 1,
-        uploadedById: actor.id,
-        textExtract: item.extracted.pages.join("\n\f").slice(0, 150000),
-        ocrJson: item.ocrRaw,
-        pageCount: item.extracted.pages.length,
-      },
+    const document = await createDocument({
+      tenderId: tender.id,
+      fileName: item.file.name,
+      storedPath: item.storedPath,
+      mimeType: item.file.type || "application/octet-stream",
+      sizeBytes: item.file.buffer.length,
+      sha256: item.hash,
+      docType: "NOTICE",
+      version: 1,
+      uploadedById: actor.id,
+      textExtract: item.extracted.pages.join("\n\f").slice(0, 150000),
+      ocrJson: item.ocrRaw,
+      pageCount: item.extracted.pages.length,
     });
     if (item.ocrRaw) await mailOcrResult(tender.id, item.file.name, item.ocrRaw);
     for (const [key, hit] of Object.entries(item.ocrHits)) {
@@ -1527,25 +1526,25 @@ export async function addDocuments(
     const extracted = await pagesFromBuffer(file.buffer, file.type, file.name);
     if (!extracted.failed) anyText = true;
     const version = (await db.tenderDocument.count({ where: { tenderId, docType } })) + 1;
-    const document = await db.tenderDocument.create({
-      data: {
-        tenderId,
-        fileName: file.name,
-        storedPath,
-        mimeType: file.type || "application/octet-stream",
-        sizeBytes: file.buffer.length,
-        sha256: hash,
-        docType,
-        version,
-        uploadedById: actor.id,
-        textExtract: extracted.pages.join("\n\f").slice(0, 150000),
-        pageCount: extracted.pages.length,
-      },
+    const document = await createDocument({
+      tenderId,
+      fileName: file.name,
+      storedPath,
+      mimeType: file.type || "application/octet-stream",
+      sizeBytes: file.buffer.length,
+      sha256: hash,
+      docType,
+      version,
+      uploadedById: actor.id,
+      textExtract: extracted.pages.join("\n\f").slice(0, 150000),
+      pageCount: extracted.pages.length,
     });
     try {
       const remote = await extractUploadedFile(storedPath, file.name, document.id);
       if (remote.raw) {
-        await db.tenderDocument.update({ where: { id: document.id }, data: { ocrJson: remote.raw } });
+        await db.tenderDocument.update({ where: { id: document.id }, data: { ocrJson: remote.raw } }).catch((error) => {
+          if (!missingColumn(error, "ocrJson")) throw error;
+        });
         await mailOcrResult(tenderId, file.name, remote.raw);
       }
       for (const [key, hit] of Object.entries(remote.hits)) {
@@ -1553,6 +1552,9 @@ export async function addDocuments(
       }
     } catch (error) {
       console.error(error);
+      const raw = error instanceof Error ? error.message : "OCR request failed.";
+      await db.tenderDocument.update({ where: { id: document.id }, data: { ocrJson: raw } }).catch(() => undefined);
+      await mailOcrResult(tenderId, file.name, raw);
     }
     extracted.pages.forEach((text, index) => pages.push({ documentId: document.id, page: index + 1, text }));
   }
@@ -1714,6 +1716,22 @@ export async function processAutomation() {
         extra: { dueAt: formatWhen(tender.bidSubmissionEnd, calendar.timeZone), detail: `${hour} hours` },
       });
     }
+  }
+}
+
+function missingColumn(error: unknown, column: string) {
+  const message = error instanceof Error ? error.message : String(error);
+  return new RegExp(`unknown column ['\`']?${column}`, "i").test(message);
+}
+
+async function createDocument(data: Record<string, unknown>) {
+  try {
+    return await db.tenderDocument.create({ data });
+  } catch (error) {
+    if (!missingColumn(error, "ocrJson") || !("ocrJson" in data)) throw error;
+    const rest = { ...data };
+    delete rest.ocrJson;
+    return db.tenderDocument.create({ data: rest });
   }
 }
 
