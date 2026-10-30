@@ -265,3 +265,29 @@ npm run build && npm start
 **Health check (live):** `"database":"up","storage":"gcs","serve_client":true,"cloud_sql":true`
 
 Demo login password after seed: `CoalAsh@2026`
+
+---
+
+## 10. Auto-deploy from GitHub
+
+Every push to **`main`** on https://github.com/Refexdeveloper/Coal-AshTendor runs Cloud Build:
+
+1. **Docker build** — `npm ci` + Vite client build into `server/public`
+2. **Push image** — Artifact Registry `coal-ash-repo/coal-ash-tender`
+3. **Deploy** — Cloud Run service `coal-ash-tender-api` (Cloud SQL + GCS env)
+
+| Item | Value |
+|------|--------|
+| Trigger | `coal-ash-tender-auto-deploy` (asia-south1) |
+| Config | `cloudbuild.yaml` at repo root |
+| GitHub connection | `p2p-github-connection` → repo `coal-ash-tendor-repo` |
+| Branch filter | `^main$` |
+| Console | https://console.cloud.google.com/cloud-build/triggers?project=master-diorama-489103-u2 |
+
+**Workflow for you:** merge/push to `main` → wait for Cloud Build → open the App URL. No manual `gcloud` deploy needed.
+
+Manual re-run:
+
+```bash
+gcloud builds triggers run coal-ash-tender-auto-deploy --region=asia-south1 --branch=main
+```
