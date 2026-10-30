@@ -19,10 +19,13 @@ const FAILED_ENTITY = "RefexOneSyncFailed";
 type SyncActor = Pick<User, "id" | "name">;
 const SCHEDULE: SyncActor = { id: "refexone-daily", name: "Daily automatic sync" };
 
+/** Org-admin token for the Refex One directory. Kept in the app, not read from the environment. */
+const REFEX_ONE_TOKEN =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYTM2MmY4YWQtNzBkZC00OTYyLWE0Y2EtMTRmNDg4NmYzNDVhIiwiZW1haWwiOiJnb3d0aGFtLnNAcmVmZXguY28uaW4iLCJvcmdfaWQiOiIxNWY2ODhhZC1hZTBhLTQ5NDctYjMyOS03YTIzMTg1OWYyMjYiLCJyb2xlIjoib3JnX2FkbWluIiwiZXhwIjoxNzg4MDg0NzQ4LCJpYXQiOjE3ODU0OTI3NDh9.ZmtJBlIq4etgBw-wQ39uhtYx7he5hYzaPBiiSO1DgO8";
+
 function apiConfig() {
   const baseUrl = (process.env.REFEXONE_API_URL || "https://refexone.com/api").replace(/\/$/, "");
-  const token = (process.env.REFEXONE_API_TOKEN || "").trim();
-  return { baseUrl, token };
+  return { baseUrl, token: REFEX_ONE_TOKEN.trim() };
 }
 
 export function directoryConfigured() {
@@ -53,7 +56,7 @@ export function normalizePerson(raw: Record<string, unknown>): DirectoryPerson |
 /** Reads the whole Refex One directory. Throws a message an administrator can act on. */
 export async function fetchDirectory(): Promise<DirectoryPerson[]> {
   const { baseUrl, token } = apiConfig();
-  if (!token) throw new Error("Refex One sync is not set up. Put an org-admin API token in REFEXONE_API_TOKEN in server/.env and restart the server.");
+  if (!token) throw new Error("Refex One sync is not set up. The org-admin token is missing.");
   let response: Response;
   try {
     response = await fetch(`${baseUrl}/users`, {
@@ -67,8 +70,8 @@ export async function fetchDirectory(): Promise<DirectoryPerson[]> {
     const body = await response.text().catch(() => "");
     throw new Error(
       /expired/i.test(body)
-        ? "The Refex One API token has expired. Generate a new org-admin token in Refex One, update REFEXONE_API_TOKEN in server/.env and restart the server."
-        : "Refex One refused the API token. It must be an org-admin token; update REFEXONE_API_TOKEN in server/.env.",
+        ? "The Refex One API token has expired. Generate a new org-admin token in Refex One and replace the token in the app."
+        : "Refex One refused the API token. It must be an org-admin token.",
     );
   }
   if (!response.ok) throw new Error(`Refex One returned an error (${response.status}).`);

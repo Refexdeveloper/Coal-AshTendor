@@ -314,8 +314,7 @@ function RefexOnePanel({ refexone, users, run, error }: { refexone: Data["refexo
       </header>
       {refexone.configured ? null : (
         <p className="banner warn">
-          Set <code>REFEXONE_API_TOKEN</code> (an org-admin token from Refex One) in <code>server/.env</code> and restart the server. <code>REFEXONE_API_URL</code> defaults to
-          https://refexone.com/api.
+          The org-admin token for Refex One is missing from the app. <code>REFEXONE_API_URL</code> defaults to https://refexone.com/api.
         </p>
       )}
       {syncError ? <p className="banner bad">{syncError}</p> : null}
