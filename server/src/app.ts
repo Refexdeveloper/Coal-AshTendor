@@ -8,7 +8,7 @@ import { repoRoot } from "./utils/root";
 import { cors } from "./middleware/cors";
 import { requireActor } from "./middleware/auth";
 import { authRouter } from "./routes/auth";
-import { refexOneLoginUrl, refexOneReady, safeNext, serviceProviderMetadata } from "./services/refexone";
+import { refexOneLoginUrl, refexOneReady, safeNext, serviceProviderMetadata, ssoStatus } from "./services/refexone";
 import { actionRoutes } from "./routes/actions";
 import { files } from "./routes/files";
 import { views } from "./routes/views";
@@ -47,11 +47,12 @@ export function createApp() {
   });
   app.get("/auth/refexone/launch", async (req, res) => {
     if (!refexOneReady()) {
+      const missing = ssoStatus(req).missing.map((item) => `<li>${item.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] || c)}</li>`).join("");
       res
         .status(503)
         .type("html")
         .send(
-          `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Refex One</title></head><body style="font-family:sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem"><h1>Refex One is not configured</h1><p>Set REFEXONE_SAML_APP_ID (or REFEXONE_SSO_URL) and REFEXONE_IDP_CERT on the server, then restart it. The Administration page lists the addresses to register in Refex One.</p><p><a href="/login?admin=1">Administrator sign-in</a></p></body></html>`,
+          `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Refex One</title></head><body style="font-family:sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem"><h1>Refex One sign-in is not ready</h1><p>This server still needs:</p><ul>${missing}</ul><p>Copy the signing certificate from the Coal &amp; Ash SAML app's settings in Refex One, paste it into server/src/services/refexone.ts, and redeploy.</p><p><a href="/login?admin=1">Administrator sign-in</a></p></body></html>`,
         );
       return;
     }

@@ -1789,3 +1789,4 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 .sso-copy .btn { padding: 4px 12px; font-size: 0.78rem; flex-shrink: 0; }
 .refex-sync h3 { margin: 6px 0 0; font-size: 0.95rem; }
 @media (max-width: 700px) { .sso-grid { grid-template-columns: minmax(0, 1fr); } }
+.sso-print { display: inline-block; margin-top: 6px; font-size: 0.74rem !important; letter-spacing: 0.02em; }

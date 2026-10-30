@@ -1,4 +1,4 @@
-import { X509Certificate } from "crypto";
+import { X509Certificate, timingSafeEqual } from "crypto";
 import { readFileSync } from "fs";
 import type { Request } from "express";
 import { SAML, ValidateInResponseTo, generateServiceProviderMetadata, type Profile } from "@node-saml/node-saml";
@@ -22,6 +22,13 @@ const REGISTERED_BASE_URL = "https://coal-ash-tender-api-645830234926.asia-south
  * backticks, from the app's settings in Refex One ("IdP certificate" / "X.509 certificate"). Sign-in stays off
  * until it is here: every response is checked against it, so a response Refex One did not sign is refused.
  */
+/**
+ * The same certificate pinned by its SHA-256 fingerprint ("Security Key (Certificate Fingerprint SHA256)" in Refex One).
+ * Used when the full certificate above is empty: the certificate Refex One sends inside each response is accepted
+ * only when its fingerprint is exactly this one, and the response's signature is then checked with it.
+ */
+const REFEXONE_IDP_CERT_SHA256 = "70508ed51cac8cf9ed778943ac54e2f72e6197439cccd4897abd7fbe2d72fd8f";
+
 const REFEXONE_IDP_CERT = `
 -----BEGIN CERTIFICATE-----
 -----END CERTIFICATE-----
@@ -77,8 +84,44 @@ function idpCert() {
   return `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----`;
 }
 
+/** The pinned fingerprint as 64 lowercase hex characters, or "" when none is set. */
+function pinnedFingerprint() {
+  const value = REFEXONE_IDP_CERT_SHA256.replace(/[^0-9a-f]/gi, "").toLowerCase();
+  return value.length === 64 ? value : "";
+}
+
+const fingerprintOf = (pem: string) => new X509Certificate(pem).fingerprint256.replace(/:/g, "").toLowerCase();
+
+/**
+ * Takes the certificate Refex One embedded in a sign-in response, if its SHA-256 fingerprint is the pinned one.
+ * Returns "" otherwise. The signature is checked afterwards with this certificate, so a forged response that
+ * copies the certificate still fails: it cannot be signed without Refex One's private key.
+ */
+function pinnedCertFrom(samlResponse: string) {
+  const pin = pinnedFingerprint();
+  if (!pin) return "";
+  let xml = "";
+  try {
+    xml = Buffer.from(samlResponse.replace(/\s/g, ""), "base64").toString("utf8");
+  } catch {
+    return "";
+  }
+  for (const match of xml.matchAll(/<(?:[\w-]+:)?X509Certificate[^>]*>([\s\S]*?)<\/(?:[\w-]+:)?X509Certificate>/g)) {
+    const body = match[1].replace(/\s/g, "");
+    if (!body) continue;
+    const pem = `-----BEGIN CERTIFICATE-----\n${(body.match(/.{1,64}/g) ?? []).join("\n")}\n-----END CERTIFICATE-----`;
+    try {
+      const print = fingerprintOf(pem);
+      if (print.length === pin.length && timingSafeEqual(Buffer.from(print), Buffer.from(pin))) return pem;
+    } catch {
+      // not a readable certificate; try the next one
+    }
+  }
+  return "";
+}
+
 export function refexOneReady() {
-  return Boolean(ssoUrl() && certInfo());
+  return Boolean(ssoUrl() && (certInfo() || pinnedFingerprint()));
 }
 
 /** The configured certificate's subject and validity, or null when it is missing or unreadable. */
@@ -100,25 +143,28 @@ export function ssoStatus(req: Request) {
   const certGiven = Boolean(idpCert());
   const missing: string[] = [];
   if (!ssoUrl()) missing.push("the Refex One sign-in address (REFEXONE_SSO_URL in server/src/services/refexone.ts)");
-  if (!certGiven) missing.push("Refex One's signing certificate (paste it into REFEXONE_IDP_CERT in server/src/services/refexone.ts)");
-  else if (!cert) missing.push("a valid certificate in REFEXONE_IDP_CERT (server/src/services/refexone.ts): the text there is not a readable certificate");
+  const pin = pinnedFingerprint();
+  if (!certGiven && !pin) missing.push("Refex One's signing certificate or its SHA-256 fingerprint (REFEXONE_IDP_CERT or REFEXONE_IDP_CERT_SHA256 in server/src/services/refexone.ts)");
+  else if (certGiven && !cert) missing.push("a valid certificate in REFEXONE_IDP_CERT (server/src/services/refexone.ts): the text there is not a readable certificate");
+  if (cert && pin && fingerprintOf(idpCert()) !== pin) missing.push("a matching certificate: the certificate in REFEXONE_IDP_CERT does not have the SHA-256 fingerprint in REFEXONE_IDP_CERT_SHA256");
   return {
-    ready: refexOneReady(),
+    ready: refexOneReady() && !missing.length,
     ssoUrl: ssoUrl(),
     cert: cert ? { subject: cert.subject, validTo: cert.validTo, expired: cert.expired } : null,
+    fingerprint: pin ? pin.match(/.{2}/g)!.join(":").toUpperCase() : "",
     missing,
     register: { entityId: urls.metadata, acsUrl: urls.acs, launchUrl: urls.launch, nameIdFormat: "Email address" },
   };
 }
 
-function samlFor(req: Request) {
+function samlFor(req: Request, cert = idpCert()) {
   const urls = refexOneUrls(req);
   return new SAML({
     issuer: urls.metadata,
     callbackUrl: urls.acs,
     entryPoint: ssoUrl(),
     idpIssuer: (process.env.REFEXONE_IDP_ISSUER || "").trim() || undefined,
-    idpCert: idpCert(),
+    idpCert: cert,
     audience: urls.metadata,
     identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
     disableRequestedAuthnContext: true,
@@ -158,7 +204,10 @@ export function safeNext(value: unknown, req?: Request) {
 }
 
 export async function refexOneLoginUrl(req: Request, next: string) {
-  return samlFor(req).getAuthorizeUrlAsync(safeNext(next), undefined);
+  // As in the P2P app: open the Refex One SAML app's sign-in address with the page to come back to.
+  const url = new URL(ssoUrl());
+  url.searchParams.set("RelayState", `${publicBase(req)}${safeNext(next)}`);
+  return url.toString();
 }
 
 function claimText(value: unknown) {
@@ -195,7 +244,10 @@ function emailFrom(profile: Profile) {
 export async function consumeRefexOne(req: Request, body: Record<string, string>): Promise<{ error: string } | { userId: string; next: string }> {
   if (!body.SAMLResponse) return { error: "Refex One did not send a sign-in response." };
   if (!refexOneReady()) return { error: "Refex One is not configured on this server." };
-  const { profile } = await samlFor(req).validatePostResponseAsync(body);
+  // A pasted certificate is used as it is; otherwise the certificate in the response must match the pinned fingerprint.
+  const cert = idpCert() || pinnedCertFrom(body.SAMLResponse);
+  if (!cert) return { error: "The certificate in Refex One's response does not match the fingerprint configured for Coal & Ash." };
+  const { profile } = await samlFor(req, cert).validatePostResponseAsync(body);
   if (!profile) return { error: "Refex One did not confirm this sign-in." };
   const email = emailFrom(profile);
   if (!email) return { error: "Refex One did not include an email address." };

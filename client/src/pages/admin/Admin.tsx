@@ -26,6 +26,7 @@ type Data = {
     ready: boolean;
     ssoUrl: string;
     cert: { subject: string; validTo: Date; expired: boolean } | null;
+    fingerprint: string;
     missing: string[];
     register: { entityId: string; acsUrl: string; launchUrl: string; nameIdFormat: string };
   };
@@ -499,7 +500,16 @@ function RefexOneSsoPanel({ sso }: { sso: Data["sso"] }) {
         <dt>Sign-in address</dt>
         <dd>{sso.ssoUrl ? <code>{sso.ssoUrl}</code> : <span className="muted">Not set</span>}</dd>
         <dt>Signing certificate</dt>
-        <dd>{sso.cert ? `${sso.cert.subject} · valid until ${sso.cert.validTo.toLocaleDateString("en-IN", { dateStyle: "medium" })}` : <span className="muted">Not set</span>}</dd>
+        <dd>
+          {sso.cert ? `${sso.cert.subject} · valid until ${sso.cert.validTo.toLocaleDateString("en-IN", { dateStyle: "medium" })}` : null}
+          {!sso.cert && sso.fingerprint ? "Pinned by SHA-256 fingerprint. The certificate Refex One sends must match it, and the signature is checked with it." : null}
+          {!sso.cert && !sso.fingerprint ? <span className="muted">Not set</span> : null}
+          {sso.fingerprint ? (
+            <div>
+              <code className="sso-print">{sso.fingerprint}</code>
+            </div>
+          ) : null}
+        </dd>
       </dl>
       <h3>Enter these in the Refex One SAML app for Coal &amp; Ash</h3>
       <dl className="sso-grid">
