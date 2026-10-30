@@ -12,13 +12,15 @@ import { clearSession, publicUser, requireActor, setSession } from "./http/auth"
 import { cors } from "./http/cors";
 import { files } from "./http/files";
 import { views } from "./http/views";
+const port = 8080
+
 
 const app = express();
-const port = Number(process.env.PORT || 4000);
+
+
 
 app.set("trust proxy", 1);
 app.use("/api", cors);
-app.use(cookieParser());
 app.use(express.json());
 
 app.get("/api/health", async (_req, res) => {
