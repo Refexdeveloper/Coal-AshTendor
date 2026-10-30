@@ -1,0 +1,26 @@
+# Copy to docker-compose.yml on the server (docker-compose.yml is gitignored).
+# Prereq once: docker network create proxy
+#
+# Set PORT in server/.env to match expose (default 4000).
+# Map your reverse proxy → coal-ash:<PORT>
+
+services:
+  coal-ash:
+    # pdf parsing requires Node 20+
+    image: node:20
+    container_name: coal-ash
+    working_dir: /app/server
+    volumes:
+      - ./server:/app/server
+      - ./client:/app/client
+    command: npm start
+    env_file:
+      - ./server/.env
+    expose:
+      - "4000"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true

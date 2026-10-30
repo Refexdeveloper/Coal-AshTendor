@@ -5,7 +5,7 @@ import { defineConfig, loadEnv } from "vite";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, "");
   /** The API server (server/) runs on its own port; in development /api is proxied to it. */
-  const api = env.API_PROXY_TARGET || "http://localhost:4000";
+  const api = env.API_PROXY_TARGET || (env.VITE_API_PORT ? `http://localhost:${env.VITE_API_PORT}` : "http://localhost:4000");
   return {
     plugins: [react()],
     // The production build goes inside the server, which serves it on its own port (4000).

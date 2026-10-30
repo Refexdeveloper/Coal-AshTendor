@@ -1,7 +1,18 @@
 node_modules
 dist
 server/data
+# Secrets and local env (never commit real .env — use *.example)
 .env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+# Host-specific compose (use docker-compose.example.yml)
+docker-compose.yml
+docker-compose.yaml
+compose.yml
+compose.yaml
 *.tsbuildinfo
 *.tar.gz
 .next

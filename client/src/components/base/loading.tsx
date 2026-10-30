@@ -1,4 +1,4 @@
-import { ApiError } from "@client/lib/api";
+import { ApiError } from "@client/api/client";
 
 export function Loading() {
   return (

@@ -1,12 +1,12 @@
 import bcrypt from "bcryptjs";
-import { db, type User } from "../lib/db";
-import { WorkflowError } from "../lib/domain";
-import * as domain from "../lib/domain";
-import { TEMPLATES } from "../lib/notify";
-import { SAMPLE_NOTICE } from "../lib/extract";
-import { textToPdf } from "../lib/pdf";
-import { TENDER_FIELDS } from "../lib/fields";
-import type { ActionState } from "../lib/action-state";
+import { db, type User } from "../db";
+import { WorkflowError } from "./domain";
+import * as domain from "./domain";
+import { TEMPLATES } from "./notify";
+import { SAMPLE_NOTICE } from "./extract";
+import { textToPdf } from "./pdf";
+import { TENDER_FIELDS } from "../utils/fields";
+import type { ActionState } from "../utils/action-state";
 
 /** Every action receives the signed-in user and the submitted form, and answers with an ActionState. */
 export type Action = (actor: User, formData: FormData) => Promise<ActionState>;

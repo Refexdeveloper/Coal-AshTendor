@@ -1,8 +1,8 @@
 import { useActionState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
-import { ingestDiscoveredAction } from "@client/lib/actions";
-import type { ActionState } from "@client/lib/action-state";
+import { ingestDiscoveredAction } from "@client/api/actions";
+import type { ActionState } from "@client/api/action-state";
 import { Submit } from "@client/components/base/submit";
 
 export function IngestForm({ portals }: { portals: { name: string }[] }) {
