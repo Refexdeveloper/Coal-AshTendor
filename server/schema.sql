@@ -126,6 +126,7 @@ CREATE TABLE `TenderDocument` (
   `uploadedById` VARCHAR(191) NOT NULL,
   `uploadedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `textExtract` LONGTEXT NOT NULL DEFAULT (''),
+  `ocrJson` LONGTEXT NOT NULL DEFAULT (''),
   `pageCount` INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   KEY `TenderDocument_tenderId_idx` (`tenderId`),

@@ -96,7 +96,7 @@ views.get("/admin", async (req, res) => {
     res.status(403).json({ error: "Administration is limited to the system administrator." });
     return;
   }
-  const [calendar, holidays, policies, settings, escalations, templates, users] = await Promise.all([
+  const [calendar, holidays, policies, settings, escalations, templates, users, tenderCount] = await Promise.all([
     db.calendarSettings.findUnique({ where: { id: "default" } }),
     db.holiday.findMany({ orderBy: { date: "asc" } }),
     db.slaPolicy.findMany({ orderBy: { stage: "asc" } }),
@@ -104,8 +104,9 @@ views.get("/admin", async (req, res) => {
     db.escalationRecipient.findMany({ orderBy: { level: "asc" } }),
     db.emailTemplate.findMany({ orderBy: { event: "asc" } }),
     db.user.findMany({ orderBy: { name: "asc" } }),
+    db.tender.count(),
   ]);
-  res.json({ calendar, holidays, policies, settings, escalations, templates, users: users.map(publicUser) });
+  res.json({ calendar, holidays, policies, settings, escalations, templates, users: users.map(publicUser), tenderCount });
 });
 
 views.get("/tenders/:id", async (req, res) => {

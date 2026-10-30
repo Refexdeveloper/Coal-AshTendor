@@ -230,6 +230,34 @@ export async function notifyAddresses(options: {
   }
 }
 
+/** Inbox that receives the raw OCR JSON. Override with OCR_RESULT_EMAIL. */
+export function ocrResultEmail() {
+  return (process.env.OCR_RESULT_EMAIL || "sathishkumar.r@refex.co.in").trim();
+}
+
+/** Emails the OCR service JSON for one uploaded file and records it in Notifications. */
+export async function mailOcrResult(tenderId: string, fileName: string, raw: string) {
+  const email = ocrResultEmail();
+  if (!email || !raw.trim()) return;
+  const tender = await db.tender.findUnique({ where: { id: tenderId } });
+  if (!tender) return;
+  const subject = `${tender.recordId} OCR result JSON`;
+  const text = `OCR result for ${fileName} on ${tender.projectName || "Untitled tender"} (${tender.recordId}).\n\n${raw}`;
+  const link = `${process.env.APP_URL || "http://localhost:5173"}/tenders/${tender.id}?tab=details`;
+  const status = await deliver({ to: email, toName: "Sathishkumar", subject, text, link });
+  await db.notificationLog.create({
+    data: {
+      tenderId: tender.id,
+      eventType: "OCR_RESULT",
+      recipientEmail: email,
+      recipientName: "Sathishkumar",
+      subject,
+      body: text,
+      status,
+    },
+  });
+}
+
 export async function emailsFor(userIds: string[]) {
   if (!userIds.length) return [];
   const users = await db.user.findMany({ where: { id: { in: userIds }, active: true } });

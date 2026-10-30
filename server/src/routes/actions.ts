@@ -14,6 +14,7 @@ const ACTIONS: Record<string, Action> = {
   "save-calendar": actions.saveCalendarAction,
   "add-holiday": actions.addHolidayAction,
   "delete-holiday": actions.deleteHolidayAction,
+  "clear-tenders": actions.clearTendersAction,
   "save-sla": actions.saveSlaAction,
   "save-settings": actions.saveSettingsAction,
   "save-template": actions.saveTemplateAction,

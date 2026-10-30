@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ROLES } from "@client/lib/labels";
 import { useApi } from "@client/api/client";
 import { useActor } from "@client/api/session";
@@ -13,6 +14,7 @@ type Data = {
   escalations: { id: string; level: number; label: string; email: string }[];
   templates: { id: string; event: string; subject: string; body: string }[];
   users: PublicUser[];
+  tenderCount: number;
 };
 
 const DECISIONS = [
@@ -34,7 +36,7 @@ export default function AdminPage() {
   const { data, error, reload } = useApi<Data>("/admin");
   if (actor.role !== "ADMIN") return <p className="panel">Administration is limited to the system administrator.</p>;
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
-  const { calendar, holidays, policies, settings, escalations, templates, users } = data;
+  const { calendar, holidays, policies, settings, escalations, templates, users, tenderCount } = data;
   const days = new Set((calendar?.workingDays ?? "1,2,3,4,5").split(","));
   return (
     <>
@@ -159,6 +161,7 @@ export default function AdminPage() {
           Save settings
         </button>
       </form>
+      <ClearTenders count={tenderCount} run={run} />
       <section className="panel">
         <h2>People</h2>
         <table>
@@ -193,5 +196,25 @@ export default function AdminPage() {
         ))}
       </section>
     </>
+  );
+}
+
+function ClearTenders({ count, run }: { count: number; run: (name: string) => (formData: FormData) => Promise<void> }) {
+  const [phrase, setPhrase] = useState("");
+  return (
+    <form action={run("clear-tenders")} className="panel stack">
+      <h2>Remove all tender data</h2>
+      <p>
+        Deletes every tender and the files, fields, tasks, costing, EMD, bids, emails, and history tied to them. People, the calendar, SLAs, and portals stay. This cannot be undone.
+      </p>
+      <p>{count === 1 ? "1 tender is stored." : `${count} tenders are stored.`}</p>
+      <label>
+        Type REMOVE to confirm
+        <input name="confirm" value={phrase} onChange={(event) => setPhrase(event.target.value)} autoComplete="off" />
+      </label>
+      <button className="btn danger" type="submit" disabled={phrase !== "REMOVE" || count === 0}>
+        Remove all tender data
+      </button>
+    </form>
   );
 }

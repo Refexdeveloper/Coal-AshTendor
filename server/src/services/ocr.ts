@@ -180,16 +180,25 @@ export async function extractUploadedFile(storedPath: string, fileName: string, 
     signal: AbortSignal.timeout(180_000),
   });
   const text = await response.text();
+  const raw = prettyJson(text).slice(0, 200_000);
   if (!response.ok) {
-    return { hits: {} as Record<string, FieldHit>, note: `OCR request failed (${response.status}).` };
+    return { hits: {} as Record<string, FieldHit>, note: `OCR request failed (${response.status}).`, raw };
   }
   let payload: unknown;
   try {
     payload = JSON.parse(text);
   } catch {
-    return { hits: {} as Record<string, FieldHit>, note: "OCR returned a response that was not JSON." };
+    return { hits: {} as Record<string, FieldHit>, note: "OCR returned a response that was not JSON.", raw };
   }
   const hits = fieldsFromOcrResponse(payload, documentId);
   const note = Object.keys(hits).length ? "" : ocrErrorNote(payload) || "OCR returned no fields.";
-  return { hits, note };
+  return { hits, note, raw };
+}
+
+function prettyJson(text: string) {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
 }

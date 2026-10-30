@@ -5,7 +5,7 @@ import { NOT_FOUND, TENDER_FIELDS } from "../utils/fields";
 import { allowedUpload, deleteStored, pagesFromBuffer, sha256, storeFile } from "./files";
 import { extractUploadedFile, overlayHits } from "./ocr";
 import { CLOSED_OVERALL, CREATOR_ROLES, EDITOR_ROLES, MANAGER_ROLES, OPEN_TASK } from "../utils/labels";
-import { emailsFor, notifyAddresses, stepCopyAddresses } from "./notify";
+import { emailsFor, mailOcrResult, notifyAddresses, stepCopyAddresses } from "./notify";
 
 export class WorkflowError extends Error {
   constructor(message: string) {
@@ -383,6 +383,7 @@ export async function createTender(
     storedPath: string;
     ocrHits: Record<string, FieldHit>;
     ocrNote: string;
+    ocrRaw: string;
   }[] = [];
   for (const file of input.files) {
     prepared.push({
@@ -392,6 +393,7 @@ export async function createTender(
       storedPath: "",
       ocrHits: {},
       ocrNote: "",
+      ocrRaw: "",
     });
   }
   const hashes = prepared.map((item) => item.hash);
@@ -408,6 +410,7 @@ export async function createTender(
       const remote = await extractUploadedFile(item.storedPath, item.file.name);
       item.ocrHits = remote.hits;
       item.ocrNote = remote.note;
+      item.ocrRaw = remote.raw;
     } catch (error) {
       console.error(error);
       item.ocrNote = "The extraction service did not return fields.";
@@ -497,9 +500,11 @@ export async function createTender(
         version: 1,
         uploadedById: actor.id,
         textExtract: item.extracted.pages.join("\n\f").slice(0, 150000),
+        ocrJson: item.ocrRaw,
         pageCount: item.extracted.pages.length,
       },
     });
+    if (item.ocrRaw) await mailOcrResult(tender.id, item.file.name, item.ocrRaw);
     for (const [key, hit] of Object.entries(item.ocrHits)) {
       if (!hit.value) continue;
       const next = { ...hit, documentId: document.id };
@@ -1539,6 +1544,10 @@ export async function addDocuments(
     });
     try {
       const remote = await extractUploadedFile(storedPath, file.name, document.id);
+      if (remote.raw) {
+        await db.tenderDocument.update({ where: { id: document.id }, data: { ocrJson: remote.raw } });
+        await mailOcrResult(tenderId, file.name, remote.raw);
+      }
       for (const [key, hit] of Object.entries(remote.hits)) {
         if (hit.value) ocrHits[key] = hit;
       }
@@ -1706,4 +1715,26 @@ export async function processAutomation() {
       });
     }
   }
+}
+
+/** Deletes every tender and the rows tied to it. Users, calendar, SLAs, and portals stay. */
+export async function removeAllTenderData(actor: Actor) {
+  if (actor.role !== "ADMIN") throw new WorkflowError("Only a system administrator can remove tender data.");
+  const documents = await db.tenderDocument.findMany();
+  const paths = documents.map((document) => document.storedPath).filter(Boolean);
+  const removed = await db.$transaction(async (tx) => {
+    await tx.taskAction.deleteMany();
+    await tx.workflowTask.deleteMany();
+    await tx.tenderField.deleteMany();
+    await tx.tenderDocument.deleteMany();
+    await tx.costingRecord.deleteMany();
+    await tx.emdRecord.deleteMany();
+    await tx.approvalRecord.deleteMany();
+    await tx.bidSubmission.deleteMany();
+    await tx.notificationLog.deleteMany({ where: { tenderId: { not: null } } });
+    await tx.auditLog.deleteMany({ where: { tenderId: { not: null } } });
+    return tx.tender.deleteMany();
+  });
+  await Promise.all(paths.map((storedPath) => deleteStored(storedPath).catch(() => undefined)));
+  return removed.count;
 }

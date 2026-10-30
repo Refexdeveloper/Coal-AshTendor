@@ -51,6 +51,7 @@ export type TenderDocument = {
   uploadedById: string;
   uploadedAt: Date;
   pageCount: number;
+  ocrJson?: string;
 };
 
 export type TenderField = {

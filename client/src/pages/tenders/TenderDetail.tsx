@@ -326,16 +326,19 @@ export default function TenderPage() {
       ) : null}
 
       {tab === "details" ? (
-        <div className="detail-split">
-          <NoticePane document={notice ?? tender.documents[0] ?? null} />
-          <FieldEditor
-            tenderId={tender.id}
-            fields={editorFields}
-            locked={closed || !fieldEditor}
-            validationTaskId={openTasks.find((task) => task.mine && task.stage === "DATA_VALIDATION")?.id ?? null}
-            justUploaded={query.new === "1"}
-          />
-        </div>
+        <>
+          <div className="detail-split">
+            <NoticePane document={notice ?? tender.documents[0] ?? null} />
+            <FieldEditor
+              tenderId={tender.id}
+              fields={editorFields}
+              locked={closed || !fieldEditor}
+              validationTaskId={openTasks.find((task) => task.mine && task.stage === "DATA_VALIDATION")?.id ?? null}
+              justUploaded={query.new === "1"}
+            />
+          </div>
+          <OcrResults documents={tender.documents} />
+        </>
       ) : null}
 
       {tab === "documents" ? (
@@ -390,6 +393,7 @@ export default function TenderPage() {
                 </div>
               </section>
             ) : null}
+            <OcrResults documents={tender.documents} />
           </div>
           <aside>
             {!closed && (EDITOR_ROLES.includes(actor.role) || actor.id === tender.createdById) ? (
@@ -584,6 +588,31 @@ export default function TenderPage() {
       ) : null}
       </div>
     </>
+  );
+}
+
+function formatOcr(raw: string) {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+function OcrResults({ documents }: { documents: TenderDocument[] }) {
+  const shown = documents.filter((document) => document.ocrJson?.trim());
+  if (!shown.length) return null;
+  return (
+    <section className="panel stack">
+      <h2>OCR result</h2>
+      <p className="muted">This JSON is also emailed to sathishkumar.r@refex.co.in.</p>
+      {shown.map((document) => (
+        <div key={document.id}>
+          <p className="muted">{document.fileName}</p>
+          <pre className="ocr-json">{formatOcr(document.ocrJson || "")}</pre>
+        </div>
+      ))}
+    </section>
   );
 }
 

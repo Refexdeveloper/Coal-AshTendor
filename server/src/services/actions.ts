@@ -191,6 +191,18 @@ export async function addHolidayAction(actor: User, formData: FormData): Promise
   return { ok: "Holiday saved" };
 }
 
+export async function clearTendersAction(actor: User, formData: FormData): Promise<ActionState> {
+  const denied = adminOnly(actor);
+  if (denied) return denied;
+  if (String(formData.get("confirm") || "") !== "REMOVE") return { error: "Type REMOVE to confirm." };
+  try {
+    const count = await domain.removeAllTenderData(actor);
+    return { ok: count ? `Removed ${count} tender${count === 1 ? "" : "s"} and the records tied to them.` : "There were no tenders to remove." };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 export async function deleteHolidayAction(actor: User, formData: FormData): Promise<ActionState> {
   const denied = adminOnly(actor);
   if (denied) return denied;
