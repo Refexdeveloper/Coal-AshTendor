@@ -2,8 +2,8 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useFormStatus } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { createSampleAction, createTenderAction } from "@client/lib/actions";
-import type { ActionState } from "@client/lib/action-state";
+import { createSampleAction, createTenderAction } from "@client/api/actions";
+import type { ActionState } from "@client/api/action-state";
 import { Submit } from "@client/components/base/submit";
 
 const READING_STEPS = ["Uploading your document", "Sending the file to OCR", "Filling the tender fields", "Checking for duplicates", "Preparing the verify screen"];

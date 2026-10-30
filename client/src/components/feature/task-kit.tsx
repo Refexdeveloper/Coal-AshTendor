@@ -1,6 +1,6 @@
 import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
-import { taskAction } from "@client/lib/actions";
-import type { ActionState } from "@client/lib/action-state";
+import { taskAction } from "@client/api/actions";
+import type { ActionState } from "@client/api/action-state";
 import { confetti, fxToast } from "./fx";
 
 /** Facts about the tender that task forms show so people can act without leaving the card. */

@@ -1,6 +1,6 @@
 import { useActionState, useEffect } from "react";
-import { loginAction } from "@client/lib/actions";
-import type { ActionState } from "@client/lib/action-state";
+import { loginAction } from "@client/api/actions";
+import type { ActionState } from "@client/api/action-state";
 import { Submit } from "@client/components/base/submit";
 
 export function LoginForm() {

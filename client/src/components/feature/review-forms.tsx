@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Submit } from "@client/components/base/submit";
 import { BoundForm, DecisionCards, FilePick, ReasonChips, TimeLeft, useNow, type TaskContext } from "./task-kit";
-import { documentUrl } from "@client/lib/api";
+import { documentUrl } from "@client/api/client";
 
 const RUPEES = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 

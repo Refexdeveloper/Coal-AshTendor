@@ -2,7 +2,7 @@ import "../src/env";
 import { readFileSync } from "fs";
 import path from "path";
 import mysql from "mysql2/promise";
-import { repoRoot } from "../src/lib/root";
+import { repoRoot } from "../src/utils/root";
 
 /**
  * Creates the MySQL database and the tables in schema.sql.

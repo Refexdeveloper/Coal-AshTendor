@@ -1,8 +1,8 @@
 import { useActionState, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { NOT_FOUND, type FieldDef } from "@client/lib/fields";
-import { updateFieldsAction } from "@client/lib/actions";
-import type { ActionState } from "@client/lib/action-state";
+import { updateFieldsAction } from "@client/api/actions";
+import type { ActionState } from "@client/api/action-state";
 import { Submit } from "@client/components/base/submit";
 import { confetti, fxToast } from "./fx";
 

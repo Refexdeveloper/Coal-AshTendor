@@ -1,4 +1,4 @@
-/** Copy of server/src/lib/labels.ts (no server dependencies). Keep the two in step. */
+/** Copy of server/src/utils/labels.ts (no server dependencies). Keep the two in step. */
 export type Tone = "neutral" | "progress" | "good" | "bad" | "warn" | "info";
 
 export const OVERALL: Record<string, { label: string; tone: Tone }> = {

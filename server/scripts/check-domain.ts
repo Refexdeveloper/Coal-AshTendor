@@ -1,7 +1,7 @@
-import { addBusinessMinutes, businessMinutesBetween, formatWhen, istDate, type Calendar } from "../src/lib/calendar";
-import { extractFields, parseDateTime, parseInr, SAMPLE_NOTICE } from "../src/lib/extract";
-import { fieldsFromOcrResponse } from "../src/lib/ocr";
-import { TENDER_FIELDS } from "../src/lib/fields";
+import { addBusinessMinutes, businessMinutesBetween, formatWhen, istDate, type Calendar } from "../src/utils/calendar";
+import { extractFields, parseDateTime, parseInr, SAMPLE_NOTICE } from "../src/services/extract";
+import { fieldsFromOcrResponse } from "../src/services/ocr";
+import { TENDER_FIELDS } from "../src/utils/fields";
 
 const calendar: Calendar = {
   timeZone: "Asia/Kolkata",

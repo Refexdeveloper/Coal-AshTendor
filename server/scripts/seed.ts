@@ -1,9 +1,9 @@
 import "../src/env";
 import bcrypt from "bcryptjs";
-import { NOT_FOUND, TENDER_FIELDS } from "../src/lib/fields";
-import { TEMPLATES } from "../src/lib/notify";
-import { SAMPLE_NOTICE } from "../src/lib/extract";
-import { addBusinessMinutes, istDate, type Calendar } from "../src/lib/calendar";
+import { NOT_FOUND, TENDER_FIELDS } from "../src/utils/fields";
+import { TEMPLATES } from "../src/services/notify";
+import { SAMPLE_NOTICE } from "../src/services/extract";
+import { addBusinessMinutes, istDate, type Calendar } from "../src/utils/calendar";
 
 const calendar: Calendar = {
   timeZone: "Asia/Kolkata",
@@ -14,10 +14,10 @@ const calendar: Calendar = {
 };
 
 async function main() {
-  const { db } = await import("../src/lib/db");
-  const { createTender } = await import("../src/lib/domain");
-  const { storeFile, sha256 } = await import("../src/lib/files");
-  const { textToPdf } = await import("../src/lib/pdf");
+  const { db } = await import("../src/db");
+  const { createTender } = await import("../src/services/domain");
+  const { storeFile, sha256 } = await import("../src/services/files");
+  const { textToPdf } = await import("../src/services/pdf");
 
   await db.crawlerException.deleteMany();
   await db.crawlerRun.deleteMany();

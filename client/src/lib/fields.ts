@@ -1,4 +1,4 @@
-/** Copy of server/src/lib/fields.ts (no server dependencies). Keep the two in step. */
+/** Copy of server/src/utils/fields.ts (no server dependencies). Keep the two in step. */
 export const NOT_FOUND = "Not Found in Document";
 
 export type FieldType = "text" | "long" | "datetime" | "money" | "choice" | "integer";

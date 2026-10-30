@@ -1,7 +1,7 @@
 import { spawn } from "child_process";
 import { existsSync, writeFileSync } from "fs";
 import path from "path";
-import { repoRoot } from "../src/lib/root";
+import { repoRoot } from "../src/utils/root";
 
 /**
  * Opens a public Cloudflare quick tunnel to the server so the OCR service can download uploads,

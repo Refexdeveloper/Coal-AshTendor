@@ -1,5 +1,5 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { postAction } from "@client/lib/api";
+import { postAction } from "@client/api/client";
 
 /**
  * For settings forms that used to redirect with ?notice= or ?error=: posts the form, then puts the

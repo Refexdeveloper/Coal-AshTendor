@@ -4,7 +4,7 @@ import { BidWizard, DeptReview, RelevanceReview } from "./review-forms";
 import { AmountInput, BoundForm, FilePick, type TaskContext } from "./task-kit";
 import { Status } from "@client/components/base/pill";
 import { Submit } from "@client/components/base/submit";
-import { documentUrl } from "@client/lib/api";
+import { documentUrl } from "@client/api/client";
 
 export type WorkTask = {
   id: string;

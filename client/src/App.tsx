@@ -1,21 +1,22 @@
-import { Route, Routes } from "react-router-dom";
-import AdminPage from "@client/screens/admin";
-import LoginPage from "@client/screens/login";
-import MainLayout from "@client/screens/main-layout";
-import NewTenderPage from "@client/screens/new-tender";
-import NotificationsPage from "@client/screens/notifications";
-import DashboardPage from "@client/screens/pipeline";
-import PortalsPage from "@client/screens/portals";
-import RegisterPage from "@client/screens/register";
-import ReportsPage from "@client/screens/reports";
-import TenderPage from "@client/screens/tender-detail";
-import WorklistPage from "@client/screens/worklist";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import AdminPage from "@client/pages/admin/Admin";
+import LoginPage from "@client/pages/Login";
+import AppLayout from "@client/layout/AppLayout";
+import NewTenderPage from "@client/pages/tenders/NewTender";
+import NotificationsPage from "@client/pages/Notifications";
+import DashboardPage from "@client/pages/Dashboard";
+import PortalsPage from "@client/pages/portals/Portals";
+import RegisterPage from "@client/pages/Register";
+import ReportsPage from "@client/pages/Reports";
+import TenderPage from "@client/pages/tenders/TenderDetail";
+import WorklistPage from "@client/pages/Worklist";
 
-export function App() {
+export default function App() {
   return (
-    <Routes>
+    <BrowserRouter>
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route element={<MainLayout />}>
+      <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
         <Route path="worklist" element={<WorklistPage />} />
         <Route path="register" element={<RegisterPage />} />
@@ -27,6 +28,7 @@ export function App() {
         <Route path="admin" element={<AdminPage />} />
         <Route path="*" element={<p className="panel">That page does not exist.</p>} />
       </Route>
-    </Routes>
+      </Routes>
+    </BrowserRouter>
   );
 }
