@@ -1,16 +1,14 @@
 import { useActionState, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { useFormStatus } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { createSampleAction, createTenderAction } from "@client/api/actions";
 import type { ActionState } from "@client/api/action-state";
-import { Submit } from "@client/components/base/submit";
+import { Submit, useFormPending } from "@client/components/base/submit";
 
 const READING_STEPS = ["Uploading your document", "Sending the file to OCR", "Filling the tender fields", "Checking for duplicates", "Preparing the verify screen"];
 
 /** Full-card overlay while the server uploads and extracts; cycles through what it is doing. */
 function Reading() {
-  const { pending } = useFormStatus();
+  const { pending } = useFormPending();
   const [step, setStep] = useState(0);
   useEffect(() => {
     if (!pending) {

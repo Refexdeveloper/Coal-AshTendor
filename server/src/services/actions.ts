@@ -6,7 +6,8 @@ import { TEMPLATES } from "./notify";
 import { SAMPLE_NOTICE } from "./extract";
 import { textToPdf } from "./pdf";
 import { TENDER_FIELDS } from "../utils/fields";
-import { createAccount } from "./accounts";
+import { createAccount, updateUserAccess } from "./accounts";
+import { describeSync, syncRefexOneUsers } from "./refexone-directory";
 import type { ActionState } from "../utils/action-state";
 
 /** Every action receives the signed-in user and the submitted form, and answers with an ActionState. */
@@ -82,7 +83,8 @@ export async function updateFieldsAction(actor: User, formData: FormData): Promi
     const tenderId = String(formData.get("tenderId") || "");
     const values: Record<string, string> = {};
     for (const field of TENDER_FIELDS) values[field.key] = String(formData.get(`field_${field.key}`) ?? "");
-    const result = await domain.updateFields(actor, tenderId, values);
+    const mode = formData.get("intent") === "validate" ? "validate" : "save";
+    const result = await domain.updateFields(actor, tenderId, values, mode);
     if (result.warnings.length) return { error: `Saved, but please fix: ${result.warnings.join(" ")}` };
     // "Save and send": corrections are stored first, then the validation task is submitted, so no edit is lost.
     if (formData.get("intent") === "validate") {
@@ -195,6 +197,30 @@ export async function addUserAction(actor: User, formData: FormData): Promise<Ac
     const message = error instanceof Error ? error.message : "";
     if (/duplicate/i.test(message)) return { error: "That email already has an account." };
     return failure(error);
+  }
+}
+
+export async function updateUserAccessAction(actor: User, formData: FormData): Promise<ActionState> {
+  const denied = adminOnly(actor);
+  if (denied) return denied;
+  try {
+    return await updateUserAccess(actor.id, {
+      userId: String(formData.get("userId") || ""),
+      role: String(formData.get("role") || ""),
+      allow: formData.get("allow") === "yes",
+    });
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function syncRefexOneUsersAction(actor: User): Promise<ActionState> {
+  const denied = adminOnly(actor);
+  if (denied) return denied;
+  try {
+    return { ok: describeSync(await syncRefexOneUsers(actor)) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "The Refex One sync failed." };
   }
 }
 

@@ -8,6 +8,7 @@ import { repoRoot } from "./utils/root";
 import { cors } from "./middleware/cors";
 import { requireActor } from "./middleware/auth";
 import { authRouter } from "./routes/auth";
+import { refexOneLoginUrl, refexOneReady, safeNext, serviceProviderMetadata } from "./services/refexone";
 import { actionRoutes } from "./routes/actions";
 import { files } from "./routes/files";
 import { views } from "./routes/views";
@@ -19,6 +20,7 @@ export function createApp() {
   app.use("/api", cors);
   app.use(cookieParser());
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false, limit: "2mb" }));
 
   app.get("/api/health", async (_req, res) => {
     const { storageBackend, storageLabel } = await import("./services/files");
@@ -39,6 +41,27 @@ export function createApp() {
   });
 
   app.use("/api/auth", authRouter);
+
+  app.get("/auth/refexone/saml", (req, res) => {
+    res.type("application/xml").send(serviceProviderMetadata(req));
+  });
+  app.get("/auth/refexone/launch", async (req, res) => {
+    if (!refexOneReady()) {
+      res
+        .status(503)
+        .type("html")
+        .send(
+          `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Refex One</title></head><body style="font-family:sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem"><h1>Refex One is not configured</h1><p>Set REFEXONE_SSO_URL and REFEXONE_IDP_CERT on the server. The metadata address is /auth/refexone/saml and the reply address is /api/auth/refexone/saml/acs.</p><p><a href="/login?admin=1">Administrator sign-in</a></p></body></html>`,
+        );
+      return;
+    }
+    try {
+      res.redirect(await refexOneLoginUrl(req, safeNext(req.query.next)));
+    } catch (error) {
+      console.error(error);
+      res.status(502).type("html").send("Refex One could not be opened. Use administrator sign-in.");
+    }
+  });
   app.use("/api", files);
   app.use("/api/actions", requireActor, actionRoutes);
   app.use("/api", requireActor, views);

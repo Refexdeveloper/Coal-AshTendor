@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
 import type { CSSProperties } from "react";
 import { formatWhen } from "@client/utils/calendar";
-import { CREATOR_ROLES, OVERALL, ROLES, STAGE, labelOf } from "@client/lib/labels";
+import { CREATOR_ROLES, OVERALL, ROLES, STAGE } from "@client/lib/labels";
 import { inr } from "@client/utils/money";
 import { useApi } from "@client/api/client";
 import { useActor } from "@client/api/session";
@@ -217,27 +217,61 @@ export default function DashboardPage() {
                 ))}
               </nav>
               {rows.length === 0 ? <p className="empty">No tenders in this view.</p> : null}
-              <ul className="list-rows" key={view.key}>
-                {rows.map((tender, index) => (
-                  <li key={tender.id} className={`list-row ${rowTone(tender.overallStatus)}`} style={{ "--r": index } as CSSProperties}>
-                    <span className="ticon" aria-hidden>
-                      ▤
-                    </span>
-                    <div className="grow">
-                      <Link className="rid" to={`/tenders/${tender.id}`}>
-                        {tender.recordId}
-                      </Link>
-                      <div className="title">{tender.projectName || tender.clientName || "Untitled"}</div>
-                      <div className="meta">
-                        {[tender.clientName, tender.location].filter(Boolean).join(" · ") || labelOf(OVERALL, tender.overallStatus)}
-                        {tender.estimatedValue ? ` · ${inr(tender.estimatedValue)}` : ""}
-                      </div>
-                    </div>
-                    <Status map={OVERALL} value={tender.overallStatus} />
-                    <span className="when">{formatWhen(tender.bidSubmissionEnd, tz)}</span>
-                  </li>
-                ))}
-              </ul>
+              {rows.length ? (
+                <div className="rt-wrap">
+                  <table className="rt-table" key={view.key}>
+                    <colgroup>
+                      <col className="c-ref" />
+                      <col className="c-title" />
+                      <col className="c-client" />
+                      <col className="c-value" />
+                      <col className="c-status" />
+                      <col className="c-due" />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th>Tender</th>
+                        <th>Title</th>
+                        <th>Client · location</th>
+                        <th className="num">Est. value</th>
+                        <th>Status</th>
+                        <th>Bid deadline</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((tender, index) => (
+                        <tr key={tender.id} className={`rt-row ${rowTone(tender.overallStatus)}`} style={{ "--r": index } as CSSProperties}>
+                          <td>
+                            <Link className="rid" to={`/tenders/${tender.id}`}>
+                              {tender.recordId}
+                            </Link>
+                          </td>
+                          <td>
+                            <Link className="rt-title" to={`/tenders/${tender.id}`} title={tender.projectName}>
+                              {tender.projectName || "Untitled"}
+                            </Link>
+                          </td>
+                          <td>
+                            <span className="rt-clip" title={tender.clientName}>
+                              {tender.clientName || "—"}
+                            </span>
+                            {tender.location ? (
+                              <small className="rt-clip" title={tender.location}>
+                                {tender.location}
+                              </small>
+                            ) : null}
+                          </td>
+                          <td className="num">{inr(tender.estimatedValue)}</td>
+                          <td>
+                            <Status map={OVERALL} value={tender.overallStatus} />
+                          </td>
+                          <td className="rt-due">{formatWhen(tender.bidSubmissionEnd, tz)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
             </section>
           </div>
       </div>

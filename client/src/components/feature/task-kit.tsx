@@ -2,6 +2,7 @@ import { useActionState, useEffect, useRef, useState, type ReactNode } from "rea
 import { taskAction } from "@client/api/actions";
 import type { ActionState } from "@client/api/action-state";
 import { confetti, fxToast } from "./fx";
+import { inr } from "@client/utils/money";
 
 /** Facts about the tender that task forms show so people can act without leaving the card. */
 export type TaskContext = {
@@ -203,7 +204,7 @@ export function AmountInput({ name, label, required = false, defaultValue = "" }
       {raw.trim() ? (
         valid ? (
           <small className="amount-preview">
-            = {RUPEES.format(amount)}
+            = {inr(amount)}{amount >= 1e5 ? ` (${RUPEES.format(amount)})` : ""}
             {inWords(amount) ? ` · ${inWords(amount)}` : ""}
           </small>
         ) : (

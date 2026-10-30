@@ -2,7 +2,7 @@
  * Cards lean toward the pointer and carry a spotlight under it.
  * One delegated listener feeds --rx/--ry (tilt) and --mx/--my (spotlight) to whichever card is hovered; CSS does the rest.
  */
-const CARDS = ".kpi, .exec-kpi, .count-card, .fact, .week-card";
+const CARDS = ".kpi, .exec-kpi, .count-card, .dk-card, .fact, .week-card";
 const MAX_TILT = 7;
 
 export function installCardTilt() {

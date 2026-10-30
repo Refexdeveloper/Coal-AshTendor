@@ -5,6 +5,7 @@ import { createApp } from "./app";
 import { ensureDatabaseReady } from "./bootstrap";
 import { ensureDefaultUsers } from "./services/accounts";
 import { storageBackend, storageLabel } from "./services/files";
+import { maybeScheduledSync, syncEveryHours } from "./services/refexone-directory";
 import { repoRoot } from "./utils/root";
 
 async function main() {
@@ -27,6 +28,11 @@ async function main() {
     console.log(`Coal & Ash listening on http://${host}:${port}`);
     console.log(`Storage: ${storageLabel()} (${storageBackend()})`);
     console.log(`Local:  http://localhost:${port}${existsSync(clientIndex) ? " (frontend + API)" : " (API only; run npm run build for the frontend)"}`);
+    // Daily Refex One directory sync while the server is up; page views also trigger it on hosts that sleep between requests.
+    if (syncEveryHours()) {
+      void maybeScheduledSync();
+      setInterval(() => void maybeScheduledSync(), 15 * 60 * 1000).unref();
+    }
   });
 }
 

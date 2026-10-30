@@ -31,6 +31,16 @@ const PLACEHOLDER: Partial<Record<string, string>> = {
   integer: "Number",
   text: "Leave blank if not in the document",
 };
+function choiceOptions(field: EditorField, value: string) {
+  if (!field.options) return null;
+  const options = [...field.options, NOT_FOUND];
+  const trimmed = value.trim();
+  if (!trimmed) return { options, selected: "" };
+  const match = options.find((option) => option.toLowerCase() === trimmed.toLowerCase());
+  if (match) return { options, selected: match };
+  return { options: [trimmed, ...options], selected: trimmed };
+}
+
 const STATUS_TONE: Record<string, string> = {
   VALIDATED: "good",
   EXTRACTED: "info",
@@ -128,8 +138,7 @@ export function FieldEditor({
           <div className="fields">
             {group
               .map((field) => {
-                const options = field.options ? [...field.options, NOT_FOUND] : null;
-                if (options && field.value && !options.includes(field.value)) options.unshift(field.value);
+                const choice = choiceOptions(field, field.value);
                 return (
                   <label key={field.key} className={`field ${field.status === "CONFLICT" ? "conflict" : ""}`} hidden={onlyAttention && !ATTENTION.includes(field.status)}>
                     <span className="field-label">
@@ -145,17 +154,20 @@ export function FieldEditor({
                     </span>
                     {field.conflict ? <small className="conflict-note">Conflicting values: {field.conflict}</small> : null}
                     {field.extracted && field.extracted !== field.value ? <small>Extracted: {field.extracted}</small> : null}
-                    {options ? (
-                      <select name={`field_${field.key}`} defaultValue={field.value} disabled={locked}>
+                    {choice ? (
+                      <select key={`${field.key}:${field.value}`} name={`field_${field.key}`} defaultValue={choice.selected} disabled={locked}>
                         <option value="">Select</option>
-                        {options.map((option) => (
-                          <option key={option}>{option}</option>
+                        {choice.options.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
                         ))}
                       </select>
                     ) : field.type === "long" ? (
-                      <textarea name={`field_${field.key}`} defaultValue={field.value} rows={3} disabled={locked} />
+                      <textarea key={`${field.key}:${field.value}`} name={`field_${field.key}`} defaultValue={field.value} rows={3} disabled={locked} />
                     ) : (
                       <input
+                        key={`${field.key}:${field.value}`}
                         name={`field_${field.key}`}
                         defaultValue={field.value}
                         disabled={locked}

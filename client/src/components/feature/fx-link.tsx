@@ -23,7 +23,9 @@ export function FxLink({
   const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
     event.preventDefault();
-    const wait = playCardFx(fx, event.currentTarget);
+    // Keyboard activation has no pointer position; the effect then starts from the card's centre.
+    const point = event.detail ? { x: event.clientX, y: event.clientY } : undefined;
+    const wait = playCardFx(fx, event.currentTarget, point);
     window.setTimeout(() => {
       navigate(href, { preventScrollReset: true });
       const [, hash] = href.split("#");

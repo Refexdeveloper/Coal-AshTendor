@@ -8,12 +8,44 @@ const reducedMotion = () => typeof window !== "undefined" && window.matchMedia?.
 
 const EMBER_COLORS = ["#ea580c", "#fb923c", "#fbbf24", "#34d399", "#0c9f68", "#f472b6", "#44403c", "#fde68a"];
 
-/** Restartable CSS class on the card itself. */
+const MOTIONS: Record<string, { frames: Keyframe[]; easing: string }> = {
+  "fx-bounce": {
+    frames: [{ transform: "scale(1)" }, { transform: "scale(0.93)", offset: 0.25 }, { transform: "scale(1.05)", offset: 0.55 }, { transform: "scale(0.99)", offset: 0.8 }, { transform: "scale(1)" }],
+    easing: "cubic-bezier(0.3, 1.4, 0.5, 1)",
+  },
+  "fx-breathe": {
+    frames: [{ transform: "scale(1)" }, { transform: "scale(1.03)", offset: 0.25 }, { transform: "scale(0.99)", offset: 0.5 }, { transform: "scale(1.02)", offset: 0.75 }, { transform: "scale(1)" }],
+    easing: "ease-in-out",
+  },
+  "fx-shake": {
+    frames: [
+      { transform: "translateX(0)" },
+      { transform: "translateX(-3px)", offset: 0.1 },
+      { transform: "translateX(6px) rotate(0.8deg)", offset: 0.25 },
+      { transform: "translateX(-8px) rotate(-1.2deg)", offset: 0.4 },
+      { transform: "translateX(8px) rotate(1.2deg)", offset: 0.55 },
+      { transform: "translateX(-5px) rotate(-0.6deg)", offset: 0.7 },
+      { transform: "translateX(3px)", offset: 0.85 },
+      { transform: "translateX(0)" },
+    ],
+    easing: "cubic-bezier(0.36, 0.07, 0.19, 0.97)",
+  },
+};
+
+/** Squash, breathe or shake the card itself, layered on whatever transform it already has. */
 function pulseClass(el: HTMLElement, cls: string, ms: number) {
-  el.classList.remove(cls);
-  void el.offsetWidth;
-  el.classList.add(cls);
-  window.setTimeout(() => el.classList.remove(cls), ms);
+  const motion = MOTIONS[cls];
+  if (!motion) return;
+  el.animate(motion.frames, { duration: ms * 0.93, easing: motion.easing, composite: "add" });
+}
+
+/** Colours of the card being clicked (its --c / --c2), so effects match the card. Ember by default. */
+let tint = { c: "#ea580c", c2: "#fb923c" };
+function readTint(el: HTMLElement) {
+  const style = getComputedStyle(el);
+  const c = style.getPropertyValue("--c").trim() || style.getPropertyValue("--c1").trim();
+  const c2 = style.getPropertyValue("--c2").trim();
+  tint = { c: c || "#ea580c", c2: c2 || c || "#fb923c" };
 }
 
 /** Fixed overlay positioned over `el` that removes itself after `ms`. */
@@ -21,7 +53,7 @@ function overlayOn(el: HTMLElement, className: string, html: string, ms: number)
   const r = el.getBoundingClientRect();
   const o = document.createElement("div");
   o.className = `fx-ov ${className}`;
-  o.style.cssText = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`;
+  o.style.cssText = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;--fx-c:${tint.c};--fx-c2:${tint.c2}`;
   o.innerHTML = html;
   document.body.appendChild(o);
   window.setTimeout(() => o.remove(), ms);
@@ -29,7 +61,7 @@ function overlayOn(el: HTMLElement, className: string, html: string, ms: number)
 }
 
 /** Burst of ember-coloured confetti from the centre of `el`. */
-export function confetti(el: Element, pieces = 60) {
+export function confetti(el: Element, pieces = 60, colors = EMBER_COLORS) {
   if (reducedMotion()) return;
   const r = el.getBoundingClientRect();
   const cx = r.left + r.width / 2;
@@ -37,7 +69,7 @@ export function confetti(el: Element, pieces = 60) {
   for (let i = 0; i < pieces; i++) {
     const c = document.createElement("i");
     c.className = "fx-confetti";
-    c.style.background = EMBER_COLORS[i % EMBER_COLORS.length];
+    c.style.background = colors[i % colors.length];
     if (i % 3 === 0) c.style.borderRadius = "50%";
     document.body.appendChild(c);
     const a = Math.random() * Math.PI * 2;
@@ -70,6 +102,7 @@ export function docsFx(el: HTMLElement) {
   for (let i = 0; i < n; i++) {
     const d = document.createElement("div");
     d.className = "fx-doc";
+    d.style.cssText = `--fx-c:${tint.c};--fx-c2:${tint.c2}`;
     d.innerHTML = DOC_SVG;
     document.body.appendChild(d);
     const ang = (-150 + (120 / (n - 1)) * i) * (Math.PI / 180);
@@ -213,7 +246,155 @@ export function pulseFx(el: HTMLElement) {
   overlayOn(el, "fx-glow-ring", "<i></i>", 1100);
 }
 
-export type CardFx = "docs" | "pending" | "gears" | "ready" | "overdue" | "coins" | "shield" | "trophy" | "pulse";
+/** A fixed element at a viewport point that removes itself when its animation ends. */
+function burstAt(className: string, x: number, y: number, frames: Keyframe[], options: KeyframeAnimationOptions, html = "") {
+  const node = document.createElement("i");
+  node.className = className;
+  node.style.cssText = `left:${x}px;top:${y}px;--fx-c:${tint.c};--fx-c2:${tint.c2}`;
+  node.innerHTML = html;
+  document.body.appendChild(node);
+  node.animate(frames, { fill: "backwards", ...options }).onfinish = () => node.remove();
+  return node;
+}
+
+/**
+ * Shared click impact for the dashboard cards: a shockwave and sparks from the exact click point,
+ * a light sweep across the card, and the icon tile and number popping.
+ */
+export function impactFx(el: HTMLElement, point?: { x: number; y: number }) {
+  if (reducedMotion()) return;
+  const r = el.getBoundingClientRect();
+  const x = point && point.x ? point.x : r.left + r.width / 2;
+  const y = point && point.y ? point.y : r.top + r.height / 2;
+  const reach = Math.max(r.width, r.height) * 1.6;
+
+  burstAt("fx-shock", x, y, [
+    { transform: "translate(-50%,-50%) scale(0)", opacity: 0.9 },
+    { transform: `translate(-50%,-50%) scale(${reach / 40})`, opacity: 0 },
+  ], { duration: 750, easing: "cubic-bezier(.2,.8,.2,1)" });
+  burstAt("fx-shock fill", x, y, [
+    { transform: "translate(-50%,-50%) scale(0)", opacity: 0.55 },
+    { transform: `translate(-50%,-50%) scale(${reach / 70})`, opacity: 0 },
+  ], { duration: 600, easing: "ease-out" });
+
+  for (let i = 0; i < 16; i++) {
+    const angle = (i / 16) * Math.PI * 2 + Math.random() * 0.3;
+    const distance = 46 + Math.random() * 60;
+    const deg = (angle * 180) / Math.PI;
+    burstAt(`fx-spark${i % 3 === 0 ? " white" : ""}`, x, y, [
+      { transform: `translate(-50%,-50%) rotate(${deg}deg) translateX(0) scaleX(1.6)`, opacity: 1 },
+      { transform: `translate(-50%,-50%) rotate(${deg}deg) translateX(${distance}px) scaleX(0.3)`, opacity: 0 },
+    ], { duration: 520 + Math.random() * 260, delay: Math.random() * 60, easing: "cubic-bezier(.1,.8,.3,1)" });
+  }
+
+  overlayOn(el, "fx-sweep", "<i></i>", 900);
+
+  el.querySelector<HTMLElement>(".dk-card-icon")?.animate(
+    [
+      { transform: "scale(1) rotate(0)" },
+      { transform: "scale(1.38) rotate(-16deg)", offset: 0.3 },
+      { transform: "scale(0.9) rotate(10deg)", offset: 0.6 },
+      { transform: "scale(1.06) rotate(-3deg)", offset: 0.8 },
+      { transform: "scale(1) rotate(0)" },
+    ],
+    { duration: 800, easing: "cubic-bezier(.3,1.3,.5,1)" },
+  );
+  el.querySelector<HTMLElement>("b")?.animate(
+    [{ transform: "scale(1)", filter: "none" }, { transform: "scale(1.18)", filter: `drop-shadow(0 6px 14px ${tint.c})`, offset: 0.35 }, { transform: "scale(1)", filter: "none" }],
+    { duration: 700, easing: "cubic-bezier(.3,1.4,.5,1)" },
+  );
+}
+
+const PLANE_SVG =
+  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.5 11.2 21 3.5l-4.6 17-5.3-5.1-3.4 3.1.6-4.9 9.3-8.8-11.2 7.5z"/></svg>';
+
+/** Bids submitted: paper planes take off from the card toward the portal, leaving a trail. */
+export function sendFx(el: HTMLElement) {
+  if (reducedMotion()) return;
+  pulseClass(el, "fx-bounce", 700);
+  const r = el.getBoundingClientRect();
+  const cx = r.left + r.width * 0.3;
+  const cy = r.top + r.height * 0.6;
+  for (let i = 0; i < 7; i++) {
+    const lift = 120 + Math.random() * 140;
+    const run = 220 + Math.random() * 220;
+    const wobble = (Math.random() - 0.5) * 80;
+    for (let ghost = 0; ghost < 3; ghost++) {
+      burstAt(`fx-plane${ghost ? " ghost" : ""}`, cx, cy, [
+        { transform: "translate(-50%,-50%) scale(.3) rotate(10deg)", opacity: 0 },
+        { transform: `translate(calc(-50% + ${run * 0.35}px), calc(-50% - ${lift * 0.5 + wobble}px)) scale(1) rotate(-12deg)`, opacity: ghost ? 0.35 / ghost : 1, offset: 0.35 },
+        { transform: `translate(calc(-50% + ${run}px), calc(-50% - ${lift}px)) scale(.7) rotate(-28deg)`, opacity: 0 },
+      ], { duration: 1100, delay: i * 70 + ghost * 45, easing: "cubic-bezier(.3,.7,.3,1)" }, PLANE_SVG);
+    }
+  }
+  overlayOn(el, "fx-glow-ring", "<i></i>", 1100);
+}
+
+/** Awarded: golden rays spin behind a rising trophy, with gold and green confetti. */
+export function awardFx(el: HTMLElement) {
+  if (reducedMotion()) return;
+  pulseClass(el, "fx-bounce", 700);
+  overlayOn(el, "fx-award", `<i class="fx-rays"></i><div class="fx-trophy-badge" aria-hidden>🏆</div><i class="fx-star s1">✦</i><i class="fx-star s2">✦</i><i class="fx-star s3">✦</i>`, 1600);
+  confetti(el, 70, ["#fbbf24", "#f59e0b", "#10b981", "#34d399", "#fde68a", "#ffffff", "#059669"]);
+}
+
+/** Lost: the card shakes, a red stamp slams down and shards fall away. */
+export function lostFx(el: HTMLElement) {
+  if (reducedMotion()) return;
+  pulseClass(el, "fx-shake", 700);
+  const rect = overlayOn(
+    el,
+    "fx-lost",
+    `<div class="fx-stamp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M7 7l10 10M17 7 7 17"/></svg><span>Not awarded</span></div>`,
+    1500,
+  );
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  for (let i = 0; i < 14; i++) {
+    const dx = (Math.random() - 0.5) * 220;
+    const spin = (Math.random() - 0.5) * 540;
+    burstAt("fx-shard", cx + (Math.random() - 0.5) * 60, cy, [
+      { transform: "translate(-50%,-50%) rotate(0) scale(.4)", opacity: 0 },
+      { transform: `translate(calc(-50% + ${dx * 0.4}px), calc(-50% - ${30 + Math.random() * 40}px)) rotate(${spin / 3}deg) scale(1)`, opacity: 1, offset: 0.3 },
+      { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${180 + Math.random() * 120}px)) rotate(${spin}deg) scale(.8)`, opacity: 0 },
+    ], { duration: 1100 + Math.random() * 400, delay: 220 + i * 15, easing: "cubic-bezier(.3,.1,.6,1)" });
+  }
+}
+
+/** In evaluation: an hourglass flips with falling sand inside expanding rings. */
+export function hourglassFx(el: HTMLElement) {
+  if (reducedMotion()) return;
+  pulseClass(el, "fx-breathe", 1400);
+  overlayOn(
+    el,
+    "fx-hourglass",
+    `<i class="fx-ring r1"></i><i class="fx-ring r2"></i><i class="fx-ring r3"></i>
+     <div class="fx-glass">
+       <svg viewBox="0 0 48 48"><path class="frame" d="M12 6h24M12 42h24M14 6c0 10 20 10 20 18S14 32 14 42M34 6c0 10-20 10-20 18s20 8 20 18"/><path class="sand top" d="M17 11h14c-2 5-12 5-14 0z"/><path class="sand bottom" d="M16 40c2-6 14-6 16 0z"/><line class="stream" x1="24" y1="22" x2="24" y2="36"/></svg>
+     </div>
+     <span class="fx-dots"><b></b><b></b><b></b></span>`,
+    1700,
+  );
+}
+
+/** Win rate: a target pops up and an arrow flies in to the bullseye. */
+export function targetFx(el: HTMLElement) {
+  if (reducedMotion()) return;
+  pulseClass(el, "fx-bounce", 700);
+  overlayOn(
+    el,
+    "fx-target",
+    `<div class="fx-board">
+       <svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="28" class="o1"/><circle cx="32" cy="32" r="20" class="o2"/><circle cx="32" cy="32" r="12" class="o3"/><circle cx="32" cy="32" r="5" class="o4"/></svg>
+       <svg class="fx-arrow" viewBox="0 0 64 16"><path d="M2 8h50" /><path d="M52 3l9 5-9 5z" class="tip"/><path d="M2 8l-0 0M4 3l6 5-6 5M10 3l6 5-6 5" class="fletch"/></svg>
+       <i class="fx-hit"></i>
+     </div>`,
+    1700,
+  );
+  window.setTimeout(() => confetti(el, 30, [tint.c, tint.c2, "#ffffff", "#fbbf24"]), 520);
+}
+
+export type CardFx = "docs" | "pending" | "gears" | "ready" | "overdue" | "coins" | "shield" | "trophy" | "pulse" | "send" | "award" | "lost" | "hourglass" | "target";
 
 const CARD_FX: Record<CardFx, (el: HTMLElement) => void> = {
   docs: docsFx,
@@ -225,13 +406,20 @@ const CARD_FX: Record<CardFx, (el: HTMLElement) => void> = {
   shield: shieldFx,
   trophy: trophyFx,
   pulse: pulseFx,
+  send: sendFx,
+  award: awardFx,
+  lost: lostFx,
+  hourglass: hourglassFx,
+  target: targetFx,
 };
 
 /** Plays the card's effect; returns how long to wait before navigating so it can be seen. */
-export function playCardFx(kind: CardFx, el: HTMLElement) {
+export function playCardFx(kind: CardFx, el: HTMLElement, point?: { x: number; y: number }) {
   if (reducedMotion()) return 0;
+  readTint(el);
+  if (el.classList.contains("dk-card")) impactFx(el, point);
   CARD_FX[kind](el);
-  return kind === "pulse" ? 380 : kind === "ready" || kind === "trophy" ? 500 : 750;
+  return kind === "pulse" ? 380 : kind === "ready" || kind === "trophy" || kind === "award" ? 520 : 800;
 }
 
 let rippleInstalled = false;

@@ -18,11 +18,17 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
-      proxy: { "/api": { target: api, changeOrigin: true } },
+      proxy: {
+        "/api": { target: api, changeOrigin: true },
+        "/auth/refexone": { target: api, changeOrigin: true },
+      },
     },
     preview: {
       port: 5173,
-      proxy: { "/api": { target: api, changeOrigin: true } },
+      proxy: {
+        "/api": { target: api, changeOrigin: true },
+        "/auth/refexone": { target: api, changeOrigin: true },
+      },
     },
   };
 });

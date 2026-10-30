@@ -20,5 +20,5 @@ export async function loginAction(_state: ActionState, formData: FormData): Prom
 
 export async function logoutAction() {
   await apiPost("/auth/logout").catch(() => null);
-  window.location.assign("/login");
+  window.location.assign(window.location.pathname.startsWith("/admin") ? "/login?admin=1" : "/login");
 }

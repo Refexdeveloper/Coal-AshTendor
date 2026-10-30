@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState } from "react";
+import { inr } from "@client/utils/money";
 
-const RUPEES = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 const PLAIN = new Intl.NumberFormat("en-IN");
 
 /**
@@ -38,5 +38,5 @@ export function CountUp({
     timer = setTimeout(step, delay);
     return () => clearTimeout(timer);
   }, [value, duration, delay]);
-  return <>{money ? RUPEES.format(shown) : PLAIN.format(shown)}</>;
+  return <>{money ? inr(shown) : PLAIN.format(shown)}</>;
 }

@@ -36,7 +36,14 @@ export class ApiError extends Error {
 }
 
 function toSignIn() {
-  if (!window.location.pathname.startsWith("/login")) window.location.assign("/login");
+  const path = window.location.pathname;
+  if (path.startsWith("/login")) return;
+  if (path.startsWith("/admin")) {
+    const next = `${path}${window.location.search}`;
+    window.location.assign(`/login?admin=1&next=${encodeURIComponent(next)}`);
+    return;
+  }
+  window.location.assign("/auth/refexone/launch");
 }
 
 async function parse<T>(response: Response): Promise<T> {

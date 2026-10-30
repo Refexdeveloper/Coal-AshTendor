@@ -2,8 +2,8 @@ import { useState } from "react";
 import { Submit } from "@client/components/base/submit";
 import { BoundForm, DecisionCards, FilePick, ReasonChips, TimeLeft, useNow, type TaskContext } from "./task-kit";
 import { documentUrl } from "@client/api/client";
+import { inr } from "@client/utils/money";
 
-const RUPEES = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 
 function Fact({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
   return (
@@ -148,7 +148,7 @@ export function DeptReview({ taskId, tenderId, ctx }: { taskId: string; tenderId
           </div>
           <div className="final">
             <span>Proposed final costing</span>
-            <b>{ctx.finalCostingValue != null ? RUPEES.format(ctx.finalCostingValue) : "—"}</b>
+            <b>{ctx.finalCostingValue != null ? inr(ctx.finalCostingValue) : "—"}</b>
           </div>
           {ratio != null ? (
             <div className="ratio">

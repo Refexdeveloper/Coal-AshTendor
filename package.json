@@ -20,6 +20,7 @@
     "db:reset": "npm run db:reset -w coal-ash-server",
     "db:seed": "npm run db:seed -w coal-ash-server",
     "serve": "npm run build && npm run start",
-    "tunnel": "npm run tunnel -w coal-ash-server --"
+    "tunnel": "npm run tunnel -w coal-ash-server --",
+    "db:demo": "npm run db:demo -w coal-ash-server"
   }
 }

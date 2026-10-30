@@ -90,7 +90,21 @@ const QUICK = [
   { key: "fy", label: "This FY" },
 ];
 
-export function PeriodPicker({ value, onChange, earliest }: { value: string; onChange: (key: string) => void; earliest?: Date | null }) {
+export function PeriodPicker({
+  value,
+  onChange,
+  earliest,
+  compact = false,
+  align = "left",
+}: {
+  value: string;
+  onChange: (key: string) => void;
+  earliest?: Date | null;
+  /** Hide the "Period" caption, for a toolbar. */
+  compact?: boolean;
+  /** Open the panel toward the left, for a picker at the right edge. */
+  align?: "left" | "right";
+}) {
   const period = resolvePeriod(value);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>(value.startsWith("w:") ? "week" : value.startsWith("m:") ? "month" : value.startsWith("c:") ? "custom" : "year");
@@ -139,8 +153,8 @@ export function PeriodPicker({ value, onChange, earliest }: { value: string; onC
   };
 
   return (
-    <div className="period" ref={box}>
-      <span className="period-caption">Period</span>
+    <div className={`period${compact ? " is-compact" : ""}`} ref={box}>
+      {compact ? null : <span className="period-caption">Period</span>}
       <button type="button" className={`period-trigger${open ? " is-open" : ""}`} onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         <span className="period-icon" aria-hidden>
           <svg viewBox="0 0 24 24">
@@ -158,7 +172,7 @@ export function PeriodPicker({ value, onChange, earliest }: { value: string; onC
       </button>
 
       {open ? (
-        <div className="period-panel" role="dialog" aria-label="Choose a period">
+        <div className={`period-panel${align === "right" ? " to-left" : ""}`} role="dialog" aria-label="Choose a period">
           <div className="period-head">
             <span className="period-caption">Choose period type</span>
             {value !== "all" ? (

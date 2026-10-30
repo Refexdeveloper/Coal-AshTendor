@@ -1,4 +1,5 @@
 import { db, type Lazy, type Tx, type WorkflowTask } from "../db";
+import { maybeScheduledSync } from "./refexone-directory";
 import { addBusinessMinutes, businessMinutesBetween, dayLengthMinutes, formatWhen, parseClock, type Calendar } from "../utils/calendar";
 import { effectiveValue, extractFields, parseDateTime, parseInr, type FieldHit, type PageText } from "./extract";
 import { NOT_FOUND, TENDER_FIELDS } from "../utils/fields";
@@ -608,7 +609,12 @@ export async function canEditFields(actor: Actor, tenderId: string) {
   return Boolean(task);
 }
 
-export async function updateFields(actor: Actor, tenderId: string, values: Record<string, string>) {
+function listedChoice(value: string, options: string[]) {
+  const trimmed = value.trim().toLowerCase();
+  return options.some((option) => option.toLowerCase() === trimmed);
+}
+
+export async function updateFields(actor: Actor, tenderId: string, values: Record<string, string>, mode: "save" | "validate" = "save") {
   const tender = await db.tender.findUnique({ where: { id: tenderId }, include: { fields: true } });
   if (!tender) throw new WorkflowError("Tender not found.");
   if (CLOSED_OVERALL.includes(tender.overallStatus)) throw new WorkflowError("Closed tenders keep their recorded fields.");
@@ -619,6 +625,9 @@ export async function updateFields(actor: Actor, tenderId: string, values: Recor
     const next = values[field.fieldKey].trim();
     const previous = effectiveValue(field);
     if (next === previous) continue;
+    const definition = TENDER_FIELDS.find((item) => item.key === field.fieldKey);
+    // "Select" submits a blank. Save for later must not wipe a choice the user left unselected.
+    if (!next && previous && definition?.options && (mode === "save" || !listedChoice(previous, [...definition.options, NOT_FOUND]))) continue;
     const status = next === NOT_FOUND ? "NOT_FOUND" : next ? "VALIDATED" : "MISSING";
     await db.tenderField.update({
       where: { id: field.id },
@@ -1602,6 +1611,8 @@ let lastAutomation = 0;
 let automation: Promise<void> | null = null;
 
 export function kickAutomation() {
+  // The Refex One directory sync runs in the background on its own daily schedule; pages never wait for it.
+  void maybeScheduledSync();
   if (automation || Date.now() - lastAutomation < 15000) return automation ?? Promise.resolve();
   lastAutomation = Date.now();
   automation = processAutomation()

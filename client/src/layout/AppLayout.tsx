@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { AppShell } from "@client/layout/AppShell";
 import { Loading } from "@client/components/base/loading";
-import { useApi } from "@client/api/client";
+import { ApiError, useApi } from "@client/api/client";
 import { SessionContext, type Session } from "@client/api/session";
 import { PageBoundary } from "./PageBoundary";
 
@@ -13,7 +13,8 @@ export default function AppLayout() {
     window.scrollTo(0, 0);
   }, [pathname]);
   if (!data) {
-    return error ? (
+    if (!error || (error instanceof ApiError && error.status === 401)) return <Loading />;
+    return (
       <main className="login">
         <section className="panel stack">
           <h1>The server could not be reached</h1>
@@ -23,8 +24,6 @@ export default function AppLayout() {
           </button>
         </section>
       </main>
-    ) : (
-      <Loading />
     );
   }
   return (

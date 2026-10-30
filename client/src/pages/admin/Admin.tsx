@@ -4,6 +4,7 @@ import { useApi } from "@client/api/client";
 import { useActor } from "@client/api/session";
 import type { PublicUser } from "@client/lib/types";
 import { LoadFailed, Loading } from "@client/components/base/loading";
+import { useFormPending } from "@client/components/base/submit";
 import { useNoticeAction } from "@client/components/feature/notice-action";
 
 type Data = {
@@ -16,7 +17,15 @@ type Data = {
   users: PublicUser[];
   tenderCount: number;
   tenders: { id: string; recordId: string; projectName: string; clientName: string }[];
+  refexone: {
+    configured: boolean;
+    lastSync: { at: Date; by: string; summary: SyncSummary | null } | null;
+    schedule: { everyHours: number; nextAt: Date | null; failed: { at: Date; message: string } | null };
+  };
 };
+
+type SyncSummary = { total: number; created: number; renamed: number; deactivated: number; unchanged: number; skippedAdmins: string[] };
+type Run = (name: string) => (formData: FormData) => Promise<void>;
 
 const DECISIONS = [
   "Official working hours and the holiday calendar are still to be confirmed. The default is 09:00–18:00, Monday to Friday, Asia/Kolkata.",
@@ -37,7 +46,7 @@ export default function AdminPage() {
   const { data, error, reload } = useApi<Data>("/admin");
   if (actor.role !== "ADMIN") return <p className="panel">Administration is limited to the system administrator.</p>;
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
-  const { calendar, holidays, policies, settings, escalations, templates, users, tenderCount, tenders } = data;
+  const { calendar, holidays, policies, settings, escalations, templates, users, tenderCount, tenders, refexone } = data;
   const days = new Set((calendar?.workingDays ?? "1,2,3,4,5").split(","));
   return (
     <>
@@ -163,9 +172,12 @@ export default function AdminPage() {
         </button>
       </form>
       <TenderData tenders={tenders} count={tenderCount} run={run} />
-      <section className="panel stack">
+      <RefexOnePanel refexone={refexone} users={users} run={run} error={query.error} />
+      <section className="panel stack" id="people">
         <h2>People</h2>
-        <p className="muted">New accounts use the initial password CoalAsh@2026, the same one shown on the sign-in page.</p>
+        <p className="muted">
+          A person who signs in with Refex One is listed here and cannot enter until you allow it. Tick Can sign in, choose a role, and save. Only those people can sign in. Their password is CoalAsh@2026.
+        </p>
         <form action={run("add-user")} className="form-grid">
           <label>
             Name
@@ -189,26 +201,7 @@ export default function AdminPage() {
             Add user
           </button>
         </form>
-        <div className="table-wrap flat">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Role</th>
-                <th>Email</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <td>{user.name}</td>
-                  <td>{ROLES[user.role] ?? user.role}</td>
-                  <td>{user.email}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <PeopleTable users={users} run={run} />
       </section>
       <section className="stack">
         {templates.map((template) => (
@@ -287,5 +280,166 @@ function ClearTenders({ count, run }: { count: number; run: (name: string) => (f
         Remove all tender data
       </button>
     </form>
+  );
+}
+
+function SyncButton() {
+  const { pending } = useFormPending();
+  return (
+    <button className="btn" type="submit" disabled={pending}>
+      {pending ? "Syncing with Refex One…" : "Sync users from Refex One"}
+    </button>
+  );
+}
+
+/** Pulls the Refex One directory into People, as in the P2P app. */
+function RefexOnePanel({ refexone, users, run, error }: { refexone: Data["refexone"]; users: PublicUser[]; run: Run; error?: string }) {
+  const last = refexone.lastSync;
+  const waiting = users.filter((user) => !user.active).length;
+  const syncError = error && /refex one/i.test(error) ? error : "";
+  const { schedule } = refexone;
+  const when = (date: Date) => date.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  const every = schedule.everyHours === 24 ? "once a day" : `every ${schedule.everyHours} hours`;
+  return (
+    <section className="panel stack refex-sync">
+      <header className="refex-sync-head">
+        <div>
+          <h2>Refex One users</h2>
+          <p className="muted">
+            Brings everyone in the Refex One directory into People. New people wait for access until you allow them below, names are kept up to date, and
+            people Refex One marks inactive lose sign-in. The sync never gives anyone access and never switches off an administrator.
+          </p>
+        </div>
+        <span className={`pill ${refexone.configured ? "good" : "warn"}`}>{refexone.configured ? "Connected" : "Not set up"}</span>
+      </header>
+      {refexone.configured ? null : (
+        <p className="banner warn">
+          Set <code>REFEXONE_API_TOKEN</code> (an org-admin token from Refex One) in <code>server/.env</code> and restart the server. <code>REFEXONE_API_URL</code> defaults to
+          https://refexone.com/api.
+        </p>
+      )}
+      {syncError ? <p className="banner bad">{syncError}</p> : null}
+      {schedule.failed && !syncError ? (
+        <p className="banner bad">
+          The automatic sync on {when(schedule.failed.at)} failed: {schedule.failed.message} It tries again within the hour.
+        </p>
+      ) : null}
+      <p className="refex-sync-schedule">
+        <span className={`dot ${schedule.everyHours && refexone.configured ? "on" : ""}`} aria-hidden />
+        {!schedule.everyHours
+          ? "Automatic sync is off (REFEXONE_SYNC_HOURS=0). Use the button to sync."
+          : !refexone.configured
+            ? `Automatic sync runs ${every} once the token is set.`
+            : `Automatic sync runs ${every}${schedule.nextAt ? `; next around ${when(schedule.nextAt)}` : ""}. The button syncs right away.`}
+      </p>
+      <div className="refex-sync-stats">
+        <div>
+          <span>Last sync</span>
+          <b>{last ? last.at.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Never"}</b>
+          <small>{last ? `by ${last.by}` : "Run the first sync below"}</small>
+        </div>
+        <div>
+          <span>In Refex One</span>
+          <b>{last?.summary?.total ?? "—"}</b>
+          <small>{last?.summary ? `${last.summary.created} added last time` : "people in the directory"}</small>
+        </div>
+        <div>
+          <span>Updated last time</span>
+          <b>{last?.summary ? last.summary.renamed + last.summary.deactivated : "—"}</b>
+          <small>{last?.summary ? `${last.summary.renamed} renamed · ${last.summary.deactivated} switched off` : "names and status"}</small>
+        </div>
+        <a href="#people" className={waiting ? "warn" : ""}>
+          <span>Waiting for access</span>
+          <b>{waiting}</b>
+          <small>{waiting ? "Allow them in People below" : "Nobody waiting"}</small>
+        </a>
+      </div>
+      <form action={run("sync-refexone-users")} className="actions">
+        <SyncButton />
+      </form>
+    </section>
+  );
+}
+
+/** The people list with a search and an access filter, since a synced directory is long. */
+function PeopleTable({ users, run }: { users: PublicUser[]; run: Run }) {
+  const [query, setQuery] = useState("");
+  const [show, setShow] = useState<"all" | "allowed" | "waiting">("all");
+  const needle = query.trim().toLowerCase();
+  const rows = users.filter((user) => {
+    if (show === "allowed" && !user.active) return false;
+    if (show === "waiting" && user.active) return false;
+    return !needle || `${user.name} ${user.email} ${ROLES[user.role] ?? ""}`.toLowerCase().includes(needle);
+  });
+  const shown = rows.slice(0, 200);
+  return (
+    <>
+      <div className="people-tools">
+        <input type="search" placeholder="Search by name, email or role" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search people" />
+        <div className="seg">
+          {(
+            [
+              ["all", `All ${users.length}`],
+              ["allowed", `Can sign in ${users.filter((user) => user.active).length}`],
+              ["waiting", `Waiting ${users.filter((user) => !user.active).length}`],
+            ] as const
+          ).map(([key, label]) => (
+            <button key={key} type="button" className={show === key ? "is-on" : ""} onClick={() => setShow(key)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="table-wrap flat">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Sign-in and role</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="muted">
+                  Nobody matches.
+                </td>
+              </tr>
+            ) : null}
+            {shown.map((user) => (
+              <tr key={user.id}>
+                <td>
+                  {user.name}
+                  {user.active ? null : <div className="reg-meta">Waiting for access</div>}
+                </td>
+                <td>{user.email}</td>
+                <td>
+                  <form action={run("update-user-access")} className="user-access">
+                    <input type="hidden" name="userId" value={user.id} />
+                    <label className="check">
+                      <input type="checkbox" name="allow" value="yes" defaultChecked={user.active} />
+                      Can sign in
+                    </label>
+                    <select name="role" defaultValue={ROLES[user.role] ? user.role : ""}>
+                      <option value="">Choose a role</option>
+                      {Object.entries(ROLES).map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                    <button className="btn" type="submit">
+                      Save
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > shown.length ? <p className="muted">Showing the first {shown.length} of {rows.length}. Search to narrow the list.</p> : null}
+    </>
   );
 }
