@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { formatWhen } from "@client/utils/calendar";
-import { useApi } from "@client/api/client";
+import { postAction, useApi } from "@client/api/client";
 import { useActor } from "@client/api/session";
 import type { BidSubmission, CalendarJson, PublicUser, Tender, WorkflowTask } from "@client/lib/types";
 import { LoadFailed, Loading } from "@client/components/base/loading";
@@ -12,7 +13,9 @@ type Data = { tenders: (Tender & { tasks: WorkflowTask[]; bid: BidSubmission | n
 
 export default function RegisterPage() {
   const actor = useActor();
+  const admin = actor.role === "ADMIN";
   const navigate = useNavigate();
+  const [banner, setBanner] = useState<{ tone: "good" | "bad"; text: string } | null>(null);
   const [search] = useSearchParams();
   const params = { q: search.get("q") ?? undefined, status: search.get("status") ?? undefined, overdue: search.get("overdue") ?? undefined };
   const { data, error, reload } = useApi<Data>("/register");
@@ -43,6 +46,7 @@ export default function RegisterPage() {
           </Link>
         ) : null}
       </header>
+      {banner ? <p className={`banner ${banner.tone}`}>{banner.text}</p> : null}
       <form
         key={search.toString()}
         className="actions"
@@ -101,9 +105,31 @@ export default function RegisterPage() {
               return (
                 <tr key={tender.id} className={overdue && !CLOSED_OVERALL.includes(tender.overallStatus) ? "late" : ""}>
                   <td>
-                    <Link to={`/tenders/${tender.id}`}>{tender.recordId}</Link>
-                    <div>{tender.projectName || "Untitled"}</div>
-                    <div className="muted">{tender.location}</div>
+                    <div className="reg-title">
+                      {admin ? (
+                        <button
+                          type="button"
+                          className="icon-btn row-delete"
+                          aria-label={`Remove ${tender.recordId}`}
+                          title="Remove this tender"
+                          onClick={async () => {
+                            const label = tender.projectName ? `${tender.recordId} (${tender.projectName})` : tender.recordId;
+                            if (!window.confirm(`Remove ${label} and the records tied to it?`)) return;
+                            const form = new FormData();
+                            form.set("tenderId", tender.id);
+                            const result = await postAction("delete-tender", form);
+                            setBanner(result?.error ? { tone: "bad", text: result.error } : { tone: "good", text: result?.ok || "Removed." });
+                          }}
+                        >
+                          <TrashIcon />
+                        </button>
+                      ) : null}
+                      <div>
+                        <Link to={`/tenders/${tender.id}`}>{tender.recordId}</Link>
+                        <div>{tender.projectName || "Untitled"}</div>
+                        <div className="muted">{tender.location}</div>
+                      </div>
+                    </div>
                   </td>
                   <td>
                     {tender.clientName || "—"}
@@ -160,5 +186,16 @@ export default function RegisterPage() {
         </table>
       </div>
     </>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
+      <path
+        fill="currentColor"
+        d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9zm-1 12h12a2 2 0 0 0 2-2V8H4v11a2 2 0 0 0 2 2z"
+      />
+    </svg>
   );
 }
