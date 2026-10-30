@@ -10,7 +10,8 @@
     "check": "tsx scripts/check-domain.ts",
     "db:setup": "tsx scripts/db-setup.ts && tsx scripts/seed.ts",
     "db:reset": "tsx scripts/db-setup.ts --reset && tsx scripts/seed.ts",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "tunnel": "tsx scripts/tunnel.ts"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.22.0",

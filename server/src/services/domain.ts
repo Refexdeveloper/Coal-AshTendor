@@ -5,7 +5,7 @@ import { NOT_FOUND, TENDER_FIELDS } from "../utils/fields";
 import { allowedUpload, deleteStored, pagesFromBuffer, sha256, storeFile } from "./files";
 import { extractUploadedFile, overlayHits } from "./ocr";
 import { CLOSED_OVERALL, CREATOR_ROLES, EDITOR_ROLES, MANAGER_ROLES, OPEN_TASK } from "../utils/labels";
-import { emailsFor, notifyAddresses } from "./notify";
+import { emailsFor, notifyAddresses, stepCopyAddresses } from "./notify";
 
 export class WorkflowError extends Error {
   constructor(message: string) {
@@ -112,6 +112,19 @@ async function audit(
       after: (entry.after ?? "").slice(0, 8000),
     },
   });
+  const copyTo = stepCopyAddresses();
+  if (entry.tenderId && copyTo.length) {
+    const { tenderId, action, actor, detail } = entry;
+    // Sent after a short pause so a surrounding transaction has committed (a new tender must exist to be mailed about).
+    setTimeout(() => {
+      notifyAddresses({
+        tenderId,
+        event: "WORKFLOW_STEP",
+        addresses: copyTo,
+        extra: { action, actorName: actor.name, detail: (detail ?? "").slice(0, 1500) },
+      }).catch((error) => console.error("Step email failed", error));
+    }, 3000);
+  }
 }
 
 function valueOf(field: FieldRow | undefined) {

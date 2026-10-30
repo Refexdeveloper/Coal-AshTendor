@@ -72,6 +72,11 @@ export const TEMPLATES: { event: string; subject: string; body: string }[] = [
     body: "Hello {{recipientName}},\n\nText could not be extracted from the documents for {{projectName}} ({{recordId}}). The tender is waiting for manual entry. {{detail}}\n\n{{link}}",
   },
   {
+    event: "WORKFLOW_STEP",
+    subject: "{{recordId}}: {{action}}",
+    body: "Hello {{recipientName}},\n\n{{action}} on {{projectName}} ({{recordId}}) by {{actorName}}.\n{{detail}}\n\n{{link}}",
+  },
+  {
     event: "TENDER_AMENDMENT",
     subject: "{{recordId}} deadline changed",
     body: "Hello {{recipientName}},\n\nThe bid submission deadline for {{projectName}} ({{recordId}}) changed.\n{{detail}}\n\n{{link}}",
@@ -95,6 +100,15 @@ export function mailConfig() {
     from: process.env.SMTP_FROM || process.env.SMTP_USER || "",
     redirectTo: (process.env.MAIL_REDIRECT_TO || "").trim(),
   };
+}
+
+/** Inboxes that get a copy of every workflow step (MAIL_STEP_COPY_TO, comma separated). */
+export function stepCopyAddresses() {
+  return (process.env.MAIL_STEP_COPY_TO || "")
+    .split(",")
+    .map((email) => email.trim())
+    .filter(Boolean)
+    .map((email) => ({ email, name: email }));
 }
 
 /** True when a server and its sign-in are both set; otherwise notices stay in the log only. */

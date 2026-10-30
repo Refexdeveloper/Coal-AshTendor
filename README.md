@@ -76,11 +76,21 @@ You can also run each package on its own: `npm run dev` inside `server`, and `np
 
 ## OCR
 
-The OCR service downloads each upload from `OCR_PUBLIC_BASE_URL` (or the address in `server/data/ocr-public-base.txt`) at `/api/ocr-files/...`. The Express server answers that path itself, so point the public tunnel at port 4000 (or 5173 in development, which proxies to it). The old separate file server on port 3999 is gone.
+Each upload is saved, given a short-lived signed public link (`/api/ocr-files/...`), and that link is posted to the Unfyd ExtractData API (`OCR_EXTRACT_URL`, `DocumentType: "Tendor"`). The `Extracted Fields` in the response fill the 44 tender fields (`server/src/lib/ocr.ts`): dates become DD/MM/YYYY HH:MM, choices like "Yes (MSME exempt)" become "Yes", and "N/A" answers are left blank.
+
+The OCR service must be able to download the link, so the server needs a public address. Start a tunnel next to the server and keep it running:
+
+```bash
+npm run tunnel
+```
+
+It opens a Cloudflare quick tunnel to port 8080 (pass another port as `npm run tunnel -- 4000`) and saves the address in `server/data/ocr-public-base.txt`. The address changes each time the tunnel starts. On a server with its own public URL, set `OCR_PUBLIC_BASE_URL` instead.
 
 ## Email
 
-Set `SMTP_HOST` and the related variables in `server/.env` when email delivery is ready. Until then, every notice is stored in Notifications.
+Set `SMTP_HOST`, `SMTP_USER` and `SMTP_PASS` in `server/.env` (for Google Workspace, `SMTP_PASS` is an App Password). Until all three are set, every notice is only stored in Notifications.
+
+`MAIL_STEP_COPY_TO` (comma separated) gets an email for every workflow step: upload, extraction, field validation, relevance, costing, approval, EMD, submitter, bid, outcome. `MAIL_REDIRECT_TO` sends all other notices to one inbox for testing.
 
 ## Build and run on one port (4000)
 
