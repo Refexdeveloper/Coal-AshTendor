@@ -175,11 +175,16 @@ export function PeriodPicker({
         <div className={`period-panel${align === "right" ? " to-left" : ""}`} role="dialog" aria-label="Choose a period">
           <div className="period-head">
             <span className="period-caption">Choose period type</span>
-            {value !== "all" ? (
-              <button type="button" className="period-clear" onClick={() => pick("all")}>
-                All dates
+            <span className="period-head-actions">
+              {value !== "all" ? (
+                <button type="button" className="period-clear" onClick={() => pick("all")}>
+                  All dates
+                </button>
+              ) : null}
+              <button type="button" className="period-close" onClick={() => setOpen(false)} aria-label="Close">
+                ×
               </button>
-            ) : null}
+            </span>
           </div>
           <div className="period-quick">
             {QUICK.map((item) => (

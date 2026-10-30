@@ -1824,3 +1824,26 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 .refex-sync h3 { margin: 6px 0 0; font-size: 0.95rem; }
 @media (max-width: 700px) { .sso-grid { grid-template-columns: minmax(0, 1fr); } }
 .sso-print { display: inline-block; margin-top: 6px; font-size: 0.74rem !important; letter-spacing: 0.02em; }
+
+/* Period picker on phones: a bottom sheet over a dimmed page instead of a dropdown that runs off-screen. */
+.period-head-actions { display: inline-flex; align-items: center; gap: 12px; }
+.period-close { display: none; width: 32px; height: 32px; border: 0; border-radius: 50%; background: #f3f1ee; color: var(--ink); font-size: 1.3rem; line-height: 1; cursor: pointer; }
+@media (max-width: 640px) {
+  .period, .period.is-compact { flex: 1 1 100%; min-width: 0; width: 100%; }
+  .period-panel, .period-panel.to-left {
+    position: fixed; left: 10px; right: 10px; top: auto; bottom: 10px; z-index: 1000; width: auto;
+    max-height: min(82vh, 680px); overflow-y: auto; overscroll-behavior: contain;
+    padding: 14px 16px calc(16px + env(safe-area-inset-bottom)); border-radius: 22px;
+    box-shadow: 0 0 0 100vmax rgba(15, 23, 42, 0.45), 0 -12px 40px rgba(15, 23, 42, 0.25);
+    animation: periodSheet 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .period-panel::before { content: ""; display: block; width: 40px; height: 4px; margin: 0 auto 4px; border-radius: 4px; background: #d6d3d1; }
+  .period-close { display: inline-grid; place-items: center; }
+  .period-quick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .period-quick button { padding: 9px 4px; font-size: 0.84rem; }
+  .period-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .period-tabs button { padding: 9px 2px; font-size: 0.82rem; min-width: 0; }
+  .period-list { max-height: none; overflow: visible; }
+  .period-option { padding: 11px 14px; }
+}
+@keyframes periodSheet { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
