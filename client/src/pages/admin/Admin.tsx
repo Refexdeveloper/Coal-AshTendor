@@ -163,19 +163,52 @@ export default function AdminPage() {
         </button>
       </form>
       <TenderData tenders={tenders} count={tenderCount} run={run} />
-      <section className="panel">
+      <section className="panel stack">
         <h2>People</h2>
-        <table>
-          <tbody>
-            {users.map((user) => (
-              <tr key={user.id}>
-                <td>{user.name}</td>
-                <td>{ROLES[user.role] ?? user.role}</td>
-                <td>{user.email}</td>
+        <p className="muted">New accounts use the initial password CoalAsh@2026, the same one shown on the sign-in page.</p>
+        <form action={run("add-user")} className="form-grid">
+          <label>
+            Name
+            <input name="name" required placeholder="Lokesh B" />
+          </label>
+          <label>
+            Email
+            <input name="email" type="email" required placeholder="lokesh.b@refex.co.in" />
+          </label>
+          <label>
+            Role
+            <select name="role" required defaultValue="BID_SUBMITTER">
+              {Object.entries(ROLES).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="btn" type="submit">
+            Add user
+          </button>
+        </form>
+        <div className="table-wrap flat">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Email</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.id}>
+                  <td>{user.name}</td>
+                  <td>{ROLES[user.role] ?? user.role}</td>
+                  <td>{user.email}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
       <section className="stack">
         {templates.map((template) => (

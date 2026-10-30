@@ -6,6 +6,7 @@ import { TEMPLATES } from "./notify";
 import { SAMPLE_NOTICE } from "./extract";
 import { textToPdf } from "./pdf";
 import { TENDER_FIELDS } from "../utils/fields";
+import { createAccount } from "./accounts";
 import type { ActionState } from "../utils/action-state";
 
 /** Every action receives the signed-in user and the submitted form, and answers with an ActionState. */
@@ -179,6 +180,22 @@ export async function saveCalendarAction(actor: User, formData: FormData): Promi
     },
   });
   return { ok: "Working calendar saved" };
+}
+
+export async function addUserAction(actor: User, formData: FormData): Promise<ActionState> {
+  const denied = adminOnly(actor);
+  if (denied) return denied;
+  try {
+    return await createAccount({
+      name: String(formData.get("name") || ""),
+      email: String(formData.get("email") || ""),
+      role: String(formData.get("role") || ""),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (/duplicate/i.test(message)) return { error: "That email already has an account." };
+    return failure(error);
+  }
 }
 
 export async function addHolidayAction(actor: User, formData: FormData): Promise<ActionState> {

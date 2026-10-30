@@ -13,6 +13,7 @@ const ACTIONS: Record<string, Action> = {
   task: actions.taskAction,
   "save-calendar": actions.saveCalendarAction,
   "add-holiday": actions.addHolidayAction,
+  "add-user": actions.addUserAction,
   "delete-holiday": actions.deleteHolidayAction,
   "delete-tender": actions.deleteTenderAction,
   "clear-tenders": actions.clearTendersAction,
