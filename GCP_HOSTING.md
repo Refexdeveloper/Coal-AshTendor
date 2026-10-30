@@ -246,17 +246,22 @@ npm run build && npm start
 |------|--------|
 | GCP project | `master-diorama-489103-u2` |
 | Region | `asia-south1` |
-| Cloud Run | `coal-ash-tender` |
+| Cloud Run | `coal-ash-tender-api` |
+| App URL | https://coal-ash-tender-api-dhwffeu7pq-el.a.run.app |
+| Alt URL | https://coal-ash-tender-api-645830234926.asia-south1.run.app |
+| Health | https://coal-ash-tender-api-dhwffeu7pq-el.a.run.app/api/health |
 | Cloud SQL instance | **`coal-ash-mysql`** (dedicated — not shared with Kavis) |
 | Connection name | `master-diorama-489103-u2:asia-south1:coal-ash-mysql` |
-| Database / user | `coal_ash` / `coal_ash_app` |
+| Database / user | `coal_ash_tender` / `coal_ash_app` |
 | Docs bucket | `gs://coal-ash-docs-master-diorama-489103-u2` |
 | Runtime SA | `coal-ash-run@master-diorama-489103-u2.iam.gserviceaccount.com` |
-| Image | `asia-south1-docker.pkg.dev/master-diorama-489103-u2/coal-ash/coal-ash-tender:latest` |
-| Secrets | `coal-ash-db-password`, `coal-ash-session-secret` |
+| Image | `asia-south1-docker.pkg.dev/master-diorama-489103-u2/coal-ash-repo/coal-ash-tender:…` |
+| Secrets | `coal-ash-db-password`, `coal-ash-session-secret`, `coal-ash-database-url` |
 | GitHub | https://github.com/Refexdeveloper/Coal-AshTendor |
 | Reference app | https://kavis-npi-portal-645830234926.asia-south1.run.app |
 
 **Isolation:** Cloud Run attaches only to `coal-ash-mysql`. Kavis keeps `kavis-npi-mysql` + its own buckets.
+
+**Health check (live):** `"database":"up","storage":"gcs","serve_client":true,"cloud_sql":true`
 
 Demo login password after seed: `CoalAsh@2026`
