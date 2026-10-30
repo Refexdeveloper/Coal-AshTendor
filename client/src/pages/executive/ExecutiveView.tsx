@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { CSSProperties } from "react";
 import { formatWhen } from "@client/utils/calendar";
 import { effectiveValue } from "@client/utils/format";
@@ -9,6 +9,7 @@ import type { ApprovalRecord, BidSubmission, CalendarJson, EmdRecord, PublicUser
 import { Status } from "@client/components/base/pill";
 import { CountUp } from "@client/components/feature/count-up";
 import { FxLink } from "@client/components/feature/fx-link";
+import { PeriodPicker, inPeriod, resolvePeriod } from "@client/components/feature/period-picker";
 
 const GROUPS = [
   { key: "intake", label: "Intake & review", color: "#6f9bff", statuses: ["UPLOADED", "OCR_PROCESSING", "DATA_VALIDATION_REQUIRED", "PENDING_RELEVANCE"] },
@@ -40,10 +41,54 @@ export type ExecutiveData = {
   calendar: CalendarJson;
 };
 
+const FILTER_KEYS = ["period", "basis", "q", "client", "emd", "owner", "portal", "group"] as const;
+
 export function ExecutiveView({ user, group, data }: { user: { name: string; role: string }; group?: string; data: ExecutiveData }) {
-  const { tenders, users, calendar } = data;
+  const { tenders: everyTender, users, calendar } = data;
   const tz = calendar.timeZone;
   const names = new Map(users.map((item) => [item.id, item.name]));
+
+  // Filters live in the URL so a filtered view survives a refresh and can be shared.
+  const [search, setSearch] = useSearchParams();
+  const filter = Object.fromEntries(FILTER_KEYS.map((key) => [key, search.get(key) ?? ""])) as Record<(typeof FILTER_KEYS)[number], string>;
+  const setFilter = (key: (typeof FILTER_KEYS)[number], value: string) => {
+    const next = new URLSearchParams(search);
+    if (value && !(key === "period" && value === "all") && !(key === "basis" && value === "received")) next.set(key, value);
+    else next.delete(key);
+    setSearch(next, { replace: true, preventScrollReset: true });
+  };
+  const resetFilters = () => setSearch(new URLSearchParams(), { replace: true, preventScrollReset: true });
+  const stageHref = (key?: string) => {
+    const next = new URLSearchParams(search);
+    if (key) next.set("group", key);
+    else next.delete("group");
+    const query = next.toString();
+    return `/${query ? `?${query}` : ""}#all-tenders`;
+  };
+
+  const period = resolvePeriod(filter.period || "all");
+  const byDeadline = filter.basis === "deadline";
+  const ownersOf = (tender: (typeof everyTender)[number]) => new Set(tender.tasks.flatMap((task) => JSON.parse(task.assigneeIds) as string[]));
+  const needle = filter.q.trim().toLowerCase();
+  const tenders = everyTender.filter((tender) => {
+    if (!inPeriod(period, byDeadline ? tender.bidSubmissionEnd : tender.createdAt)) return false;
+    if (filter.client && tender.clientName !== filter.client) return false;
+    if (filter.emd && tender.emdType !== filter.emd) return false;
+    if (filter.portal && (tender.portalName || tender.source) !== filter.portal) return false;
+    if (filter.owner && !ownersOf(tender).has(filter.owner)) return false;
+    if (needle) {
+      const text = [tender.projectName, tender.recordId, tender.tenderRef, tender.externalTenderId, tender.clientName, tender.location].join(" ").toLowerCase();
+      if (!text.includes(needle)) return false;
+    }
+    return true;
+  });
+  const distinct = (pick: (tender: (typeof everyTender)[number]) => string) => [...new Set(everyTender.map(pick).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const clients = distinct((t) => t.clientName);
+  const portals = distinct((t) => t.portalName || t.source);
+  const emdTypes = distinct((t) => t.emdType);
+  const ownerIds = [...new Set(everyTender.flatMap((t) => [...ownersOf(t)]))].sort((a, b) => (names.get(a) ?? "").localeCompare(names.get(b) ?? ""));
+  const earliest = everyTender.reduce<Date | null>((min, t) => (!min || t.createdAt < min ? t.createdAt : min), null);
+  const activeFilters = FILTER_KEYS.filter((key) => filter[key] && !(key === "period" && filter[key] === "all")).length;
   const now = Date.now();
   const closedStatuses = GROUPS.find((item) => item.key === "closed")!.statuses.concat("WON");
   const active = tenders.filter((tender) => !closedStatuses.includes(tender.overallStatus));
@@ -55,11 +100,11 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
   const submitted = tenders.filter((tender) => ["BID_SUBMITTED_EVIDENCE_RECORDED", "BID_SUBMITTED_EVIDENCE_PENDING"].includes(tender.bidStatus)).length;
 
   const kpis = [
-    { label: "Active pipeline value", value: sum(active, (t) => t.estimatedValue), money: true, tone: "ember", note: `${active.length} active tenders`, fx: "coins", href: "/#all-tenders" },
-    { label: "Approved final costing", value: sum(tenders.filter((t) => t.costingStatus === "APPROVED"), (t) => t.finalCostingValue), money: true, tone: "green", note: `${tenders.filter((t) => t.costingStatus === "APPROVED").length} costings approved`, fx: "coins", href: "/?group=ready#all-tenders" },
-    { label: "EMD exposure", value: sum(active.filter((t) => t.emdType !== "EXEMPTION"), (t) => t.emdExposure), money: true, tone: "coal", note: "Guarantees and bonds in play", fx: "shield", href: "/?group=progress#all-tenders" },
-    { label: "Win rate", value: won + lost ? Math.round((won / (won + lost)) * 100) : 0, suffix: "%", tone: "violet", note: `${won} won · ${lost} lost`, fx: "trophy", href: "/?group=won#all-tenders" },
-    { label: "Bids submitted", value: submitted, tone: "blue", note: `${dueWeek.length} deadline${dueWeek.length === 1 ? "" : "s"} in the next 7 days`, fx: "ready", href: "/?group=ready#all-tenders" },
+    { label: "Active pipeline value", value: sum(active, (t) => t.estimatedValue), money: true, tone: "ember", note: `${active.length} active tenders`, fx: "coins", href: stageHref() },
+    { label: "Approved final costing", value: sum(tenders.filter((t) => t.costingStatus === "APPROVED"), (t) => t.finalCostingValue), money: true, tone: "green", note: `${tenders.filter((t) => t.costingStatus === "APPROVED").length} costings approved`, fx: "coins", href: stageHref("ready") },
+    { label: "EMD exposure", value: sum(active.filter((t) => t.emdType !== "EXEMPTION"), (t) => t.emdExposure), money: true, tone: "coal", note: "Guarantees and bonds in play", fx: "shield", href: stageHref("progress") },
+    { label: "Win rate", value: won + lost ? Math.round((won / (won + lost)) * 100) : 0, suffix: "%", tone: "violet", note: `${won} won · ${lost} lost`, fx: "trophy", href: stageHref("won") },
+    { label: "Bids submitted", value: submitted, tone: "blue", note: `${dueWeek.length} deadline${dueWeek.length === 1 ? "" : "s"} in the next 7 days`, fx: "ready", href: stageHref("ready") },
     { label: "Overdue tasks", value: overdue, tone: overdue ? "red" : "green", note: overdue ? "Past their working-time SLA" : "Everything on time", fx: "overdue", href: "/register?overdue=yes" },
   ] as const;
 
@@ -88,6 +133,126 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
             Group view of every Coal &amp; Ash tender
             <span className="hero-role"> · {ROLES[user.role] ?? user.role}</span>
           </p>
+        </div>
+      </section>
+
+      <section className="panel exec-filters" aria-label="Filters">
+        <PeriodPicker value={filter.period || "all"} onChange={(key) => setFilter("period", key)} earliest={earliest} />
+        <div className="exec-filter">
+          <span className="period-caption">Date by</span>
+          <div className="seg">
+            <button type="button" className={byDeadline ? "" : "is-on"} onClick={() => setFilter("basis", "received")}>
+              Received
+            </button>
+            <button type="button" className={byDeadline ? "is-on" : ""} onClick={() => setFilter("basis", "deadline")}>
+              Bid deadline
+            </button>
+          </div>
+        </div>
+        <label className="exec-filter grow">
+          <span className="period-caption">Search</span>
+          <input type="search" placeholder="Project, client, reference…" value={filter.q} onChange={(event) => setFilter("q", event.target.value)} />
+        </label>
+        <label className="exec-filter">
+          <span className="period-caption">Stage</span>
+          <select value={filter.group} onChange={(event) => setFilter("group", event.target.value)}>
+            <option value="">All stages</option>
+            {GROUPS.map((item) => (
+              <option key={item.key} value={item.key}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="exec-filter">
+          <span className="period-caption">Client</span>
+          <select value={filter.client} onChange={(event) => setFilter("client", event.target.value)}>
+            <option value="">All clients</option>
+            {clients.map((item) => (
+              <option key={item}>{item}</option>
+            ))}
+          </select>
+        </label>
+        <label className="exec-filter">
+          <span className="period-caption">EMD type</span>
+          <select value={filter.emd} onChange={(event) => setFilter("emd", event.target.value)}>
+            <option value="">All EMD types</option>
+            {emdTypes.map((item) => (
+              <option key={item} value={item}>
+                {EMD_TYPE[item] ?? item}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="exec-filter">
+          <span className="period-caption">Now with</span>
+          <select value={filter.owner} onChange={(event) => setFilter("owner", event.target.value)}>
+            <option value="">Anyone</option>
+            {ownerIds.map((id) => (
+              <option key={id} value={id}>
+                {names.get(id) ?? "Unknown"}
+              </option>
+            ))}
+          </select>
+        </label>
+        {portals.length > 1 ? (
+          <label className="exec-filter">
+            <span className="period-caption">Portal / source</span>
+            <select value={filter.portal} onChange={(event) => setFilter("portal", event.target.value)}>
+              <option value="">All</option>
+              {portals.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        <div className="exec-filter-foot">
+          <span>
+            Showing <b>{tenders.length}</b> of {everyTender.length} tenders
+            {period.from ? ` · ${byDeadline ? "bid deadline" : "received"} ${period.detail}` : ""}
+          </span>
+          {activeFilters ? (
+            <button type="button" className="btn ghost" onClick={resetFilters}>
+              Clear {activeFilters} filter{activeFilters === 1 ? "" : "s"}
+            </button>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="exec-counts" aria-label="Tender counts">
+        <FxLink href={stageHref()} fx="pulse" className={`count-card total${group ? "" : " on"}`} style={{ "--i": 0 } as CSSProperties}>
+          <span>Total tenders</span>
+          <b>
+            <CountUp value={tenders.length} duration={900} />
+          </b>
+          <small>
+            {active.length} active · {inr(sum(tenders, (t) => t.estimatedValue))}
+          </small>
+        </FxLink>
+        {GROUPS.map((item, index) => {
+          const list = tenders.filter((tender) => item.statuses.includes(tender.overallStatus));
+          return (
+            <FxLink
+              key={item.key}
+              href={stageHref(item.key)}
+              fx="pulse"
+              className={`count-card${group === item.key ? " on" : ""}`}
+              style={{ "--c": item.color, "--i": index + 1 } as CSSProperties}
+            >
+              <span>{item.label}</span>
+              <b>
+                <CountUp value={list.length} duration={900} delay={80 * (index + 1)} />
+              </b>
+              <small>{inr(sum(list, (t) => t.estimatedValue))}</small>
+            </FxLink>
+          );
+        })}
+        <div className={`count-card due${dueWeek.length ? " hot" : ""}`} style={{ "--i": GROUPS.length + 1 } as CSSProperties}>
+          <span>Closing in 7 days</span>
+          <b>
+            <CountUp value={dueWeek.length} duration={900} />
+          </b>
+          <small>{dueWeek.length ? "Bids due this week" : "Nothing due this week"}</small>
         </div>
       </section>
 
@@ -122,7 +287,7 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
                 <FxLink
                   key={item.key}
                   fx="pulse"
-                  href={`/?group=${item.key}#all-tenders`}
+                  href={stageHref(item.key)}
                   className="stage-seg"
                   style={{ "--w": count, "--c": item.color, "--i": index } as CSSProperties}
                   title={`${item.label}: ${count}`}
@@ -136,7 +301,7 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
             {GROUPS.map((item) => {
               const list = tenders.filter((tender) => item.statuses.includes(tender.overallStatus));
               return (
-                <FxLink key={item.key} fx="pulse" href={`/?group=${item.key}#all-tenders`} className={`stage-key ${group === item.key ? "on" : ""}`}>
+                <FxLink key={item.key} fx="pulse" href={stageHref(item.key)} className={`stage-key ${group === item.key ? "on" : ""}`}>
                   <i style={{ background: item.color }} />
                   <span>{item.label}</span>
                   <b>{list.length}</b>
@@ -186,7 +351,7 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
               <p className="muted">Soonest deadline first. Open a row to see its workflow, commercials and all 44 fields.</p>
             </div>
             {selected ? (
-              <Link className="btn ghost" to="/#all-tenders">
+              <Link className="btn ghost" to={stageHref()} preventScrollReset>
                 Show all
               </Link>
             ) : null}

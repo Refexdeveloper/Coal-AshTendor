@@ -1040,7 +1040,7 @@ pre { white-space: pre-wrap; font-size: 0.85rem; }
 /* ---------------- Group CEO executive view ---------------- */
 .exec { margin: -24px -24px 0; }
 .exec-hero { min-height: 300px; }
-.exec-kpis { position: relative; z-index: 4; margin-top: -120px; padding: 0 24px; display: grid; gap: 14px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.exec-kpis { position: relative; z-index: 4; margin-top: 14px; padding: 0 24px; display: grid; gap: 14px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .exec-kpi {
   --c1: #78716c; --c2: #292524; --soft: #f0eeeb;
   position: relative; overflow: hidden; display: grid; gap: 6px; align-content: start; padding: 16px 16px 18px; border-radius: 18px; background: #fff;
@@ -1198,7 +1198,7 @@ pre { white-space: pre-wrap; font-size: 0.85rem; }
   .track { flex-direction: column; gap: 14px; }
   .tender-hero { grid-template-columns: 1fr; padding: 22px 18px; }
   .exec { margin: -16px -16px 0; }
-  .exec-kpis { margin-top: -40px; padding: 0 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .exec-kpis { padding: 0 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .exec-head { display: none; }
   .exec-row > summary { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 10px; }
   .exec-cell.main { grid-column: 1 / -1; }
@@ -1293,3 +1293,166 @@ pre { white-space: pre-wrap; font-size: 0.85rem; }
   .pdfv.is-expanded { padding: 0; }
 }
 .pdfv-spacer { flex: 1; }
+
+/* ---------------- executive filters, counts and period picker ---------------- */
+.exec-filters {
+  position: relative; z-index: 6; overflow: visible; margin: -120px 24px 0; padding: 16px 18px;
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 14px; border-radius: 20px;
+}
+.exec-filter { display: grid; gap: 6px; min-width: 150px; flex: 0 1 170px; }
+.exec-filter:has(.seg) { flex: 0 0 auto; }
+.exec-filter.grow { flex: 1 1 220px; }
+.exec-filter select, .exec-filter input { height: 44px; border-radius: 12px; }
+.exec-filter-foot { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; font-size: 0.84rem; color: var(--muted); padding-top: 4px; border-top: 1px dashed var(--line); }
+.exec-filter-foot b { color: var(--ink); }
+.exec-filter-foot .btn { padding: 6px 14px; }
+.seg { display: flex; padding: 4px; gap: 2px; border-radius: 12px; background: #f1efec; height: 44px; }
+.seg button { flex: 1; border: 0; border-radius: 9px; background: transparent; font: inherit; font-size: 0.84rem; font-weight: 600; color: var(--ink-2); padding: 0 12px; cursor: pointer; white-space: nowrap; }
+.seg button.is-on { background: #fff; color: var(--ember); box-shadow: 0 1px 4px rgba(41, 37, 36, 0.14); }
+
+.period { position: relative; display: grid; gap: 6px; flex: 0 1 280px; min-width: 230px; }
+.period-caption { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+.period-trigger {
+  display: flex; align-items: center; gap: 10px; width: 100%; height: 44px; padding: 0 12px 0 5px; text-align: left;
+  border: 1px solid var(--line); border-radius: 14px; background: #fff; font: inherit; color: var(--ink); cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.period-trigger:hover, .period-trigger.is-open { border-color: var(--ember-hover); box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.1); }
+.period-icon { width: 34px; height: 34px; flex-shrink: 0; display: grid; place-items: center; border-radius: 10px; background: var(--ember-soft); color: var(--ember); }
+.period-icon svg, .period-chevron { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.period-value { flex: 1; min-width: 0; display: grid; line-height: 1.2; }
+.period-value b { font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.period-value small { font-size: 0.72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.period-chevron { color: var(--muted); transition: transform 0.2s; }
+.period-trigger.is-open .period-chevron { transform: rotate(180deg); }
+.period-panel {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 30; width: min(400px, calc(100vw - 32px));
+  display: grid; gap: 12px; padding: 18px; border-radius: 20px; background: #fff; border: 1px solid var(--line);
+  box-shadow: 0 24px 50px -18px rgba(41, 37, 36, 0.4); animation: fadeUp 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.period-head { display: flex; justify-content: space-between; align-items: center; }
+.period-clear { border: 0; background: none; font: inherit; font-size: 0.8rem; font-weight: 600; color: var(--ember); cursor: pointer; padding: 0; }
+.period-quick { display: flex; flex-wrap: wrap; gap: 8px; }
+.period-quick button {
+  border: 1px solid transparent; border-radius: 999px; background: #f3f1ee; padding: 9px 16px; font: inherit; font-size: 0.88rem; font-weight: 600; color: var(--ink); cursor: pointer;
+}
+.period-quick button:hover { background: #ebe8e4; }
+.period-quick button.is-on { background: var(--ember-soft); border-color: var(--ember-hover); color: var(--ember-deep); }
+.period-tabs { display: grid; grid-template-columns: repeat(4, 1fr); padding: 5px; gap: 2px; border-radius: 16px; background: #f3f1ee; }
+.period-tabs button { border: 1px solid transparent; border-radius: 12px; background: transparent; padding: 9px 4px; font: inherit; font-size: 0.88rem; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+.period-tabs button.is-on { background: #fff; border-color: var(--line); color: var(--ink); box-shadow: 0 1px 4px rgba(41, 37, 36, 0.12); }
+.period-hint { margin: 0; font-size: 0.8rem; color: var(--muted); }
+.period-list { display: grid; gap: 8px; max-height: 300px; overflow-y: auto; padding-right: 2px; }
+.period-option {
+  display: grid; justify-items: start; gap: 3px; padding: 12px 16px; text-align: left; border: 1px solid var(--line-soft); border-radius: 14px; background: #fff;
+  font: inherit; color: var(--ink); cursor: pointer; transition: border-color 0.15s, background 0.15s;
+}
+.period-option:hover { border-color: var(--ember-hover); background: #fffaf6; }
+.period-option.is-on { border-color: var(--ember); background: var(--ember-soft); }
+.period-option b { font-size: 0.98rem; }
+.period-option small { font-size: 0.8rem; color: var(--muted); }
+.period-badge { margin-top: 4px; padding: 3px 10px; border-radius: 999px; background: var(--info-soft); color: var(--info); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.period-custom { display: grid; gap: 10px; }
+
+.exec-counts { position: relative; z-index: 4; margin-top: 14px; padding: 0 24px; display: grid; gap: 12px; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.count-card {
+  --c: var(--ember); position: relative; overflow: hidden; display: grid; gap: 4px; padding: 14px 14px 14px 18px; border-radius: 16px; background: #fff;
+  border: 1px solid var(--line-soft); box-shadow: 0 8px 22px -14px rgba(41, 37, 36, 0.3); color: var(--ink); text-decoration: none;
+  opacity: 0; animation: kpiIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; animation-delay: calc(0.05s + var(--i) * 0.06s);
+  transition: transform 0.25s, box-shadow 0.25s, border-color 0.25s;
+}
+.count-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--c); }
+a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px rgba(41, 37, 36, 0.4); }
+.count-card.on { border-color: var(--c); box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 35%, transparent), 0 8px 22px -14px rgba(41, 37, 36, 0.3); }
+.count-card.total { --c: #1f1c1a; background: linear-gradient(135deg, #2b2724, #1c1917); color: #fff; border-color: transparent; }
+.count-card.total span, .count-card.total small { color: #d6d3d1; }
+.count-card.total.on { box-shadow: 0 0 0 2px var(--ember-hover), 0 8px 22px -14px rgba(41, 37, 36, 0.4); }
+.count-card.due { --c: var(--wine); }
+.count-card span { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.count-card b { font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.count-card small { font-size: 0.76rem; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1280px) { .exec-counts { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 720px) {
+  .exec-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 16px; }
+  .exec-filters { margin: -80px 16px 0; }
+  .exec-filter, .period { flex: 1 1 100%; }
+}
+
+/* ---------------- card motion: rise-in, pointer tilt, spotlight, glow, live border ---------------- */
+@property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.kpi, .exec-kpi, .fact { --accent: var(--c1); }
+.count-card { --accent: var(--c); }
+.week-card { --accent: var(--ember); }
+.count-card.total { --accent: #fb923c; }
+
+/* Entrance uses translate/scale/filter, so transform stays free for the hover tilt. */
+.kpi, .exec-kpi, .count-card, .fact, .week-card {
+  transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transform-style: preserve-3d;
+  will-change: transform;
+  animation: cardRise 0.85s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(0.08s + var(--i, var(--r, 0)) * 0.07s);
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.35s, border-color 0.35s, background-color 0.35s;
+}
+@keyframes cardRise {
+  0% { opacity: 0; translate: 0 34px; scale: 0.92; filter: blur(8px) saturate(0.6); }
+  60% { opacity: 1; filter: blur(0) saturate(1.1); }
+  100% { opacity: 1; translate: 0 0; scale: 1; filter: none; }
+}
+
+/* Hover: lift, lean toward the pointer, coloured glow and a soft spotlight under the cursor. */
+.kpi:hover, .exec-kpi:hover, .count-card:hover, .fact:hover, .week-card:hover {
+  transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-7px) scale(1.02);
+  transition: transform 0.12s ease-out, box-shadow 0.35s, border-color 0.35s;
+  box-shadow:
+    0 26px 44px -18px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 8px 18px rgba(41, 37, 36, 0.08);
+  background-image: radial-gradient(260px circle at var(--mx, 50%) var(--my, 0%), color-mix(in srgb, var(--accent) 16%, transparent), transparent 65%);
+}
+.count-card.total:hover {
+  background-image:
+    radial-gradient(260px circle at var(--mx, 50%) var(--my, 0%), rgba(251, 146, 60, 0.35), transparent 65%),
+    linear-gradient(135deg, #2b2724, #1c1917);
+}
+.kpi:active, .exec-kpi:active, .count-card:active, .fact:active, .week-card:active {
+  transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-2px) scale(0.98);
+  transition-duration: 0.08s;
+}
+
+/* Numbers pop in after the card lands and glow on hover. */
+.kpi b, .exec-kpi b, .count-card b, .fact b {
+  display: inline-block; animation: numPop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both; animation-delay: calc(0.35s + var(--i, 0) * 0.07s);
+  transition: transform 0.3s, text-shadow 0.3s;
+}
+@keyframes numPop { 0% { opacity: 0; transform: translateY(10px) scale(0.6); } 100% { opacity: 1; transform: none; } }
+.kpi:hover b, .exec-kpi:hover b, .count-card:hover b, .fact:hover b { transform: translateZ(30px) scale(1.06); text-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* Count cards: the colour rail grows into a wash on hover. */
+.count-card::before { transition: width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.45s; }
+.count-card:not(.total):hover::before { width: 100%; opacity: 0.07; }
+.count-card > * { position: relative; }
+
+/* The selected card gets a slowly spinning gradient border. */
+.count-card.on, .kpi.selected {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    conic-gradient(from var(--spin), var(--accent), color-mix(in srgb, var(--accent) 15%, transparent) 35%, var(--accent) 70%, color-mix(in srgb, var(--accent) 15%, transparent)) border-box;
+  animation: cardRise 0.85s cubic-bezier(0.16, 1, 0.3, 1) both, spinBorder 4s linear infinite;
+  animation-delay: calc(0.08s + var(--i, 0) * 0.07s), 0s;
+}
+.count-card.total.on {
+  background:
+    linear-gradient(135deg, #2b2724, #1c1917) padding-box,
+    conic-gradient(from var(--spin), #fb923c, rgba(251, 146, 60, 0.1) 35%, #fdba74 70%, rgba(251, 146, 60, 0.1)) border-box;
+}
+@keyframes spinBorder { to { --spin: 360deg; } }
+
+/* The overdue / closing cards breathe when they need attention. */
+.exec-kpi.red, .count-card.due.hot { animation-name: cardRise, breathe; animation-duration: 0.85s, 2.8s; animation-iteration-count: 1, infinite; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1), ease-in-out; animation-fill-mode: both, none; }
+@keyframes breathe { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent), 0 14px 30px -16px color-mix(in srgb, var(--accent) 60%, transparent); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .kpi, .exec-kpi, .count-card, .fact, .week-card, .kpi b, .exec-kpi b, .count-card b, .fact b { animation: none !important; transform: none !important; }
+}
