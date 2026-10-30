@@ -549,6 +549,47 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
               </tbody>
             </table>
           </div>
+          <ul className="dk-tender-cards">
+            {shownRows.length === 0 ? <li className="dk-empty">No tenders match these filters.</li> : null}
+            {shownRows.map((tender) => {
+              const [label, tone] = SHORT[tender.overallStatus] ?? [OVERALL[tender.overallStatus]?.label ?? tender.overallStatus, "gray"];
+              const late = tender.tasks.some((task) => task.dueAt && task.dueAt.getTime() < now);
+              const open = openRow === tender.id;
+              return (
+                <li key={tender.id} className={`ceo-card${open ? " is-open" : ""}${late ? " is-late" : ""}`}>
+                  <button type="button" className="ceo-card-main" onClick={() => setOpenRow(open ? null : tender.id)} aria-expanded={open}>
+                    <span className="ceo-card-top">
+                      <span className="dk-ref">{tender.recordId}</span>
+                      <span className={`dk-pill ${tone}`}>{label}</span>
+                    </span>
+                    <strong>{tender.projectName || "Untitled"}</strong>
+                    {late ? <small className="text-bad">Overdue task</small> : null}
+                    <dl className="ceo-card-facts">
+                      <div>
+                        <dt>Client</dt>
+                        <dd>{tender.clientName || "—"}</dd>
+                      </div>
+                      <div>
+                        <dt>Est. value</dt>
+                        <dd>{inr(tender.estimatedValue)}</dd>
+                      </div>
+                      <div>
+                        <dt>Submission</dt>
+                        <dd>{tender.bidSubmissionEnd ? formatWhen(tender.bidSubmissionEnd, tz).split(",")[0] : "—"}</dd>
+                      </div>
+                    </dl>
+                  </button>
+                  <div className="ceo-card-actions">
+                    <Link to={`/tenders/${tender.id}`}>Open tender</Link>
+                    <button type="button" onClick={() => setOpenRow(open ? null : tender.id)}>
+                      {open ? "Hide details" : "Details"}
+                    </button>
+                  </div>
+                  {open ? <TenderSummary tender={tender} names={names} tz={tz} now={now} /> : null}
+                </li>
+              );
+            })}
+          </ul>
         </section>
 
         <aside className="dk-side">

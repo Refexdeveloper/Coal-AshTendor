@@ -37,7 +37,12 @@ export function Topbar({
         }}
       >
         <NavIcon name="search" />
-        <input name="q" type="search" placeholder="Search tenders by project, client or reference" />
+        <input
+          name="q"
+          type="search"
+          placeholder="Search tenders"
+          aria-label="Search tenders by project, client or reference"
+        />
       </form>
       <div className="topbar-user">
         <button className="user-btn" type="button" onClick={() => setMenuOpen((open) => !open)}>

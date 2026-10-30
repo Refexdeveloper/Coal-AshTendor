@@ -116,10 +116,10 @@ p { margin: 0; }
 .topbar-title { display: grid; flex: none; }
 .crumb { color: var(--muted); font-size: 0.72rem; }
 .topbar-title strong { font-size: 0.95rem; color: var(--ink); white-space: nowrap; }
-.top-search { position: relative; flex: 1; max-width: 640px; }
+.top-search { position: relative; flex: 1; min-width: 0; max-width: 640px; }
 .top-search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #9ca3af; }
 .top-search input {
-  height: 40px; padding: 0 16px 0 40px; border-radius: 999px; border: 1px solid #e5e7eb; background: #fff;
+  width: 100%; min-width: 0; height: 40px; padding: 0 16px 0 40px; border-radius: 999px; border: 1px solid #e5e7eb; background: #fff;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); font-size: 0.88rem;
 }
 .top-search input:focus { outline: none; border-color: #f3c7a5; box-shadow: 0 0 0 3px #fdf0e6; }
@@ -1569,6 +1569,25 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 
 /* tenders table */
 .dk-table-wrap { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+.dk-tender-cards { display: none; list-style: none; margin: 0; padding: 0; }
+.ceo-card { display: grid; gap: 8px; padding: 12px; border: 1px solid #e5eaf1; border-radius: 14px; background: #fff; }
+.ceo-card.is-open { background: #f8fbff; border-color: #cfe0f7; }
+.ceo-card.is-late { box-shadow: inset 3px 0 0 #ef4444; }
+.ceo-card-main { display: grid; gap: 6px; width: 100%; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; color: inherit; font: inherit; }
+.ceo-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ceo-card-main strong { font-size: 0.98rem; font-weight: 700; line-height: 1.35; color: #0f172a; overflow-wrap: anywhere; }
+.ceo-card-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin: 2px 0 0; }
+.ceo-card-facts div:last-child { grid-column: 1 / -1; }
+.ceo-card-facts dt { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #64748b; }
+.ceo-card-facts dd { margin: 0; font-size: 0.86rem; color: #1e293b; overflow-wrap: anywhere; }
+.ceo-card-actions { display: flex; gap: 8px; }
+.ceo-card-actions a, .ceo-card-actions button {
+  flex: 1; height: 38px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px; border: 1px solid #dbe3ee; background: #fff; color: #1d4ed8;
+  font: inherit; font-size: 0.84rem; font-weight: 600; text-decoration: none; cursor: pointer;
+}
+.ceo-card-actions a { background: #0b4f8a; border-color: #0b4f8a; color: #fff; }
+.ceo-card .dk-detail { padding: 4px 0 4px; }
 .dk-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.84rem; }
 .dk-table th { padding: 10px 10px; text-align: left; white-space: nowrap; background: #f1f5f9; color: #334155; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 .dk-table th:first-child { border-radius: 10px 0 0 10px; }
@@ -1646,6 +1665,9 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
   .dk-hero { flex-direction: column; padding: 24px 20px 40px; }
   .dk-hero-tools { justify-content: flex-start; }
   .dk-side { grid-template-columns: minmax(0, 1fr); }
+  .dk-panel-head { flex-wrap: wrap; }
+  .dk-table-wrap { display: none; }
+  .dk-tender-cards { display: grid; gap: 10px; }
 }
 @media (max-width: 560px) {
   .dk { padding: 0 16px 20px; margin: -16px -16px 0; }
