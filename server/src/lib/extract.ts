@@ -40,7 +40,7 @@ function valueAfterLabel(line: string, labels: string[]) {
   return null;
 }
 
-function canonicalize(field: FieldDef, raw: string) {
+export function canonicalize(field: FieldDef, raw: string) {
   const value = raw.trim();
   const lower = value.toLowerCase();
   if (!value) return { value: "", mapped: false };

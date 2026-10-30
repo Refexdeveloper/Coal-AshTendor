@@ -1,5 +1,5 @@
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import type { CSSProperties } from "react";
+import { lazy, Suspense, type CSSProperties } from "react";
 import { toCalendar, useApi } from "@client/lib/api";
 import { useActor } from "@client/lib/session";
 import type {
@@ -18,6 +18,8 @@ import type {
   WorkflowTask,
 } from "@client/lib/types";
 import { LoadFailed, Loading } from "@client/components/base/loading";
+
+const PdfViewer = lazy(() => import("@client/components/feature/pdf-viewer"));
 import { businessMinutesBetween, dayLengthMinutes, formatDuration, formatWhen } from "@client/lib/calendar";
 import { effectiveValue } from "@client/lib/format";
 import { NOT_FOUND, TENDER_FIELDS } from "@client/lib/fields";
@@ -325,13 +327,16 @@ export default function TenderPage() {
       ) : null}
 
       {tab === "details" ? (
-        <FieldEditor
-          tenderId={tender.id}
-          fields={editorFields}
-          locked={closed || !fieldEditor}
-          validationTaskId={openTasks.find((task) => task.mine && task.stage === "DATA_VALIDATION")?.id ?? null}
-          justUploaded={query.new === "1"}
-        />
+        <div className="detail-split">
+          <NoticePane document={notice ?? tender.documents[0] ?? null} />
+          <FieldEditor
+            tenderId={tender.id}
+            fields={editorFields}
+            locked={closed || !fieldEditor}
+            validationTaskId={openTasks.find((task) => task.mine && task.stage === "DATA_VALIDATION")?.id ?? null}
+            justUploaded={query.new === "1"}
+          />
+        </div>
       ) : null}
 
       {tab === "documents" ? (
@@ -379,7 +384,11 @@ export default function TenderPage() {
             {notice && (notice.mimeType === "application/pdf" || notice.fileName.toLowerCase().endsWith(".pdf")) ? (
               <section className="panel">
                 <h2>Tender notice preview</h2>
-                <iframe className="preview" title="Tender notice" src={documentUrl(notice.id)} />
+                <div className="preview">
+                  <Suspense fallback={<Loading />}>
+                    <PdfViewer src={documentUrl(notice.id)} name={notice.fileName} />
+                  </Suspense>
+                </div>
               </section>
             ) : null}
           </div>
@@ -576,6 +585,39 @@ export default function TenderPage() {
       ) : null}
       </div>
     </>
+  );
+}
+
+function NoticePane({ document }: { document: TenderDocument | null }) {
+  const name = document?.fileName ?? "";
+  const mime = (document?.mimeType ?? "").toLowerCase();
+  const lower = name.toLowerCase();
+  const pdf = mime === "application/pdf" || lower.endsWith(".pdf");
+  const image = mime.startsWith("image/") || /\.(png|jpe?g|gif|webp)$/.test(lower);
+  const src = document ? documentUrl(document.id) : "";
+  const preview = Boolean(document && (pdf || image));
+  return (
+    <aside className={`panel notice-pane${preview ? "" : " is-empty"}`}>
+      <header className="panel-head">
+        <div>
+          <h2>Tender file</h2>
+          <p className="muted">{document ? name : "No file stored"}</p>
+        </div>
+        {document ? (
+          <a className="btn ghost" href={src} target="_blank" rel="noreferrer">
+            Open
+          </a>
+        ) : null}
+      </header>
+      {document && pdf ? (
+        <Suspense fallback={<div className="notice-frame pdfv-state">Loading the viewer…</div>}>
+          <PdfViewer src={src} name={name} />
+        </Suspense>
+      ) : null}
+      {document && image ? <img className="notice-frame" alt={name} src={src} /> : null}
+      {document && !pdf && !image ? <p className="empty">This file cannot be shown here. Use Open to view it.</p> : null}
+      {document ? null : <p className="empty">Upload the tender notice on the Documents tab to see it beside these fields.</p>}
+    </aside>
   );
 }
 

@@ -21,6 +21,7 @@ const app = express();
 
 app.set("trust proxy", 1);
 app.use("/api", cors);
+app.use(cookieParser());
 app.use(express.json());
 
 app.get("/api/health", async (_req, res) => {

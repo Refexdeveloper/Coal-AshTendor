@@ -1,11 +1,11 @@
 import { randomUUID } from "crypto";
 import { TENDER_FIELDS, type FieldDef } from "./fields";
-import type { FieldHit } from "./extract";
+import { canonicalize, parseDateTime, type FieldHit } from "./extract";
 import { ocrFileUrl } from "./ocr-link";
 
-const OCR_URL = process.env.OCR_EXTRACT_URL || "https://refex-uat.unfyd.com/unfyd-prism/api/admin/ExtractData";
+const OCR_URL = process.env.OCR_EXTRACT_URL || "https://refex-live.unfyd.com/unfyd-prism/api/admin/ExtractData";
 const BOT_ID = process.env.OCR_BOT_ID || "I7DI-1NLS-XWPK-9OLX";
-const DOCUMENT_TYPE = process.env.OCR_DOCUMENT_TYPE || "Tendor OCR";
+const DOCUMENT_TYPE = process.env.OCR_DOCUMENT_TYPE || "Tendor";
 
 function norm(value: string) {
   return value
@@ -16,11 +16,62 @@ function norm(value: string) {
     .trim();
 }
 
+/** Spacing-free form, so Prebid_conference matches "Pre-bid conference" and GeMe_procurement_Ref matches "GeM/e-procurement Ref". */
+function compact(value: string) {
+  return norm(value).replace(/ /g, "");
+}
+
+// Unfyd key spellings that differ from our labels beyond spacing and punctuation.
+const OCR_ALIASES: Record<string, string> = {
+  Prequalification_criteria_technical: "pq_technical",
+  Prequalification_criteria_financial: "pq_financial",
+  Performance_fee_starting_PBG: "performance_bg",
+  Reverse_auction_Yes_No: "reverse_auction",
+};
+
 const FIELD_INDEX = new Map<string, FieldDef>();
 for (const field of TENDER_FIELDS) {
   for (const label of [field.key, field.label, ...(field.synonyms ?? [])]) {
-    FIELD_INDEX.set(norm(label), field);
+    FIELD_INDEX.set(compact(label), field);
   }
+}
+for (const [alias, key] of Object.entries(OCR_ALIASES)) {
+  const field = TENDER_FIELDS.find((item) => item.key === key);
+  if (field) FIELD_INDEX.set(compact(alias), field);
+}
+
+const EMPTY = /^(n\/?a|nil|none|not applicable|not mentioned|not specified|not available|-+)$/i;
+
+const pad = (value: number) => String(value).padStart(2, "0");
+
+/**
+ * Bring an OCR answer into the shape the field editor uses: DD/MM/YYYY HH:MM dates, and a choice
+ * reduced to its option when the answer leads with one, such as "Yes (MSME firms are exempt)".
+ * Returns "" for answers that only say the item does not apply.
+ */
+function normalizeValue(field: FieldDef, raw: string): { value: string; sure: boolean } {
+  const value = raw.trim();
+  const bare = value.replace(/^\(.*?\)\s*-?\s*/, "").trim();
+  if (!value || EMPTY.test(value) || EMPTY.test(bare)) return { value: "", sure: true };
+  if (field.type === "datetime") {
+    const date = parseDateTime(value, "UTC");
+    if (!date) return { value, sure: false };
+    return {
+      value: `${pad(date.getUTCDate())}/${pad(date.getUTCMonth() + 1)}/${date.getUTCFullYear()} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`,
+      sure: true,
+    };
+  }
+  if (field.options) {
+    const lead = field.options.find((option) => new RegExp(`^${option.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}\\b`, "i").test(value));
+    if (lead) return { value: lead, sure: true };
+    const canonical = canonicalize(field, value);
+    return { value: canonical.value, sure: canonical.mapped };
+  }
+  if (field.type === "integer") {
+    const number = value.match(/^\d+/);
+    return number ? { value: number[0], sure: number[0] === value } : { value, sure: false };
+  }
+  return { value, sure: true };
 }
 
 function asText(value: unknown) {
@@ -65,11 +116,12 @@ export function fieldsFromOcrResponse(payload: unknown, documentId: string): Rec
         const pageNo = page["Page Number"] ? String(page["Page Number"]) : "";
         for (const row of page["Extracted Fields"] ?? []) {
           for (const [rawKey, rawValue] of Object.entries(row)) {
-            const field = FIELD_INDEX.get(norm(rawKey));
-            const value = asText(rawValue);
-            if (!field || !value) continue;
+            const field = FIELD_INDEX.get(compact(rawKey));
+            if (!field) continue;
+            const { value, sure } = normalizeValue(field, asText(rawValue));
+            if (!value) continue;
             const list = grouped.get(field.key) ?? [];
-            list.push({ value, confidence, page: pageNo });
+            list.push({ value, confidence: sure ? confidence : Math.min(confidence, 0.45), page: pageNo });
             grouped.set(field.key, list);
           }
         }
