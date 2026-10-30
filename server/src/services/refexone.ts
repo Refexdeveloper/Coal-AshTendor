@@ -13,12 +13,27 @@ const EMAIL_CLAIMS = [
   "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
 ];
 
-/** Public origin of this service. Cloud Run's host is used so the registered Refex One URLs stay stable. */
-export function publicBase(req: Request) {
-  const forced = (process.env.REFEXONE_BASE_URL || "").replace(/\/$/, "");
-  if (forced) return forced;
-  const host = req.get("host") || "localhost";
-  return `${req.protocol}://${host}`;
+/** The Refex One SAML app for Coal & Ash: its sign-in address, and the Cloud Run address it is registered with. */
+const REFEXONE_SSO_URL = "https://refexone.com/api/saml/055e4c63-8c36-46f6-bf2f-e67a84db362d/sso";
+const REGISTERED_BASE_URL = "https://coal-ash-tender-api-645830234926.asia-south1.run.app";
+
+/**
+ * Refex One's signing certificate for this SAML app (public, not a secret). Paste the whole PEM between the
+ * backticks, from the app's settings in Refex One ("IdP certificate" / "X.509 certificate"). Sign-in stays off
+ * until it is here: every response is checked against it, so a response Refex One did not sign is refused.
+ */
+const REFEXONE_IDP_CERT = `
+-----BEGIN CERTIFICATE-----
+-----END CERTIFICATE-----
+`;
+
+/**
+ * Public origin used for the Entity ID and reply (ACS) address. Always the registered Cloud Run address,
+ * so the Entity ID is https://coal-ash-tender-api-645830234926.asia-south1.run.app/auth/refexone/saml
+ * wherever the request came from. REFEXONE_BASE_URL overrides it (for example, a custom domain later).
+ */
+export function publicBase(_req?: Request) {
+  return (process.env.REFEXONE_BASE_URL || REGISTERED_BASE_URL).replace(/\/$/, "");
 }
 
 export function refexOneUrls(req: Request) {
@@ -31,21 +46,22 @@ export function refexOneUrls(req: Request) {
 }
 
 /**
- * Refex One's sign-in address. Either REFEXONE_SSO_URL, or just the SAML app ID from Refex One
- * (REFEXONE_SAML_APP_ID), which gives https://refexone.com/api/saml/<id>/sso as in the P2P app.
+ * Refex One's sign-in address: the Coal & Ash app above, unless REFEXONE_SSO_URL or REFEXONE_SAML_APP_ID
+ * (which gives https://refexone.com/api/saml/<id>/sso) overrides it.
  */
 export function ssoUrl() {
   const direct = (process.env.REFEXONE_SSO_URL || "").trim();
   if (direct) return direct;
   const appId = (process.env.REFEXONE_SAML_APP_ID || "").trim();
-  if (!appId) return "";
+  if (!appId) return REFEXONE_SSO_URL;
   const api = (process.env.REFEXONE_API_URL || "https://refexone.com/api").replace(/\/$/, "");
   return `${api}/saml/${encodeURIComponent(appId)}/sso`;
 }
 
-/** Refex One's signing certificate: REFEXONE_IDP_CERT (PEM or one line), or a PEM file at REFEXONE_IDP_CERT_FILE. */
+/** Refex One's signing certificate: the one in the code above, else REFEXONE_IDP_CERT or a PEM file at REFEXONE_IDP_CERT_FILE. */
 function idpCert() {
-  let raw = process.env.REFEXONE_IDP_CERT || "";
+  const inCode = REFEXONE_IDP_CERT.replace(/-----(BEGIN|END) CERTIFICATE-----/g, "").trim() ? REFEXONE_IDP_CERT.trim() : "";
+  let raw = inCode || process.env.REFEXONE_IDP_CERT || "";
   const file = (process.env.REFEXONE_IDP_CERT_FILE || "").trim();
   if (!raw.trim() && file) {
     try {
@@ -83,9 +99,9 @@ export function ssoStatus(req: Request) {
   const cert = certInfo();
   const certGiven = Boolean(idpCert());
   const missing: string[] = [];
-  if (!ssoUrl()) missing.push("REFEXONE_SAML_APP_ID (or REFEXONE_SSO_URL)");
-  if (!certGiven) missing.push("REFEXONE_IDP_CERT (or REFEXONE_IDP_CERT_FILE)");
-  else if (!cert) missing.push("a readable REFEXONE_IDP_CERT (the value is not a valid certificate)");
+  if (!ssoUrl()) missing.push("the Refex One sign-in address (REFEXONE_SSO_URL in server/src/services/refexone.ts)");
+  if (!certGiven) missing.push("Refex One's signing certificate (paste it into REFEXONE_IDP_CERT in server/src/services/refexone.ts)");
+  else if (!cert) missing.push("a valid certificate in REFEXONE_IDP_CERT (server/src/services/refexone.ts): the text there is not a readable certificate");
   return {
     ready: refexOneReady(),
     ssoUrl: ssoUrl(),

@@ -489,7 +489,8 @@ function RefexOneSsoPanel({ sso }: { sso: Data["sso"] }) {
       </header>
       {sso.missing.length ? (
         <p className="banner warn">
-          Still to set in <code>server/.env</code> (then restart): {sso.missing.join(", ")}. The certificate comes from the SAML app&apos;s settings in Refex One.
+          Still needed: {sso.missing.join(", ")}. The certificate is in the Coal &amp; Ash SAML app&apos;s settings in Refex One. Restart or redeploy after
+          adding it.
         </p>
       ) : null}
       {sso.cert?.expired ? <p className="banner bad">The Refex One certificate expired on {sso.cert.validTo.toLocaleDateString("en-IN", { dateStyle: "medium" })}. Sign-in will fail until it is replaced.</p> : null}
@@ -518,8 +519,8 @@ function RefexOneSsoPanel({ sso }: { sso: Data["sso"] }) {
         <dd>{sso.register.nameIdFormat}</dd>
       </dl>
       <p className="muted">
-        These use the address this page was opened on. On Cloud Run, open Administration through the Cloud Run address (or set <code>REFEXONE_BASE_URL</code>) before
-        copying them.
+        These are set in the code for the Cloud Run service registered in Refex One, so they stay the same wherever Administration is opened. Refex One sends
+        people back to that Cloud Run address after sign-in.
       </p>
       {sso.ready ? (
         <div className="actions">
