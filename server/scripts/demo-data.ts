@@ -256,7 +256,7 @@ async function main() {
     if (plan.overall === "PENDING_RELEVANCE") await task("MAIN", "RELEVANCE", "Relevance review", ids("vishesh", "ranjana"));
     if (plan.overall === "APPROVED_IN_PROGRESS") {
       if (plan.costing === "PENDING_DEPT") await task("COSTING", "DEPT_APPROVAL", "Department Head approval", ids("depthead"));
-      else await task("COSTING", "DRAFT_COSTING", "Draft costing", ids("ranjana", "sundarlingam"), "IN_PROGRESS");
+      else await task("COSTING", "DRAFT_COSTING", "Draft costing", ids("sundarlingam"), "IN_PROGRESS");
       if (emdType === "ISB") await task("EMD", "EMD_ISB", "Arrange ISB / surety bond", ids("sanjeev"));
       else if (emdType !== "EXEMPTION") await task("EMD", "EMD_BG", "Prepare EMD instrument", ids("krishnanath", "surya"));
     }

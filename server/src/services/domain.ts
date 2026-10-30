@@ -773,7 +773,6 @@ export async function decideRelevance(actor: Actor, taskId: string, decision: "A
   const kind = classifyEmd(task.tender.fields);
   const plan = EMD_PLAN[kind];
   const owners = await Promise.all(plan.owners.map((key) => mustUser(key)));
-  const ranjana = await mustUser("ranjana");
   const sundar = await mustUser("sundarlingam");
   const sales = await db.user.findMany({ where: { role: "SALES", active: true } });
   const heads = await db.user.findMany({ where: { role: "DEPT_HEAD", active: true } });
@@ -812,7 +811,7 @@ export async function decideRelevance(actor: Actor, taskId: string, decision: "A
       branch: "COSTING",
       stage: "DRAFT_COSTING",
       title: "Draft costing",
-      assigneeIds: [ranjana.id, sundar.id],
+      assigneeIds: [sundar.id],
       ...draft,
     });
     const instrument = await createTask(tx, {
@@ -1017,7 +1016,7 @@ export async function decideDepartment(
     const stage = ["DRAFT_COSTING", "SALES_INPUT", "FINAL_COSTING"].includes(returnStage) ? returnStage : "FINAL_COSTING";
     const owners =
       stage === "DRAFT_COSTING"
-        ? [(await mustUser("ranjana")).id, (await mustUser("sundarlingam")).id]
+        ? [(await mustUser("sundarlingam")).id]
         : stage === "SALES_INPUT"
           ? (await db.user.findMany({ where: { role: "SALES", active: true } })).map((user) => user.id)
           : [(await mustUser("vishesh")).id];

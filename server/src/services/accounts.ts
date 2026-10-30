@@ -16,6 +16,7 @@ const DEFAULT_LOGINS = [{ personKey: "lokesh", name: "Lokesh B", email: "lokesh.
 const WORKFLOW_SEATS = [
   { personKey: "vishesh", demoKey: "vishesh-demo", name: "Vishesh H Mehta", email: "vishesh.h@refex.co.in", role: "REVIEWER" },
   { personKey: "ranjana", demoKey: "ranjana-demo", name: "Ranjana Singh", email: "ranjana.s@refex.co.in", role: "REVIEWER" },
+  { personKey: "sundarlingam", demoKey: "sundarlingam-demo", name: "Sundaralingam G", email: "sundaralingam.g@refex.co.in", role: "COSTING" },
 ];
 
 function personKeyFor(email: string) {

@@ -1665,7 +1665,17 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 @media (max-width: 1100px) { .dk-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dk-health { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 860px) {
   .dk-hero { flex-direction: column; padding: 24px 20px 40px; }
-  .dk-hero-tools { justify-content: flex-start; }
+  .dk-hero-tools { justify-content: stretch; width: 100%; }
+  .dk-hero-tools .period.is-compact { width: 100%; min-width: 0; flex: 1 1 auto; }
+  .period { min-width: 0; }
+  .period-panel,
+  .period-panel.to-left {
+    left: 0; right: 0; width: auto; max-width: none;
+    max-height: min(62vh, 460px); overflow: auto;
+  }
+  .period-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .period-quick button { padding: 8px 12px; }
+  .period-option small, .period-hint { overflow-wrap: anywhere; }
   .dk-side { grid-template-columns: minmax(0, 1fr); }
   .dk-panel-head { flex-wrap: wrap; }
   .dk-table-wrap { display: none; }
@@ -1753,12 +1763,12 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 
 /* ---------------- recent tenders table (pipeline dashboard) ---------------- */
 .rt-wrap { overflow-x: auto; margin-top: 4px; }
-.rt-table { width: 100%; min-width: 860px; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 0.86rem; }
-.rt-table .c-ref { width: 130px; }
-.rt-table .c-client { width: 20%; }
-.rt-table .c-value { width: 110px; }
-.rt-table .c-status { width: 200px; }
-.rt-table .c-due { width: 150px; }
+.rt-table { width: 100%; min-width: 1080px; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 0.86rem; }
+.rt-table .c-ref { width: 120px; }
+.rt-table .c-client { width: 18%; }
+.rt-table .c-value { width: 100px; }
+.rt-table .c-status { width: 180px; }
+.rt-table .c-time { width: 148px; }
 .rt-table th {
   padding: 10px 12px; text-align: left; vertical-align: middle; white-space: nowrap;
   background: #f3f1ee; color: var(--ink-2); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;

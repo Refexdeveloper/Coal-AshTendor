@@ -53,6 +53,20 @@ function rowTone(status: string) {
   return "";
 }
 
+/** Upcoming bid deadlines first (soonest first), then past deadlines, then tenders with no end time. */
+function compareDeadline(a: Tender, b: Tender, now: number) {
+  const rank = (tender: Tender) => {
+    const end = tender.bidSubmissionEnd?.getTime();
+    if (end == null || Number.isNaN(end)) return [2, 0] as const;
+    if (end >= now) return [0, end] as const;
+    return [1, end] as const;
+  };
+  const [groupA, timeA] = rank(a);
+  const [groupB, timeB] = rank(b);
+  if (groupA !== groupB) return groupA - groupB;
+  return timeA - timeB;
+}
+
 function greeting(timeZone: string) {
   const hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hour12: false, timeZone }).format(new Date()));
   if (hour < 12) return "Good morning";
@@ -71,7 +85,11 @@ export default function DashboardPage() {
   const tz = data.calendar.timeZone;
   const now = new Date();
   const view = VIEWS.find((item) => item.key === params.view) ?? VIEWS[0];
-  const rows = data.all.filter(view.match).slice(0, 10);
+  const rows = data.all
+    .filter(view.match)
+    .slice()
+    .sort((a, b) => compareDeadline(a, b, now.getTime()))
+    .slice(0, 10);
   const kpis = [
     { title: "Total tenders", subtitle: data.total ? "In the register" : "None yet", value: data.total, tone: "teal", icon: "doc", fx: "docs", href: "/#tenders", view: "all" },
     { title: "Pending relevance", subtitle: data.pending ? "Awaiting decision" : "Nothing to review", value: data.pending, tone: "blue", icon: "clock", fx: "pending", href: "/?view=pending#tenders", view: "pending", live: true },
@@ -202,7 +220,7 @@ export default function DashboardPage() {
                 </span>
                 <div>
                   <h2>Recent tenders</h2>
-                  <p className="muted">Latest activity across the register</p>
+                  <p className="muted">Upcoming bid deadlines first</p>
                 </div>
                 <Link className="btn ghost" to="/register">
                   View all
@@ -226,7 +244,8 @@ export default function DashboardPage() {
                       <col className="c-client" />
                       <col className="c-value" />
                       <col className="c-status" />
-                      <col className="c-due" />
+                      <col className="c-time" />
+                      <col className="c-time" />
                     </colgroup>
                     <thead>
                       <tr>
@@ -235,7 +254,8 @@ export default function DashboardPage() {
                         <th>Client · location</th>
                         <th className="num">Est. value</th>
                         <th>Status</th>
-                        <th>Bid deadline</th>
+                        <th>Bid opening time</th>
+                        <th>Bid end time</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -265,6 +285,7 @@ export default function DashboardPage() {
                           <td>
                             <Status map={OVERALL} value={tender.overallStatus} />
                           </td>
+                          <td className="rt-due">{formatWhen(tender.bidOpeningAt, tz)}</td>
                           <td className="rt-due">{formatWhen(tender.bidSubmissionEnd, tz)}</td>
                         </tr>
                       ))}
