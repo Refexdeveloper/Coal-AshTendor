@@ -59,8 +59,8 @@ export async function seed() {
   const people = [
     ["admin", "System Administrator", "admin@coalandash.local", "ADMIN"],
     ["coordinator", "Tender Coordinator", "coordinator@coalandash.local", "COORDINATOR"],
-    ["vishesh", "Vishesh", "vishesh@coalandash.local", "REVIEWER"],
-    ["ranjana", "Ranjana", "ranjana@coalandash.local", "REVIEWER"],
+    ["vishesh", "Vishesh H Mehta", "vishesh.h@refex.co.in", "REVIEWER"],
+    ["ranjana", "Ranjana Singh", "ranjana.s@refex.co.in", "REVIEWER"],
     ["sundarlingam", "Sundarlingam", "sundarlingam@coalandash.local", "COSTING"],
     ["sales", "Sales Team", "sales@coalandash.local", "SALES"],
     ["krishnanath", "Krishnanath", "krishnanath@coalandash.local", "ACCOUNTS"],

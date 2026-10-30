@@ -9,6 +9,15 @@ export const INITIAL_PASSWORD = "CoalAsh@2026";
 
 const DEFAULT_LOGINS = [{ personKey: "lokesh", name: "Lokesh B", email: "lokesh.b@refex.co.in", role: "BID_SUBMITTER" }];
 
+/**
+ * Real mailboxes for the people the workflow addresses by personKey.
+ * The key stays the same so existing task routing keeps working.
+ */
+const WORKFLOW_SEATS = [
+  { personKey: "vishesh", demoKey: "vishesh-demo", name: "Vishesh H Mehta", email: "vishesh.h@refex.co.in", role: "REVIEWER" },
+  { personKey: "ranjana", demoKey: "ranjana-demo", name: "Ranjana Singh", email: "ranjana.s@refex.co.in", role: "REVIEWER" },
+];
+
 function personKeyFor(email: string) {
   const base = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 40);
   return base || "user";
@@ -86,12 +95,68 @@ export async function updateUserAccess(actorId: string, input: { userId: string;
   return { ok: `${user.name} can sign in as ${user.email}. Password: ${INITIAL_PASSWORD}.${sent}` };
 }
 
-/** Inserts built-in logins that are not in the database yet. Does not change existing accounts. */
+/** Inserts built-in logins that are not in the database yet, and points relevance review at the real reviewer mailbox. */
 export async function ensureDefaultUsers() {
   for (const login of DEFAULT_LOGINS) {
     const existing = await db.user.findFirst({ where: { email: login.email } });
     if (existing) continue;
     const result = await createAccount(login);
     if (result.ok) console.log(`[db] Added default login ${login.email}`);
+  }
+  for (const seat of WORKFLOW_SEATS) await ensureWorkflowSeat(seat);
+}
+
+/**
+ * Points a workflow personKey at a real mailbox.
+ * Only replaces the demo coalandash.local account, so a later role change in Administration is left alone.
+ */
+async function ensureWorkflowSeat(seat: (typeof WORKFLOW_SEATS)[number]) {
+  const { personKey, demoKey, name, email, role } = seat;
+  const target = await db.user.findFirst({ where: { email } });
+  const holder = await db.user.findFirst({ where: { personKey } });
+  if (holder && holder.id !== target?.id && holder.email.toLowerCase().endsWith("@coalandash.local")) {
+    await db.user.update({ where: { id: holder.id }, data: { personKey: demoKey, active: false } });
+    if (target) await moveOpenAssignments(holder.id, target.id);
+  }
+  if (!target) {
+    const created = await createAccount({ personKey, name, email, role });
+    const createdUser = await db.user.findFirst({ where: { email } });
+    if (holder && createdUser && holder.id !== createdUser.id) await moveOpenAssignments(holder.id, createdUser.id);
+    if (created.ok) console.log(`[db] ${name} is ${email}`);
+    return;
+  }
+  if (target.personKey === personKey && target.role === role && target.active) return;
+  const blocker = await db.user.findFirst({ where: { personKey } });
+  if (blocker && blocker.id !== target.id) return;
+  const turningOn = !target.active;
+  await db.user.update({
+    where: { id: target.id },
+    data: {
+      personKey,
+      role,
+      active: true,
+      ...(turningOn ? { passwordHash: bcrypt.hashSync(INITIAL_PASSWORD, 10) } : {}),
+    },
+  });
+  console.log(`[db] ${ROLES[role] ?? role} is ${email}`);
+}
+
+/** Open tasks addressed to the demo reviewer follow the real mailbox. */
+async function moveOpenAssignments(fromId: string, toId: string) {
+  const tasks = await db.workflowTask.findMany({
+    where: { status: { in: ["NOT_STARTED", "IN_PROGRESS", "OVERDUE", "RETURNED_FOR_REVISION", "BLOCKED"] } },
+  });
+  for (const task of tasks) {
+    let ids: string[] = [];
+    try {
+      const parsed = JSON.parse(task.assigneeIds);
+      if (!Array.isArray(parsed)) continue;
+      ids = parsed.filter((id): id is string => typeof id === "string");
+    } catch {
+      continue;
+    }
+    if (!ids.includes(fromId)) continue;
+    const next = [...new Set(ids.map((id) => (id === fromId ? toId : id)))];
+    await db.workflowTask.update({ where: { id: task.id }, data: { assigneeIds: JSON.stringify(next) } });
   }
 }

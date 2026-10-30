@@ -39,7 +39,7 @@ import {
   STAGE,
   TASK,
 } from "@client/lib/labels";
-import { inr } from "@client/utils/money";
+import { inr, parseInr } from "@client/utils/money";
 import { Status } from "@client/components/base/pill";
 import { FieldEditor } from "@client/components/feature/field-editor";
 import { Countdown } from "@client/components/feature/countdown";
@@ -140,7 +140,7 @@ export default function TenderPage() {
     location: tender.location,
     estimatedText: inr(tender.estimatedValue),
     estimatedValue: tender.estimatedValue,
-    emdFee: tender.emdExposure != null ? inr(tender.emdExposure) : fieldText("emd_fee"),
+    emdFee: inr(parseInr(fieldText("emd_fee")) ?? tender.emdExposure),
     emdTypeText: EMD_TYPE[tender.emdType] ?? tender.emdType,
     workDescription: fieldText("work_description"),
     scope: fieldText("scope"),
@@ -212,7 +212,7 @@ export default function TenderPage() {
         {[
           { icon: "₹", tone: "coal", label: "Estimated value", value: inr(tender.estimatedValue), extra: tender.bidOpeningAt ? `Opens ${formatWhen(tender.bidOpeningAt, tz)}` : null },
           { icon: "∑", tone: "ember", label: "Final costing", value: inr(tender.finalCostingValue), extra: <Status map={APPROVAL} value={tender.approvalStatus} /> },
-          { icon: "⛨", tone: "green", label: `EMD · ${EMD_TYPE[tender.emdType] ?? tender.emdType}`, value: inr(tender.emdExposure), extra: <Status map={EMD} value={tender.emdStatus} /> },
+          { icon: "⛨", tone: "green", label: "EMD Value", value: inr(parseInr(fieldText("emd_fee")) ?? tender.emdExposure), extra: <Status map={EMD} value={tender.emdStatus} /> },
           { icon: "✎", tone: "blue", label: "Open tasks", value: String(openTasks.length), extra: mineCount ? <span className="pill info">{mineCount} for you</span> : <span className="muted">none for you</span> },
         ].map((fact, index) => (
           <article key={fact.label} className={`fact ${fact.tone}`} style={{ "--i": index } as CSSProperties}>
