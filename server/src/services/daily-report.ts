@@ -277,7 +277,6 @@ type Report = Awaited<ReturnType<typeof loadTodayReport>>;
 const DIVIDER_URL = "https://storage.googleapis.com/aasik-refex-report-assets/refex-shimmer-divider-green.gif";
 const GREEN = "#14503a";
 const GOLD = "#9a7a3a";
-const BLUE = "#3468a8";
 const RED = "#b42318";
 const INK = "#1a1a1a";
 const MUTED = "#6b6b6b";
@@ -344,33 +343,26 @@ const urgency = (days: number | null) => (days == null ? MUTED : days <= 3 ? RED
 const cell = `padding:8px 10px;border-bottom:1px solid ${LINE};font-size:12px;color:${INK};vertical-align:top;word-wrap:break-word`;
 const head = "padding:8px 10px;background:#f5f2ee;font-size:11px;font-weight:bold;letter-spacing:0.4px;text-transform:uppercase;color:#57534e;text-align:left";
 
-/** Pending tenders as one table: one row each, current stage only, status In progress. */
-function pendingTable(tenders: Report["pending"], urlFor: (id: string) => string, fileUrlFor: (id: string) => string) {
-  const headers = ["Tender", "Client", "Location", "Tender start", "Tender end", "Bid opening", "Portal", "Estimated value", "EMD", "Final costing", "Now with", "Tender file", "Stage", "Status"];
+/** Pending tenders as one table: tender code only, current stage. */
+function pendingTable(tenders: Report["pending"], urlFor: (id: string) => string) {
+  const headers = ["Tender", "Client", "Location", "Tender start", "Tender end", "Bid opening", "Estimated value", "EMD", "Now with", "Stage"];
   const label = (index: number) =>
     `<span class="mlabel" style="display:none;font-size:10px;font-weight:bold;letter-spacing:0.4px;text-transform:uppercase;color:#8a8a8a">${escapeHtml(headers[index] ?? "")}</span>`;
   const rows = tenders.map((tender) => {
     const days = tender.daysLeft == null ? "" : tender.daysLeft < 0 ? "Deadline passed" : `${timeLeft(tender.daysLeft)} left`;
     const current = tender.steps.filter((step) => step.state === "current").map((step) => step.label);
     const stage = current.length ? current.join(", ") : tender.stage;
-    const file = tender.file
-      ? `<a href="${escapeHtml(fileUrlFor(tender.id))}" style="color:${BLUE};font-weight:bold;text-decoration:none">${escapeHtml(tender.file.fileName)}</a> <span style="color:#8a8a8a">(${tender.file.sizeBytes >= 1048576 ? `${(tender.file.sizeBytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(tender.file.sizeBytes / 1024))} KB`})</span>`
-      : "—";
     const values = [
-      `<a href="${escapeHtml(urlFor(tender.id))}" style="color:${GREEN};font-weight:bold;text-decoration:none">${escapeHtml(tender.recordId)}</a><div style="font-weight:bold;margin-top:2px">${escapeHtml(tender.project)}</div>${tender.reference ? `<div style="color:${MUTED};margin-top:2px">${escapeHtml(tender.reference)}</div>` : ""}<div style="color:${GOLD};font-weight:bold;margin-top:2px">Now: ${escapeHtml(tender.stage)}${tender.late ? " · Overdue" : ""}</div>`,
+      `<a href="${escapeHtml(urlFor(tender.id))}" style="color:${GREEN};font-weight:bold;text-decoration:none">${escapeHtml(tender.recordId)}</a>`,
       escapeHtml(tender.client || "—"),
       escapeHtml(tender.location || "—"),
       escapeHtml(when(tender.received)),
       `${escapeHtml(when(tender.deadline))}${days ? `<div style="color:${urgency(tender.daysLeft)};font-weight:bold">${escapeHtml(days)}</div>` : ""}`,
       escapeHtml(when(tender.opening)),
-      escapeHtml(tender.portal || "—"),
       escapeHtml(tender.estimated ? `${inr(tender.estimated)} (${inrFull(tender.estimated)})` : "—"),
       escapeHtml(tender.emd ? `${inr(tender.emd)} · ${tender.emdType}` : tender.emdType || "—"),
-      escapeHtml(tender.finalCosting ? inr(tender.finalCosting) : "Not yet"),
       escapeHtml(tender.withWhom || "—"),
-      file,
       escapeHtml(stage),
-      `<span style="color:#c2410c;font-weight:bold">In progress</span>`,
     ];
     return `<tr>${values.map((value, index) => `<td class="rd" style="${cell}">${label(index)}${value}</td>`).join("")}</tr>`;
   });
@@ -384,12 +376,8 @@ ${rows.join("")}
 export async function buildTodayReportEmail(report: Report) {
   const base = await emailLink("/");
   const tenderLinks = new Map<string, string>();
-  const fileLinks = new Map<string, string>();
   for (const id of new Set([...report.newTenders.map((row) => row.id), ...report.closing.map((row) => row.id), ...report.overdue.map((row) => row.id), ...report.pending.map((row) => row.id)])) {
     tenderLinks.set(id, await emailLink(`/tenders/${id}`));
-  }
-  for (const tender of report.pending) {
-    if (tender.file) fileLinks.set(tender.id, await emailLink(`/tenders/${tender.id}?tab=documents`));
   }
   const appUrl = (id: string) => tenderLinks.get(id) ?? base;
   const link = (id: string, text: string) => `<a href="${escapeHtml(appUrl(id))}" style="color:${GREEN};font-weight:bold;text-decoration:none">${escapeHtml(text)}</a>`;
@@ -440,7 +428,7 @@ ${statPair(statCard(inr(stats.emdExposure), "EMD exposure", "Guarantees and bond
 
 ${report.pending.length
   ? `${caption("Pending Tender", `${report.pending.length} open tender${report.pending.length === 1 ? "" : "s"}, soonest bid deadline first`)}
-${pendingTable(report.pending, appUrl, (id) => fileLinks.get(id) ?? appUrl(id))}`
+${pendingTable(report.pending, appUrl)}`
   : ""}
 
 ${report.newTenders.length
