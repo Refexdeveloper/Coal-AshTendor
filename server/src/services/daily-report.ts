@@ -287,8 +287,8 @@ ${note ? `<div style="font-size:12px;color:#78716c;margin-top:2px">${escapeHtml(
 ${body}</td></tr>`;
 }
 
-function statCard(label: string, value: string, note: string, color: string) {
-  return `<td width="25%" valign="top" style="padding:5px">
+function statCard(label: string, value: string, note: string, color: string, width = "25%") {
+  return `<td width="${width}" valign="top" style="padding:5px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid #eeeae6;border-top:3px solid ${color};border-radius:10px">
 <tr><td style="padding:12px 12px">
 <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#78716c">${escapeHtml(label)}</div>
@@ -311,45 +311,35 @@ function timeLeft(days: number) {
   return parts.join(" ");
 }
 
-/** One block per open tender, matching the report card: stages, then the tender facts. */
-function pendingCard(tender: Report["pending"][number], tenderUrl: string, fileUrl: string) {
-  const days = tender.daysLeft == null ? "No deadline" : `${timeLeft(tender.daysLeft)} left`;
-  const daysColor = tender.daysLeft != null && tender.daysLeft <= 3 ? "#dc2626" : tender.daysLeft != null && tender.daysLeft <= 7 ? "#d97706" : "#16a34a";
-  const fact = (label: string, value: string) =>
-    `<tr><td style="${cell};color:#78716c;width:34%">${escapeHtml(label)}</td><td style="${cell}" colspan="3">${value}</td></tr>`;
-  const stageRows = tender.steps
-    .map((step) => {
-      const done = step.state === "done";
-      const status = done
-        ? `<span style="color:#047857;font-weight:700">Completed</span>`
-        : `<span style="color:${step.state === "current" ? "#c2410c" : "#a8a29e"};font-weight:700">Awaiting</span>`;
-      return `<tr><td style="${cell}">${escapeHtml(step.label)}</td><td style="${cell}">${status}</td><td style="${cell}">${escapeHtml(step.who || "—")}</td><td style="${cell}">${escapeHtml(step.whenText || "—")}</td></tr>`;
-    })
-    .join("");
-  const file = tender.file
-    ? `<a href="${escapeHtml(fileUrl)}" style="color:#c2410c;font-weight:700;text-decoration:none">${escapeHtml(tender.file.fileName)}</a> <span style="color:#78716c">(${escapeHtml(fileSize(tender.file.sizeBytes))})</span>`
-    : `<span style="color:#78716c">No tender file uploaded yet</span>`;
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:14px;border:1px solid #eeeae6;border-left:4px solid ${tender.late ? "#dc2626" : "#ea580c"};background:#ffffff">
-<tr><td colspan="4" style="padding:12px 14px;background:#fafaf9;border-bottom:1px solid #eeeae6">
-<a href="${escapeHtml(tenderUrl)}" style="color:#c2410c;font-weight:800;font-size:14px;text-decoration:none">${escapeHtml(tender.recordId)}</a>
-<span style="font-size:15px;font-weight:700;color:#1c1917"> · ${escapeHtml(tender.project)}</span>
-${tender.reference ? `<div style="font-size:12px;color:#78716c;margin-top:2px">Ref: ${escapeHtml(tender.reference)}</div>` : ""}
-<div style="font-size:12px;font-weight:700;color:#9a3412;margin-top:2px">Now: ${escapeHtml(tender.stage)}${tender.late ? " · Overdue task" : ""}</div>
-</td></tr>
-<tr><th style="${head}">Stage</th><th style="${head}">Status</th><th style="${head}">Who</th><th style="${head}">Time</th></tr>
-${stageRows}
-${fact("Client", escapeHtml(tender.client || "—"))}
-${fact("Location", escapeHtml(tender.location || "—"))}
-${fact("Tender start (received)", escapeHtml(when(tender.received)))}
-${fact("Tender end (bid deadline)", `${escapeHtml(when(tender.deadline))} <span style="color:${daysColor};font-weight:700">· ${escapeHtml(days)}</span>`)}
-${fact("Bid opening", escapeHtml(when(tender.opening)))}
-${fact("Portal", escapeHtml(tender.portal || "—"))}
-${fact("Estimated value", escapeHtml(tender.estimated ? `${inr(tender.estimated)} (${inrFull(tender.estimated)})` : "—"))}
-${fact("EMD", escapeHtml(tender.emd ? `${inr(tender.emd)} · ${tender.emdType}` : tender.emdType || "—"))}
-${fact("Final costing", escapeHtml(tender.finalCosting ? inr(tender.finalCosting) : "Not yet"))}
-${fact("Now with", escapeHtml(tender.withWhom || "—"))}
-${fact("Tender file", file)}
-</table>`;
+/** One row per open tender. Stage is only the current stage, and the status is In progress. */
+function pendingTable(tenders: Report["pending"], urlFor: (id: string) => string, fileUrlFor: (id: string) => string) {
+  const headers = ["Tender", "Client", "Location", "Tender start", "Tender end", "Bid opening", "Portal", "Estimated value", "EMD", "Final costing", "Now with", "Tender file", "Stage", "Status"];
+  const rows = tenders.map((tender) => {
+    const days = tender.daysLeft == null ? "No deadline" : `${timeLeft(tender.daysLeft)} left`;
+    const daysColor = tender.daysLeft != null && tender.daysLeft <= 3 ? "#dc2626" : tender.daysLeft != null && tender.daysLeft <= 7 ? "#d97706" : "#16a34a";
+    const current = tender.steps.filter((step) => step.state === "current").map((step) => step.label);
+    const stage = current.length ? current.join(", ") : tender.stage;
+    const file = tender.file
+      ? `<a href="${escapeHtml(fileUrlFor(tender.id))}" style="color:#c2410c;font-weight:700;text-decoration:none">${escapeHtml(tender.file.fileName)}</a> <span style="color:#78716c">(${escapeHtml(fileSize(tender.file.sizeBytes))})</span>`
+      : "—";
+    return [
+      `<a href="${escapeHtml(urlFor(tender.id))}" style="color:#c2410c;font-weight:800;text-decoration:none">${escapeHtml(tender.recordId)}</a><div style="font-weight:700">${escapeHtml(tender.project)}</div>${tender.reference ? `<div style="color:#78716c">${escapeHtml(tender.reference)}</div>` : ""}<div style="color:#9a3412;font-weight:700">Now: ${escapeHtml(tender.stage)}${tender.late ? " · Overdue" : ""}</div>`,
+      escapeHtml(tender.client || "—"),
+      escapeHtml(tender.location || "—"),
+      escapeHtml(when(tender.received)),
+      `${escapeHtml(when(tender.deadline))}<div style="color:${daysColor};font-weight:700">${escapeHtml(days)}</div>`,
+      escapeHtml(when(tender.opening)),
+      escapeHtml(tender.portal || "—"),
+      escapeHtml(tender.estimated ? `${inr(tender.estimated)} (${inrFull(tender.estimated)})` : "—"),
+      escapeHtml(tender.emd ? `${inr(tender.emd)} · ${tender.emdType}` : tender.emdType || "—"),
+      escapeHtml(tender.finalCosting ? inr(tender.finalCosting) : "Not yet"),
+      escapeHtml(tender.withWhom || "—"),
+      file,
+      escapeHtml(stage),
+      `<span style="color:#c2410c;font-weight:700">In progress</span>`,
+    ];
+  });
+  return table(headers, rows, "No open tenders.");
 }
 
 export async function buildTodayReportEmail(report: Report) {
@@ -375,10 +365,9 @@ export async function buildTodayReportEmail(report: Report) {
   const subject = `Coal & Ash — Today's tender report · ${day}`;
   const cards = [
     [
-      statCard("Total tenders", String(stats.total), `${stats.active} active`, "#2563eb"),
-      statCard("New today", String(stats.newToday), "Tenders received", "#7c3aed"),
-      statCard("Steps today", String(stats.stepsToday), "Workflow moves", "#0d9488"),
-      statCard("Bids today", String(stats.bidsToday), `${stats.wonToday} won · ${stats.lostToday} lost`, "#ea580c"),
+      statCard("Total tenders", String(stats.total), `${stats.active} active`, "#2563eb", "33%"),
+      statCard("New today", String(stats.newToday), "Tenders received", "#7c3aed", "33%"),
+      statCard("Bids today", String(stats.bidsToday), `${stats.wonToday} won · ${stats.lostToday} lost`, "#ea580c", "33%"),
     ],
     [
       statCard("Overdue tasks", String(stats.overdue), stats.overdue ? "Past their SLA" : "All on time", stats.overdue ? "#dc2626" : "#16a34a"),
@@ -392,7 +381,7 @@ export async function buildTodayReportEmail(report: Report) {
 <html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${escapeHtml(subject)}</title></head>
 <body style="margin:0;padding:24px 12px;background:#f5f4f2;font-family:Arial,Helvetica,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center">
-<table role="presentation" width="760" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:760px;background:#ffffff;border-radius:12px;border:1px solid #e7e5e4">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background:#ffffff;border-radius:12px;border:1px solid #e7e5e4">
 <tr><td style="padding:18px 28px 14px;text-align:center"><img src="${REFEXONE_EMAIL_LOGO_URL}" alt="RefexOne" width="160" style="max-width:160px;width:160px;height:auto;border:0" /></td></tr>
 <tr><td bgcolor="#7c2d12" style="padding:22px 28px;background:#7c2d12;background-image:linear-gradient(135deg,#292524,#c2410c)">
 <div style="color:#fdba74;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">Coal &amp; Ash tenders · Today's report</div>
@@ -473,7 +462,7 @@ ${report.pending.length
   ? section(
       "Pending Tender",
       `${report.pending.length} open tender${report.pending.length === 1 ? "" : "s"}, soonest bid deadline first.`,
-      report.pending.map((tender) => pendingCard(tender, appUrl(tender.id), fileLinks.get(tender.id) ?? appUrl(tender.id))).join(""),
+      pendingTable(report.pending, appUrl, (id) => fileLinks.get(id) ?? appUrl(id)),
     )
   : ""}
 <tr><td style="padding:24px 28px 26px;text-align:center">
@@ -484,7 +473,7 @@ ${report.pending.length
 
   const text = [
     subject,
-    `Total ${stats.total} (${stats.active} active) · new today ${stats.newToday} · steps today ${stats.stepsToday} · bids today ${stats.bidsToday} · overdue ${stats.overdue} · closing in 7 days ${stats.closing}`,
+    `Total ${stats.total} (${stats.active} active) · new today ${stats.newToday} · bids today ${stats.bidsToday} · overdue ${stats.overdue} · closing in 7 days ${stats.closing}`,
     `Active pipeline ${inr(stats.pipelineValue)} · EMD exposure ${inr(stats.emdExposure)}`,
     ...(report.steps.length ? ["", "Today's activity:", ...report.steps.map((row) => `- ${timeLabel(row.at)} ${row.recordId}: ${row.action} (by ${row.by})`)] : []),
     ...(report.newTenders.length ? ["", "New tenders today:", ...report.newTenders.map((row) => `- ${row.recordId} ${row.project}`)] : []),
@@ -494,12 +483,11 @@ ${report.pending.length
       ? [
           "",
           "Pending Tender:",
-          ...report.pending.flatMap((tender) => [
-            `- ${tender.recordId} ${tender.project} · deadline ${when(tender.deadline)}`,
-            ...tender.steps.map(
-              (step) => `    ${step.label}: ${step.state === "done" ? "Completed" : "Awaiting"}${step.who ? ` · ${step.who}` : ""}${step.whenText ? ` · ${step.whenText}` : ""}`,
-            ),
-          ]),
+          ...report.pending.map((tender) => {
+            const current = tender.steps.filter((step) => step.state === "current").map((step) => step.label);
+            const stage = current.length ? current.join(", ") : tender.stage;
+            return `- ${tender.recordId} ${tender.project} · ${stage}: In progress · deadline ${when(tender.deadline)}`;
+          }),
         ]
       : []),
     "",
