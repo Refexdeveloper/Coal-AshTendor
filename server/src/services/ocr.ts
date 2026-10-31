@@ -173,16 +173,10 @@ export async function extractUploadedFile(storedPath: string, fileName: string, 
     Documents: [documentUrl],
   };
   console.log("OCR POST", OCR_URL, JSON.stringify(body));
-  const response = await fetch(OCR_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(180_000),
-  });
-  const text = await response.text();
-  const raw = prettyJson(text).slice(0, 200_000);
-  if (!response.ok) {
-    return { hits: {} as Record<string, FieldHit>, note: `OCR request failed (${response.status}).`, raw };
+  const posted = await postUntilResult(body);
+  const { text, raw } = posted;
+  if (!posted.ok) {
+    return { hits: {} as Record<string, FieldHit>, note: posted.note, raw };
   }
   let payload: unknown;
   try {
@@ -193,6 +187,50 @@ export async function extractUploadedFile(storedPath: string, fileName: string, 
   const hits = fieldsFromOcrResponse(payload, documentId);
   const note = Object.keys(hits).length ? "" : ocrErrorNote(payload) || "OCR returned no fields.";
   return { hits, note, raw };
+}
+
+const ATTEMPT_MS = 10 * 60 * 1000;
+const TOTAL_MS = 10 * 60 * 1000;
+const RETRY_STATUS = new Set([502, 503, 504]);
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Keep posting the same extraction until the service returns a result. A 504 is the gateway giving up, not a finished extract. */
+async function postUntilResult(body: object) {
+  const started = Date.now();
+  let attempt = 0;
+  let lastRaw = "";
+  while (Date.now() - started < TOTAL_MS) {
+    attempt += 1;
+    const remaining = TOTAL_MS - (Date.now() - started);
+    try {
+      const response = await fetch(OCR_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(Math.min(ATTEMPT_MS, remaining)),
+      });
+      const text = await response.text();
+      const raw = prettyJson(text).slice(0, 200_000);
+      lastRaw = raw;
+      if (RETRY_STATUS.has(response.status)) {
+        console.log(`OCR gateway ${response.status} on attempt ${attempt}; waiting and posting again for the result.`);
+        await sleep(Math.min(20_000, 4_000 * attempt));
+        continue;
+      }
+      if (!response.ok) return { ok: false, text, raw, note: `OCR request failed (${response.status}).` };
+      return { ok: true, text, raw, note: "" };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "OCR request failed.";
+      lastRaw = message;
+      console.log(`OCR request stopped on attempt ${attempt} (${message}); waiting and posting again.`);
+      if (Date.now() - started >= TOTAL_MS) break;
+      await sleep(Math.min(20_000, 4_000 * attempt));
+    }
+  }
+  return { ok: false, text: "", raw: lastRaw, note: "OCR gateway timed out before a result came back. The extract will be tried again on the next upload." };
 }
 
 function prettyJson(text: string) {
