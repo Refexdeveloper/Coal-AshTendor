@@ -519,7 +519,7 @@ pre { white-space: pre-wrap; font-size: 0.85rem; }
 }
 .step-copy { display: grid; min-width: 0; }
 .step-copy strong { font-size: 0.84rem; white-space: nowrap; }
-.step-copy small { font-size: 0.72rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step-copy small { font-size: 0.72rem; color: var(--muted); white-space: normal; }
 .step.done .step-dot { background: var(--moss); border-color: var(--moss); color: #fff; }
 .step.current .step-dot { background: var(--ember-bright); border-color: var(--ember-bright); color: #fff; box-shadow: 0 0 0 5px var(--ember-soft); animation: pulse 2s ease-in-out infinite; }
 .step.current .step-copy strong { color: var(--ember); }

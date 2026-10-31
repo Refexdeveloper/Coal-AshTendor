@@ -15,6 +15,31 @@ export function calendarJson(calendar: Calendar) {
 
 const mineWhere = (userId: string) => ({ status: { in: OPEN_TASK }, assigneeIds: { contains: `"${userId}"` } });
 
+function idList(raw: string) {
+  try {
+    const value = JSON.parse(raw || "[]") as unknown;
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Active people, plus anyone already named on this tender, so an approval still shows after a login is turned off. */
+async function peopleFor(tender: { createdById: string; submitterId: string | null; tasks: { assigneeIds: string; completedById: string }[]; approvals: { approverId: string }[]; costings: { createdById: string }[] }) {
+  const ids = [tender.createdById, tender.submitterId];
+  for (const task of tender.tasks) ids.push(task.completedById, ...idList(task.assigneeIds));
+  for (const approval of tender.approvals) ids.push(approval.approverId);
+  for (const costing of tender.costings) ids.push(costing.createdById);
+  const extra = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  const [active, named] = await Promise.all([
+    db.user.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    extra.length ? db.user.findMany({ where: { id: { in: extra } } }) : Promise.resolve([]),
+  ]);
+  const merged = new Map(active.map((user) => [user.id, user]));
+  for (const user of named) merged.set(user.id, user);
+  return [...merged.values()];
+}
+
 /** Read-only data for each screen. Every route here runs behind requireActor. */
 export const views = Router();
 
@@ -219,7 +244,7 @@ views.get("/tenders/:id", async (req, res) => {
     return;
   }
   const [users, calendar, settings, fieldEditor] = await Promise.all([
-    db.user.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    peopleFor(tender),
     getCalendar(),
     db.appSettings.findUnique({ where: { id: "default" } }),
     canEditFields(actor, tender.id),

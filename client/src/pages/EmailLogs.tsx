@@ -57,6 +57,7 @@ const TYPE_LABEL: Record<string, string> = {
   OCR_FAILED: "Extraction failed",
   OCR_RESULT: "OCR result",
   TENDER_AMENDMENT: "Deadline changed",
+  DAILY_REPORT: "Today's report",
   SIGN_IN_DETAILS: "Sign-in details",
 };
 
@@ -74,6 +75,8 @@ export default function EmailLogsPage() {
   const page = Number(search.get("page") || 1);
   const [draft, setDraft] = useState(q);
   const [open, setOpen] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [notice, setNotice] = useState<{ ok?: string; error?: string } | null>(null);
   const query = new URLSearchParams({ ...(status && { status }), ...(type && { type }), ...(q && { q }), page: String(page) });
   const { data: fresh, error, reload } = useApi<Data>(`/email-logs?${query}`);
   // Keep the last result on screen while a new filter loads.
@@ -93,6 +96,15 @@ export default function EmailLogsPage() {
   };
   const all = Object.values(data.counts).reduce((sum, n) => sum + n, 0);
   const pages = Math.max(1, Math.ceil(data.total / data.size));
+  const sendReport = async () => {
+    setSending(true);
+    setNotice(null);
+    const form = new FormData();
+    form.set("to", "sathishkumar.r@refex.co.in");
+    const answer = await postAction("send-today-report", form);
+    setSending(false);
+    setNotice(answer?.error ? { error: answer.error } : { ok: answer?.ok ?? "Today's report sent to sathishkumar.r@refex.co.in." });
+  };
 
   return (
     <>
@@ -104,10 +116,17 @@ export default function EmailLogsPage() {
             again.
           </p>
         </div>
-        <button type="button" className="btn ghost" onClick={() => void reload()}>
-          Refresh
-        </button>
+        <div className="actions">
+          <button type="button" className="btn" onClick={() => void sendReport()} disabled={sending}>
+            {sending ? "Sending…" : "Send today's report"}
+          </button>
+          <button type="button" className="btn ghost" onClick={() => void reload()}>
+            Refresh
+          </button>
+        </div>
       </header>
+      {notice?.ok ? <p className="banner good">{notice.ok}</p> : null}
+      {notice?.error ? <p className="banner bad">{notice.error}</p> : null}
 
       <section className={`banner ${data.mail.ready ? (data.mail.testInbox ? "warn" : "good") : "bad"}`}>
         {data.mail.ready ? `Sending from ${data.mail.from}.` : "Mail is not set up (no SMTP password), so emails are logged but not sent."}
