@@ -225,7 +225,7 @@ export async function loadTodayReport(now = new Date()) {
       client: tender.clientName,
       deadline: tender.bidSubmissionEnd!,
       daysLeft: (tender.bidSubmissionEnd!.getTime() - nowMs) / 864e5,
-      status: OVERALL[tender.overallStatus]?.label ?? tender.overallStatus,
+      status: tender.overallStatus === "APPROVED_IN_PROGRESS" ? "In progress" : (OVERALL[tender.overallStatus]?.label ?? tender.overallStatus),
       withWhom: withWhom(tender),
     })),
     overdue: overdue.map(({ task, tender }) => ({
@@ -299,16 +299,21 @@ function statCard(label: string, value: string, note: string, color: string) {
 
 const fileSize = (bytes: number) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
+/** "1 day 20 hours", so a deadline is not rounded down to a whole day. */
+function timeLeft(days: number) {
+  if (days < 0) return "Deadline passed";
+  const totalHours = Math.max(0, Math.round(days * 24));
+  const wholeDays = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  const parts: string[] = [];
+  if (wholeDays > 0) parts.push(`${wholeDays} day${wholeDays === 1 ? "" : "s"}`);
+  if (hours > 0 || wholeDays === 0) parts.push(`${hours} hour${hours === 1 ? "" : "s"}`);
+  return parts.join(" ");
+}
+
 /** One block per open tender, matching the report card: stages, then the tender facts. */
 function pendingCard(tender: Report["pending"][number], tenderUrl: string, fileUrl: string) {
-  const days =
-    tender.daysLeft == null
-      ? "No deadline"
-      : tender.daysLeft < 0
-        ? "Deadline passed"
-        : tender.daysLeft < 1
-          ? `${Math.max(1, Math.round(tender.daysLeft * 24))} hours left`
-          : `${Math.floor(tender.daysLeft)} days left`;
+  const days = tender.daysLeft == null ? "No deadline" : `${timeLeft(tender.daysLeft)} left`;
   const daysColor = tender.daysLeft != null && tender.daysLeft <= 3 ? "#dc2626" : tender.daysLeft != null && tender.daysLeft <= 7 ? "#d97706" : "#16a34a";
   const fact = (label: string, value: string) =>
     `<tr><td style="${cell};color:#78716c;width:34%">${escapeHtml(label)}</td><td style="${cell}" colspan="3">${value}</td></tr>`;
@@ -397,72 +402,80 @@ export async function buildTodayReportEmail(report: Report) {
 <tr><td style="padding:18px 23px 0">
 ${cards.map((row) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${row.join("")}</tr></table>`).join("")}
 </td></tr>
-${section(
-  "Today's activity",
-  `${report.steps.length} workflow step${report.steps.length === 1 ? "" : "s"} moved today`,
-  table(
-    ["Time", "Tender", "Step", "By"],
-    report.steps.map((row) => [
-      escapeHtml(timeLabel(row.at)),
-      `${link(row.tenderId, row.recordId)}<div style="font-size:12px;color:#78716c">${escapeHtml(row.project)}</div>`,
-      `${escapeHtml(row.action)}${row.detail ? `<div style="font-size:12px;color:#78716c">${escapeHtml(row.detail.slice(0, 160))}</div>` : ""}`,
-      escapeHtml(row.by),
-    ]),
-    "No workflow steps moved today.",
-  ),
-)}
-${section(
-  "New tenders today",
-  "",
-  table(
-    ["Tender", "Client", "Value", "Bid deadline", "Status"],
-    report.newTenders.map((row) => [
-      `${link(row.id, row.recordId)}<div style="font-size:12px;color:#78716c">${escapeHtml(row.project)}</div>`,
-      escapeHtml(row.client || "—"),
-      escapeHtml(inr(row.value)),
-      escapeHtml(when(row.deadline)),
-      escapeHtml(row.status),
-    ]),
-    "No new tenders today.",
-  ),
-)}
-${section(
-  "Bids closing in the next 7 days",
-  "Soonest first",
-  table(
-    ["Tender", "Deadline", "Time left", "Status", "Now with"],
-    report.closing.map((row) => [
-      `${link(row.id, row.recordId)}<div style="font-size:12px;color:#78716c">${escapeHtml(row.project)} · ${escapeHtml(row.client)}</div>`,
-      escapeHtml(when(row.deadline)),
-      `<b style="color:${row.daysLeft <= 3 ? "#dc2626" : "#d97706"}">${row.daysLeft < 1 ? `${Math.max(1, Math.round(row.daysLeft * 24))} hours` : `${Math.floor(row.daysLeft)} days`}</b>`,
-      escapeHtml(row.status),
-      escapeHtml(row.withWhom || "—"),
-    ]),
-    "No bid deadlines in the next 7 days.",
-  ),
-)}
-${section(
-  "Overdue tasks",
-  "Past their working-time SLA, oldest first",
-  table(
-    ["Tender", "Task", "With", "Was due", "Late by"],
-    report.overdue.map((row) => [
-      `${link(row.id, row.recordId)}<div style="font-size:12px;color:#78716c">${escapeHtml(row.project)}</div>`,
-      escapeHtml(row.task),
-      escapeHtml(row.withWhom || "—"),
-      escapeHtml(when(row.due)),
-      `<b style="color:#dc2626">${row.lateDays < 1 ? `${Math.max(1, Math.round(row.lateDays * 24))} hours` : `${Math.floor(row.lateDays)} days`}</b>`,
-    ]),
-    "Nothing is overdue.",
-  ),
-)}
-${section(
-  "Pending, tender by tender",
-  `${report.pending.length} open tender${report.pending.length === 1 ? "" : "s"}, soonest bid deadline first.`,
-  report.pending.length
-    ? report.pending.map((tender) => pendingCard(tender, appUrl(tender.id), fileLinks.get(tender.id) ?? appUrl(tender.id))).join("")
-    : `<p style="margin:8px 0 0;font-size:13px;color:#78716c">No open tenders.</p>`,
-)}
+${report.steps.length
+  ? section(
+      "Today's activity",
+      `${report.steps.length} workflow step${report.steps.length === 1 ? "" : "s"} moved today`,
+      table(
+        ["Time", "Tender", "Step", "By"],
+        report.steps.map((row) => [
+          escapeHtml(timeLabel(row.at)),
+          `${link(row.tenderId, row.recordId)}<div style="font-size:12px;color:#78716c">${escapeHtml(row.project)}</div>`,
+          `${escapeHtml(row.action)}${row.detail ? `<div style="font-size:12px;color:#78716c">${escapeHtml(row.detail.slice(0, 160))}</div>` : ""}`,
+          escapeHtml(row.by),
+        ]),
+        "",
+      ),
+    )
+  : ""}
+${report.newTenders.length
+  ? section(
+      "New tenders today",
+      "",
+      table(
+        ["Tender", "Client", "Value", "Bid deadline", "Status"],
+        report.newTenders.map((row) => [
+          `${link(row.id, row.recordId)}<div style="font-size:12px;color:#78716c">${escapeHtml(row.project)}</div>`,
+          escapeHtml(row.client || "—"),
+          escapeHtml(inr(row.value)),
+          escapeHtml(when(row.deadline)),
+          escapeHtml(row.status),
+        ]),
+        "",
+      ),
+    )
+  : ""}
+${report.closing.length
+  ? section(
+      "Bids closing in the next 7 days",
+      "Soonest first",
+      table(
+        ["Tender", "Deadline", "Time left", "Status", "Now with"],
+        report.closing.map((row) => [
+          `${link(row.id, row.recordId)}<div style="font-size:12px;color:#78716c">${escapeHtml(row.project)} · ${escapeHtml(row.client)}</div>`,
+          escapeHtml(when(row.deadline)),
+          `<b style="color:${row.daysLeft <= 3 ? "#dc2626" : "#d97706"}">${escapeHtml(timeLeft(row.daysLeft))}</b>`,
+          escapeHtml(row.status),
+          escapeHtml(row.withWhom || "—"),
+        ]),
+        "",
+      ),
+    )
+  : ""}
+${report.overdue.length
+  ? section(
+      "Overdue tasks",
+      "Past their working-time SLA, oldest first",
+      table(
+        ["Tender", "Task", "With", "Was due", "Late by"],
+        report.overdue.map((row) => [
+          `${link(row.id, row.recordId)}<div style="font-size:12px;color:#78716c">${escapeHtml(row.project)}</div>`,
+          escapeHtml(row.task),
+          escapeHtml(row.withWhom || "—"),
+          escapeHtml(when(row.due)),
+          `<b style="color:#dc2626">${row.lateDays < 1 ? `${Math.max(1, Math.round(row.lateDays * 24))} hours` : `${Math.floor(row.lateDays)} days`}</b>`,
+        ]),
+        "",
+      ),
+    )
+  : ""}
+${report.pending.length
+  ? section(
+      "Pending Tender",
+      `${report.pending.length} open tender${report.pending.length === 1 ? "" : "s"}, soonest bid deadline first.`,
+      report.pending.map((tender) => pendingCard(tender, appUrl(tender.id), fileLinks.get(tender.id) ?? appUrl(tender.id))).join(""),
+    )
+  : ""}
 <tr><td style="padding:24px 28px 26px;text-align:center">
 <a href="${escapeHtml(base)}" style="display:inline-block;padding:12px 24px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px">Open Coal &amp; Ash →</a>
 <p style="margin:14px 0 0;font-size:12px;color:#a8a29e">Generated ${escapeHtml(when(report.now))} by the Coal &amp; Ash tender workflow.</p>
@@ -473,25 +486,22 @@ ${section(
     subject,
     `Total ${stats.total} (${stats.active} active) · new today ${stats.newToday} · steps today ${stats.stepsToday} · bids today ${stats.bidsToday} · overdue ${stats.overdue} · closing in 7 days ${stats.closing}`,
     `Active pipeline ${inr(stats.pipelineValue)} · EMD exposure ${inr(stats.emdExposure)}`,
-    "",
-    "Today's activity:",
-    ...(report.steps.length ? report.steps.map((row) => `- ${timeLabel(row.at)} ${row.recordId}: ${row.action} (by ${row.by})`) : ["- none"]),
-    "",
-    "Bids closing in the next 7 days:",
-    ...(report.closing.length ? report.closing.map((row) => `- ${row.recordId} ${row.project}: ${when(row.deadline)}`) : ["- none"]),
-    "",
-    "Overdue tasks:",
-    ...(report.overdue.length ? report.overdue.map((row) => `- ${row.recordId} ${row.task} with ${row.withWhom}, due ${when(row.due)}`) : ["- none"]),
-    "",
-    "Pending, tender by tender:",
+    ...(report.steps.length ? ["", "Today's activity:", ...report.steps.map((row) => `- ${timeLabel(row.at)} ${row.recordId}: ${row.action} (by ${row.by})`)] : []),
+    ...(report.newTenders.length ? ["", "New tenders today:", ...report.newTenders.map((row) => `- ${row.recordId} ${row.project}`)] : []),
+    ...(report.closing.length ? ["", "Bids closing in the next 7 days:", ...report.closing.map((row) => `- ${row.recordId} ${row.project}: ${when(row.deadline)}`)] : []),
+    ...(report.overdue.length ? ["", "Overdue tasks:", ...report.overdue.map((row) => `- ${row.recordId} ${row.task} with ${row.withWhom}, due ${when(row.due)}`)] : []),
     ...(report.pending.length
-      ? report.pending.flatMap((tender) => [
-          `- ${tender.recordId} ${tender.project} · deadline ${when(tender.deadline)}`,
-          ...tender.steps.map(
-            (step) => `    ${step.label}: ${step.state === "done" ? "Completed" : "Awaiting"}${step.who ? ` · ${step.who}` : ""}${step.whenText ? ` · ${step.whenText}` : ""}`,
-          ),
-        ])
-      : ["- none"]),
+      ? [
+          "",
+          "Pending Tender:",
+          ...report.pending.flatMap((tender) => [
+            `- ${tender.recordId} ${tender.project} · deadline ${when(tender.deadline)}`,
+            ...tender.steps.map(
+              (step) => `    ${step.label}: ${step.state === "done" ? "Completed" : "Awaiting"}${step.who ? ` · ${step.who}` : ""}${step.whenText ? ` · ${step.whenText}` : ""}`,
+            ),
+          ]),
+        ]
+      : []),
     "",
     `Open Coal & Ash: ${base}`,
   ].join("\n");
