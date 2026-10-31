@@ -270,8 +270,8 @@ type Report = Awaited<ReturnType<typeof loadTodayReport>>;
 
 /*
  * Layout after P2P's procurement report: white header with the logo, the green shimmer divider, grey section
- * captions, gradient stat cards two to a row and green-headed blocks. The pending list stays a table
- * on a phone: columns do not stack into cards, and the table scrolls sideways.
+ * captions, gradient stat cards two to a row and green-headed blocks. On a phone the pending
+ * table stacks one field per line, with the column name above each value.
  */
 const DIVIDER_URL = "https://storage.googleapis.com/aasik-refex-report-assets/refex-shimmer-divider-green.gif";
 const GREEN = "#14503a";
@@ -299,7 +299,7 @@ ${note ? `<div style="font-size:12px;color:#a0a0a0;margin-top:3px">${escapeHtml(
 
 function statCard(value: string, label: string, sub: string, tone: keyof typeof LOOKS) {
   const look = LOOKS[tone];
-  return `<td width="48%" align="center" valign="top" style="background:${look.background};border:1px solid ${look.border};border-radius:10px;padding:16px 6px">
+  return `<td class="stat" width="48%" align="center" valign="top" style="background:${look.background};border:1px solid ${look.border};border-radius:10px;padding:16px 6px">
 <div style="font-size:22px;font-weight:bold;color:${look.value};line-height:1.2">${escapeHtml(value)}</div>
 <div style="font-size:11px;color:${look.label};margin-top:5px;font-weight:bold;text-transform:uppercase;letter-spacing:0.4px">${escapeHtml(label)}</div>
 <div style="font-size:11px;color:${look.label};margin-top:3px;line-height:1.3">${escapeHtml(sub) || "&nbsp;"}</div>
@@ -308,7 +308,7 @@ function statCard(value: string, label: string, sub: string, tone: keyof typeof 
 
 function statPair(left: string, right: string) {
   return `<tr><td style="padding:6px 18px" bgcolor="#ffffff">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${left}<td width="4%"></td>${right}</tr></table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${left}<td class="stat-gap" width="4%"></td>${right}</tr></table>
 </td></tr>`;
 }
 
@@ -342,9 +342,11 @@ const urgency = (days: number | null) => (days == null ? MUTED : days <= 3 ? RED
 const cell = `padding:8px 10px;border-bottom:1px solid ${LINE};font-size:12px;color:${INK};vertical-align:top;word-wrap:break-word`;
 const head = "padding:8px 10px;background:#f5f2ee;font-size:11px;font-weight:bold;letter-spacing:0.4px;text-transform:uppercase;color:#57534e;text-align:left";
 
-/** Pending tenders as one table: tender code only, current stage. Stays a table on a phone; swipe sideways. */
+/** Pending tenders as one table on a wide screen. On a phone each row stacks, with the column name above the value. */
 function pendingTable(tenders: Report["pending"], urlFor: (id: string) => string) {
   const headers = ["Tender", "Client", "Location", "Tender start", "Tender end", "Bid opening", "Estimated value", "EMD", "Now with", "Stage"];
+  const label = (index: number) =>
+    `<span class="mlabel" style="display:none;font-size:10px;font-weight:bold;letter-spacing:0.4px;text-transform:uppercase;color:#8a8a8a">${escapeHtml(headers[index] ?? "")}</span>`;
   const rows = tenders.map((tender) => {
     const days = tender.daysLeft == null ? "" : tender.daysLeft < 0 ? "Deadline passed" : `${timeLeft(tender.daysLeft)} left`;
     const current = tender.steps.filter((step) => step.state === "current").map((step) => step.label);
@@ -361,15 +363,13 @@ function pendingTable(tenders: Report["pending"], urlFor: (id: string) => string
       escapeHtml(tender.withWhom || "—"),
       escapeHtml(stage),
     ];
-    return `<tr>${values.map((value) => `<td style="${cell};white-space:nowrap">${value}</td>`).join("")}</tr>`;
+    return `<tr>${values.map((value, index) => `<td class="rd" style="${cell}">${label(index)}${value}</td>`).join("")}</tr>`;
   });
   return `<tr><td style="padding:8px 12px 16px" bgcolor="#ffffff">
-<div style="width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:980px;min-width:980px;border:1px solid ${LINE}">
-<tr>${headers.map((name) => `<th style="${head};white-space:nowrap">${escapeHtml(name)}</th>`).join("")}</tr>
+<table class="rtable" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%;border:1px solid ${LINE}">
+<tr>${headers.map((name) => `<th class="rh" style="${head}">${escapeHtml(name)}</th>`).join("")}</tr>
 ${rows.join("")}
-</table>
-</div></td></tr>`;
+</table></td></tr>`;
 }
 
 export async function buildTodayReportEmail(report: Report) {
@@ -393,6 +393,18 @@ export async function buildTodayReportEmail(report: Report) {
 <meta name="color-scheme" content="light only">
 <meta name="supported-color-schemes" content="light only">
 <title>${escapeHtml(subject)}</title>
+<style>
+.mlabel{display:none}
+.stat{display:inline-block;width:48%;vertical-align:top}
+@media only screen and (max-width:640px){
+  .stat{display:block !important;width:100% !important;margin:0 0 8px !important}
+  .stat-gap{display:none !important}
+  .rtable,.rtable tbody,.rtable tr,.rd{display:block !important;width:100% !important;box-sizing:border-box !important}
+  .rh{display:none !important}
+  .rtable tr{border:1px solid ${LINE} !important;margin:0 0 12px !important}
+  .mlabel{display:block !important}
+}
+</style>
 </head>
 <body style="margin:0;padding:0;background-color:#eef0f2;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%" bgcolor="#eef0f2">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eef0f2" bgcolor="#eef0f2">
