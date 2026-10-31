@@ -2,7 +2,7 @@ import { db } from "../db";
 import { formatWhen } from "../utils/calendar";
 import { CLOSED_OVERALL, OPEN_TASK, OVERALL, STAGE } from "../utils/labels";
 import { inr, inrFull } from "../utils/money";
-import { renderEmail, renderEmailText, type EmailContent, type EmailFacts } from "./email-layout";
+import { REFEXONE_EMAIL_LOGO_URL, renderEmail, renderEmailText, type EmailContent, type EmailFacts } from "./email-layout";
 
 export const TEMPLATES: { event: string; subject: string; body: string }[] = [
   {
@@ -205,6 +205,30 @@ export type MailAttachment = { filename: string; content: string | Buffer; conte
 /** Where a message belongs in the mail log. Without it the message is sent but not logged. */
 export type MailLog = { tenderId?: string | null; taskId?: string; eventType: string; note?: string };
 
+const LOGO_URLS = [REFEXONE_EMAIL_LOGO_URL, "https://refexone.com/refexone-logo.png"];
+const LOGO_CID = "refexone-logo@coal-ash";
+let logoBytes: Promise<Buffer | null> | null = null;
+
+/**
+ * Puts the RefexOne logo inside the message (cid: image) instead of linking to it. Linked images are hidden
+ * until the reader taps "Show images" in many mail apps (Gmail on phones, Outlook); an inline one always shows.
+ * The logo is downloaded once per server start; if that fails the link stays as it was.
+ */
+async function inlineLogo(html: string) {
+  if (!LOGO_URLS.some((url) => html.includes(url))) return null;
+  logoBytes ??= fetch(REFEXONE_EMAIL_LOGO_URL)
+    .then(async (response) => (response.ok ? Buffer.from(await response.arrayBuffer()) : null))
+    .catch(() => null);
+  const content = await logoBytes;
+  if (!content) {
+    logoBytes = null;
+    return null;
+  }
+  let inlined = html;
+  for (const url of LOGO_URLS) inlined = inlined.split(url).join(`cid:${LOGO_CID}`);
+  return { html: inlined, attachment: { filename: "refexone-logo.png", content, contentType: "image/png", cid: LOGO_CID, contentDisposition: "inline" as const } };
+}
+
 const sizeLabel = (bytes: number) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
 /**
@@ -271,13 +295,18 @@ export async function deliver(message: {
     await finish({ status: "LOGGED", errorMessage: "Mail is not set up (no SMTP password), so the message was only logged." });
     return "LOGGED";
   }
+  const logo = await inlineLogo(html);
+  const sendFiles = [
+    ...files.map(({ filename, content: body, contentType }) => ({ filename, content: body, contentType })),
+    ...(logo ? [logo.attachment] : []),
+  ];
   const mail = {
     from: config.from,
     to: target.email,
     subject,
     text,
-    html,
-    attachments: files.length ? files.map(({ filename, content: body, contentType }) => ({ filename, content: body, contentType })) : undefined,
+    html: logo ? logo.html : html,
+    attachments: sendFiles.length ? sendFiles : undefined,
   };
   try {
     let info;
