@@ -85,6 +85,7 @@ export async function updateFieldsAction(actor: User, formData: FormData): Promi
     for (const field of TENDER_FIELDS) values[field.key] = String(formData.get(`field_${field.key}`) ?? "");
     const mode = formData.get("intent") === "validate" ? "validate" : "save";
     const result = await domain.updateFields(actor, tenderId, values, mode);
+    if (result.reopened) return { ok: `Saved. The bid end date is extended and the tender is open again.` };
     if (result.warnings.length) return { error: `Saved. ${result.warnings.join(" ")}` };
     // "Save and send": corrections are stored first, then the validation task is submitted, so no edit is lost.
     if (formData.get("intent") === "validate") {

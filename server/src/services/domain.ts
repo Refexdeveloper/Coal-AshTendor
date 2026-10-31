@@ -616,7 +616,9 @@ function listedChoice(value: string, options: string[]) {
 export async function updateFields(actor: Actor, tenderId: string, values: Record<string, string>, mode: "save" | "validate" = "save") {
   const tender = await db.tender.findUnique({ where: { id: tenderId }, include: { fields: true } });
   if (!tender) throw new WorkflowError("Tender not found.");
-  if (CLOSED_OVERALL.includes(tender.overallStatus)) throw new WorkflowError("Closed tenders keep their recorded fields.");
+  const missed = tender.overallStatus === "NOT_BID_DEADLINE_MISSED";
+  if (missed && actor.role !== "ADMIN") throw new WorkflowError("Only an administrator can extend a missed bid deadline.");
+  if (CLOSED_OVERALL.includes(tender.overallStatus) && !missed) throw new WorkflowError("Closed tenders keep their recorded fields.");
   if (!(await canEditFields(actor, tenderId))) throw new WorkflowError("Only the Tender Coordinator, a reviewer, the person on the current stage, or the bid submitter after validation is submitted can correct these fields.");
   const changes: string[] = [];
   for (const field of tender.fields) {
@@ -650,9 +652,20 @@ export async function updateFields(actor: Actor, tenderId: string, values: Recor
     });
   }
   await refreshMaster(tenderId, actor);
-  if (tender.relevanceStatus === "APPROVED") await evaluateReadiness(tenderId);
-  const calendar = await getCalendar();
   const warnings: string[] = [];
+  let reopened = false;
+  if (missed) {
+    reopened = await extendMissedDeadline(actor, tenderId);
+    if (!reopened) {
+      const calendar = await getCalendar();
+      const raw = (values.bid_submission_end ?? "").trim();
+      const parsed = raw && raw !== NOT_FOUND ? parseDateTime(raw, calendar.timeZone) : null;
+      if (parsed && parsed.getTime() <= Date.now()) {
+        warnings.push("Bid submission end date is still in the past, so the tender stays closed. Enter a later date and time to extend it.");
+      }
+    }
+  } else if (tender.relevanceStatus === "APPROVED") await evaluateReadiness(tenderId);
+  const calendar = await getCalendar();
   for (const key of ["bid_submission_end", "bid_opening", "prebid_conference", "hardcopy_submission"]) {
     const value = (values[key] ?? "").trim();
     if (value && value !== NOT_FOUND && !parseDateTime(value, calendar.timeZone)) {
@@ -660,7 +673,7 @@ export async function updateFields(actor: Actor, tenderId: string, values: Recor
       warnings.push(`${label} needs a date and time, for example 18/12/2026 15:00.`);
     }
   }
-  return { changed: changes.length, warnings };
+  return { changed: changes.length, warnings, reopened };
 }
 
 export async function submitForRelevance(actor: Actor, taskId: string, confirmed: boolean) {
@@ -1570,6 +1583,55 @@ export async function addDocuments(
     await db.tender.update({ where: { id: tenderId }, data: { ocrStatus: "COMPLETED" } });
   }
   await audit(db, { tenderId, actor, action: "Uploaded documents", entity: "TenderDocument", detail: files.map((file) => file.name).join(", ") });
+}
+
+async function extendMissedDeadline(actor: Actor, tenderId: string) {
+  const tender = await db.tender.findUnique({ where: { id: tenderId } });
+  if (!tender || tender.overallStatus !== "NOT_BID_DEADLINE_MISSED") return false;
+  if (!tender.bidSubmissionEnd || tender.bidSubmissionEnd.getTime() <= Date.now()) return false;
+  const overallStatus =
+    tender.relevanceStatus === "APPROVED"
+      ? tender.costingStatus === "APPROVED" && ["COMPLETED", "SUBMITTED_EVIDENCE"].includes(tender.emdStatus) && tender.submitterId
+        ? "READY_TO_BID"
+        : "APPROVED_IN_PROGRESS"
+      : tender.relevanceStatus === "PENDING"
+        ? "PENDING_RELEVANCE"
+        : "DATA_VALIDATION_REQUIRED";
+  const closedAt = tender.closedAt;
+  await db.tender.update({
+    where: { id: tenderId },
+    data: {
+      overallStatus,
+      bidStatus: "NOT_YET_SUBMITTED",
+      deadlineMissed: false,
+      closedAt: null,
+      closureReason: "",
+    },
+  });
+  if (closedAt) {
+    await db.workflowTask.updateMany({
+      where: {
+        tenderId,
+        status: "CANCELLED",
+        updatedAt: { gte: new Date(closedAt.getTime() - 2 * 60 * 1000), lte: new Date(closedAt.getTime() + 2 * 60 * 1000) },
+      },
+      data: { status: "NOT_STARTED" },
+    });
+  }
+  await db.workflowTask.updateMany({
+    where: { tenderId, stage: "BID_SUBMISSION", status: { in: OPEN_TASK } },
+    data: { dueAt: tender.bidSubmissionEnd },
+  });
+  await db.bidSubmission.updateMany({ where: { tenderId }, data: { status: "NOT_YET_SUBMITTED" } });
+  await audit(db, {
+    tenderId,
+    actor,
+    action: "Deadline extended",
+    entity: "Tender",
+    detail: `Bid end date extended to ${formatWhen(tender.bidSubmissionEnd, (await getCalendar()).timeZone)}. The tender is open again.`,
+  });
+  if (tender.relevanceStatus === "APPROVED") await evaluateReadiness(tenderId);
+  return true;
 }
 
 async function markMissed(tenderId: string, source: string) {

@@ -91,6 +91,7 @@ export default function TenderPage() {
   const day = dayLengthMinutes(calendar);
   const tz = calendar.timeZone;
   const closed = CLOSED_OVERALL.includes(tender.overallStatus);
+  const adminExtend = closed && tender.overallStatus === "NOT_BID_DEADLINE_MISSED" && actor.role === "ADMIN";
   const checklist = data.checklist;
   const notice = tender.documents.find((document) => document.docType === "NOTICE");
   const bidSubmitted = ["BID_SUBMITTED_EVIDENCE_PENDING", "BID_SUBMITTED_EVIDENCE_RECORDED"].includes(tender.bidStatus);
@@ -198,7 +199,11 @@ export default function TenderPage() {
       {tender.ocrStatus === "FAILED" ? (
         <p className="banner bad">Text could not be read from the upload. Enter the fields in Tender details, or upload a readable copy. The workflow stays open.</p>
       ) : null}
-      {closed ? (
+      {adminExtend ? (
+        <p className="banner warn">
+          This bid deadline was missed. Change <b>Bid submission end date</b> to a later date and time, then save. The tender opens again from where it stopped.
+        </p>
+      ) : closed ? (
         <p className="banner neutral">
           <b>Closed — {OVERALL[tender.overallStatus]?.label ?? tender.overallStatus}.</b> {tender.closureReason || tender.outcomeNotes}
         </p>
@@ -332,7 +337,7 @@ export default function TenderPage() {
             <FieldEditor
               tenderId={tender.id}
               fields={editorFields}
-              locked={closed || !fieldEditor}
+              locked={(closed && !adminExtend) || !fieldEditor}
               validationTaskId={openTasks.find((task) => task.mine && task.stage === "DATA_VALIDATION")?.id ?? null}
               justUploaded={query.new === "1"}
             />

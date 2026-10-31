@@ -341,67 +341,43 @@ function timeLeft(days: number) {
 
 const urgency = (days: number | null) => (days == null ? MUTED : days <= 3 ? RED : days <= 7 ? GOLD : GREEN);
 
-/** The steps as chips with arrows between them. Inline blocks wrap onto the next line on a narrow screen. */
-function stageTrack(steps: Report["pending"][number]["steps"]) {
-  const looks = {
-    done: { bg: "#e0f5e8", border: "#c7ead4", color: GREEN, mark: "&#10003;" },
-    current: { bg: "#fdecd0", border: "#f0d9a8", color: GOLD, mark: "&#9679;" },
-    todo: { bg: "#f4f4f2", border: "#e5e5e0", color: "#8a8a8a", mark: "&#9675;" },
-  };
-  return steps
-    .map((step, index) => {
-      const look = looks[step.state];
-      const arrow = index < steps.length - 1 ? `<span style="color:#b0b0b0;font-size:13px;padding:0 3px">&#10140;</span>` : "";
-      return `<span style="display:inline-block;white-space:nowrap;margin:0 0 6px"><span style="display:inline-block;padding:4px 9px;border-radius:999px;background:${look.bg};border:1px solid ${look.border};color:${look.color};font-size:11px;font-weight:bold">${look.mark} ${escapeHtml(step.label)}</span>${arrow}</span>`;
-    })
-    .join(" ");
-}
+const cell = `padding:8px 10px;border-bottom:1px solid ${LINE};font-size:12px;color:${INK};vertical-align:top;word-wrap:break-word`;
+const head = "padding:8px 10px;background:#f5f2ee;font-size:11px;font-weight:bold;letter-spacing:0.4px;text-transform:uppercase;color:#57534e;text-align:left";
 
-function detailRow(label: string, value: string) {
-  return `<tr><td valign="top" width="38%" style="padding:5px 8px 5px 0;font-size:12px;color:#8a8a8a;border-top:1px solid #f1f1ef">${escapeHtml(label)}</td><td valign="top" style="padding:5px 0;font-size:13px;color:${INK};font-weight:bold;border-top:1px solid #f1f1ef;word-break:break-word">${value}</td></tr>`;
-}
-
-/** One card per open tender: where it stands, who has it, its dates and money, and the tender file. */
-function pendingCard(tender: Report["pending"][number], openUrl: string, filesUrl: string) {
-  const current = tender.steps.filter((step) => step.state === "current");
-  const done = tender.steps.filter((step) => step.state === "done");
-  const days = tender.daysLeft == null ? "" : tender.daysLeft < 0 ? "Deadline passed" : `${timeLeft(tender.daysLeft)} left`;
-  const nowLine = current.length
-    ? current.map((step) => `<div style="margin-top:4px"><b style="color:${GOLD}">&#9679; ${escapeHtml(step.label)}</b>${step.who ? ` — with ${escapeHtml(step.who)}` : ""}</div>`).join("")
-    : `<div style="margin-top:4px"><b style="color:${GOLD}">&#9679; ${escapeHtml(tender.stage)}</b></div>`;
-  const doneLines = done
-    .map((step) => `<div style="margin-top:3px;color:${MUTED}"><span style="color:${GREEN}">&#10003;</span> ${escapeHtml(step.label)}${step.who ? ` · ${escapeHtml(step.who)}` : ""}${step.whenText ? ` · ${escapeHtml(step.whenText)}` : ""}</div>`)
-    .join("");
-  const file = tender.file
-    ? `<a href="${escapeHtml(filesUrl)}" style="color:${BLUE};font-weight:bold;text-decoration:none;word-break:break-all">&#128196; ${escapeHtml(tender.file.fileName)}</a> <span style="color:#8a8a8a;font-weight:normal">(${tender.file.sizeBytes >= 1048576 ? `${(tender.file.sizeBytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(tender.file.sizeBytes / 1024))} KB`})</span>`
-    : `<span style="color:#8a8a8a;font-weight:normal">No tender file uploaded yet</span>`;
-  return `<tr><td style="padding:8px 18px" bgcolor="#ffffff">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;border:1px solid ${tender.late ? "#f5c6c0" : "#e5e5e0"};border-radius:10px;overflow:hidden">
-<tr bgcolor="${GREEN}"><td style="padding:12px 14px;background:${GREEN}">
-<a href="${escapeHtml(openUrl)}" style="color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none">${escapeHtml(tender.recordId)}</a>${tender.late ? ` <span style="display:inline-block;margin-left:4px;padding:2px 8px;border-radius:999px;background:#fde4e1;color:${RED};font-size:10px;font-weight:bold">OVERDUE TASK</span>` : ""}
-<div style="color:#d6eadf;font-size:13px;margin-top:3px;line-height:1.4">${escapeHtml(tender.project)}</div>
-</td></tr>
-<tr><td style="padding:12px 14px 4px;background:#ffffff">
-<div style="font-size:11px;font-weight:bold;color:#8a8a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Stage</div>
-${stageTrack(tender.steps)}
-<div style="font-size:12px;color:${INK};line-height:1.45;margin-top:2px">${nowLine}${doneLines}</div>
-</td></tr>
-<tr><td style="padding:8px 14px 12px;background:#ffffff">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-${tender.reference ? detailRow("Reference", escapeHtml(tender.reference)) : ""}
-${detailRow("Client", escapeHtml(tender.client || "—"))}
-${detailRow("Location", escapeHtml(tender.location || "—"))}
-${detailRow("Portal", escapeHtml(tender.portal || "—"))}
-${detailRow("Tender start", escapeHtml(when(tender.received)))}
-${detailRow("Tender end", `${escapeHtml(when(tender.deadline))}${days ? `<div style="color:${urgency(tender.daysLeft)};font-size:12px">${escapeHtml(days)}</div>` : ""}`)}
-${detailRow("Bid opening", escapeHtml(when(tender.opening)))}
-${detailRow("Estimated value", tender.estimated ? `${escapeHtml(inr(tender.estimated))}<div style="color:#8a8a8a;font-size:11px;font-weight:normal">${escapeHtml(inrFull(tender.estimated))}</div>` : "—")}
-${detailRow("EMD", escapeHtml(tender.emd ? `${inr(tender.emd)} · ${tender.emdType}` : tender.emdType || "—"))}
-${tender.finalCosting ? detailRow("Final costing", escapeHtml(inr(tender.finalCosting))) : ""}
-${detailRow("Now with", escapeHtml(tender.withWhom || "—"))}
-${detailRow("Tender file", file)}
-</table>
-</td></tr>
+/** Pending tenders as one table: one row each, current stage only, status In progress. */
+function pendingTable(tenders: Report["pending"], urlFor: (id: string) => string, fileUrlFor: (id: string) => string) {
+  const headers = ["Tender", "Client", "Location", "Tender start", "Tender end", "Bid opening", "Portal", "Estimated value", "EMD", "Final costing", "Now with", "Tender file", "Stage", "Status"];
+  const label = (index: number) =>
+    `<span class="mlabel" style="display:none;font-size:10px;font-weight:bold;letter-spacing:0.4px;text-transform:uppercase;color:#8a8a8a">${escapeHtml(headers[index] ?? "")}</span>`;
+  const rows = tenders.map((tender) => {
+    const days = tender.daysLeft == null ? "" : tender.daysLeft < 0 ? "Deadline passed" : `${timeLeft(tender.daysLeft)} left`;
+    const current = tender.steps.filter((step) => step.state === "current").map((step) => step.label);
+    const stage = current.length ? current.join(", ") : tender.stage;
+    const file = tender.file
+      ? `<a href="${escapeHtml(fileUrlFor(tender.id))}" style="color:${BLUE};font-weight:bold;text-decoration:none">${escapeHtml(tender.file.fileName)}</a> <span style="color:#8a8a8a">(${tender.file.sizeBytes >= 1048576 ? `${(tender.file.sizeBytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(tender.file.sizeBytes / 1024))} KB`})</span>`
+      : "—";
+    const values = [
+      `<a href="${escapeHtml(urlFor(tender.id))}" style="color:${GREEN};font-weight:bold;text-decoration:none">${escapeHtml(tender.recordId)}</a><div style="font-weight:bold;margin-top:2px">${escapeHtml(tender.project)}</div>${tender.reference ? `<div style="color:${MUTED};margin-top:2px">${escapeHtml(tender.reference)}</div>` : ""}<div style="color:${GOLD};font-weight:bold;margin-top:2px">Now: ${escapeHtml(tender.stage)}${tender.late ? " · Overdue" : ""}</div>`,
+      escapeHtml(tender.client || "—"),
+      escapeHtml(tender.location || "—"),
+      escapeHtml(when(tender.received)),
+      `${escapeHtml(when(tender.deadline))}${days ? `<div style="color:${urgency(tender.daysLeft)};font-weight:bold">${escapeHtml(days)}</div>` : ""}`,
+      escapeHtml(when(tender.opening)),
+      escapeHtml(tender.portal || "—"),
+      escapeHtml(tender.estimated ? `${inr(tender.estimated)} (${inrFull(tender.estimated)})` : "—"),
+      escapeHtml(tender.emd ? `${inr(tender.emd)} · ${tender.emdType}` : tender.emdType || "—"),
+      escapeHtml(tender.finalCosting ? inr(tender.finalCosting) : "Not yet"),
+      escapeHtml(tender.withWhom || "—"),
+      file,
+      escapeHtml(stage),
+      `<span style="color:#c2410c;font-weight:bold">In progress</span>`,
+    ];
+    return `<tr>${values.map((value, index) => `<td class="rd" style="${cell}">${label(index)}${value}</td>`).join("")}</tr>`;
+  });
+  return `<tr><td style="padding:8px 12px 16px" bgcolor="#ffffff">
+<table class="rtable" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%;border:1px solid ${LINE}">
+<tr>${headers.map((name) => `<th class="rh" style="${head}">${escapeHtml(name)}</th>`).join("")}</tr>
+${rows.join("")}
 </table></td></tr>`;
 }
 
@@ -430,11 +406,20 @@ export async function buildTodayReportEmail(report: Report) {
 <meta name="color-scheme" content="light only">
 <meta name="supported-color-schemes" content="light only">
 <title>${escapeHtml(subject)}</title>
+<style>
+.mlabel{display:none}
+@media only screen and (max-width:640px){
+  .rtable,.rtable tbody,.rtable tr,.rd{display:block !important;width:100% !important;box-sizing:border-box !important}
+  .rh{display:none !important}
+  .rtable tr{border:1px solid ${LINE} !important;margin:0 0 12px !important}
+  .mlabel{display:block !important}
+}
+</style>
 </head>
 <body style="margin:0;padding:0;background-color:#eef0f2;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%" bgcolor="#eef0f2">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eef0f2" bgcolor="#eef0f2">
 <tr><td align="center" style="padding:16px 8px">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:640px;background-color:#ffffff;border-radius:10px;overflow:hidden" bgcolor="#ffffff">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:1200px;background-color:#ffffff;border-radius:10px;overflow:hidden" bgcolor="#ffffff">
 
 <tr><td style="padding:22px 18px 16px" bgcolor="#ffffff">
 <img src="${REFEXONE_EMAIL_LOGO_URL}" alt="refexOne" width="150" style="display:block;width:150px;max-width:150px;height:auto;border:0">
@@ -454,8 +439,8 @@ ${statPair(statCard(String(stats.overdue), "Overdue tasks", stats.overdue ? "Pas
 ${statPair(statCard(inr(stats.emdExposure), "EMD exposure", "Guarantees and bonds", "grey"), statCard(String(stats.active), "Active tenders", "Still in the workflow", "green"))}
 
 ${report.pending.length
-  ? `${caption("Pending tender", `${report.pending.length} open tender${report.pending.length === 1 ? "" : "s"}, soonest bid deadline first`)}
-${report.pending.map((tender) => pendingCard(tender, appUrl(tender.id), fileLinks.get(tender.id) ?? appUrl(tender.id))).join("")}`
+  ? `${caption("Pending Tender", `${report.pending.length} open tender${report.pending.length === 1 ? "" : "s"}, soonest bid deadline first`)}
+${pendingTable(report.pending, appUrl, (id) => fileLinks.get(id) ?? appUrl(id))}`
   : ""}
 
 ${report.newTenders.length
