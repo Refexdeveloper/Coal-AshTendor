@@ -4,7 +4,8 @@
  * moved, remarks, and one button. Tables and inline styles only, so Outlook and Gmail render it the same.
  */
 
-export const REFEXONE_EMAIL_LOGO_URL = "https://refexone.com/refexone-logo.png";
+/** Hosted on Google Cloud Storage, as in P2P: Gmail's image proxy fetches it reliably (the refexone.com copy often shows as a broken image). */
+export const REFEXONE_EMAIL_LOGO_URL = "https://storage.googleapis.com/aasik-refex-report-assets/refexone-logo.png";
 
 export const escapeHtml = (value: unknown) =>
   String(value ?? "").replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!);
