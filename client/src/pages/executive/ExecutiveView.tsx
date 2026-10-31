@@ -1,6 +1,6 @@
 import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { formatWhen } from "@client/utils/calendar";
+import { formatDay, formatWhen } from "@client/utils/calendar";
 import { effectiveValue } from "@client/utils/format";
 import { NOT_FOUND, TENDER_FIELDS } from "@client/lib/fields";
 import { APPROVAL, BID, COSTING, DECISION, EMD, EMD_TYPE, OVERALL, RELEVANCE, ROLES, STAGE } from "@client/lib/labels";
@@ -537,14 +537,15 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
                   <th>Client</th>
                   <th className="num">Est. value</th>
                   <th>Status</th>
-                  <th>Submission date</th>
+                  <th>Tender start date</th>
+                  <th>Tender end date</th>
                   <th className="act">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {shownRows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="dk-empty">
+                    <td colSpan={9} className="dk-empty">
                       No tenders match these filters.
                     </td>
                   </tr>
@@ -569,7 +570,8 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
                         <td>
                           <span className={`dk-pill ${tone}`}>{label}</span>
                         </td>
-                        <td>{tender.bidSubmissionEnd ? formatWhen(tender.bidSubmissionEnd, tz).split(",")[0] : "—"}</td>
+                        <td>{formatDay(tender.createdAt, tz)}</td>
+                        <td>{formatDay(tender.bidSubmissionEnd, tz)}</td>
                         <td className="act" onClick={(event) => event.stopPropagation()}>
                           <Link className="dk-icon-btn" to={`/tenders/${tender.id}`} title="Open the tender record" aria-label="Open the tender record">
                             <Icon name="eye" />
@@ -587,7 +589,7 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
                       </tr>
                       {open ? (
                         <tr className="dk-detail-row">
-                          <td colSpan={8}>
+                          <td colSpan={9}>
                             <TenderSummary tender={tender} names={names} tz={tz} now={now} />
                           </td>
                         </tr>
@@ -623,8 +625,12 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
                         <dd>{inr(tender.estimatedValue)}</dd>
                       </div>
                       <div>
-                        <dt>Submission</dt>
-                        <dd>{tender.bidSubmissionEnd ? formatWhen(tender.bidSubmissionEnd, tz).split(",")[0] : "—"}</dd>
+                        <dt>Start date</dt>
+                        <dd>{formatDay(tender.createdAt, tz)}</dd>
+                      </div>
+                      <div>
+                        <dt>End date</dt>
+                        <dd>{formatDay(tender.bidSubmissionEnd, tz)}</dd>
                       </div>
                     </dl>
                   </button>

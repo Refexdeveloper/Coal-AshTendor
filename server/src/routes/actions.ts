@@ -16,6 +16,8 @@ const ACTIONS: Record<string, Action> = {
   "add-user": actions.addUserAction,
   "update-user-access": actions.updateUserAccessAction,
   "sync-refexone-users": actions.syncRefexOneUsersAction,
+  "resend-email": actions.resendEmailAction,
+  "send-today-report": actions.sendTodayReportAction,
   "delete-holiday": actions.deleteHolidayAction,
   "delete-tender": actions.deleteTenderAction,
   "clear-tenders": actions.clearTendersAction,

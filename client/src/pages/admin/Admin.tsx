@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ROLES } from "@client/lib/labels";
-import { useApi } from "@client/api/client";
+import { apiGet, postAction, useApi } from "@client/api/client";
 import { useActor } from "@client/api/session";
 import type { PublicUser } from "@client/lib/types";
 import { LoadFailed, Loading } from "@client/components/base/loading";
@@ -66,6 +66,7 @@ export default function AdminPage() {
       </header>
       {query.notice ? <p className="banner good">{query.notice}</p> : null}
       {query.error ? <p className="banner bad">{query.error}</p> : null}
+      <TodayReportPanel />
       <section className="panel">
         <h2>Still to confirm</h2>
         <ul>
@@ -539,6 +540,93 @@ function RefexOneSsoPanel({ sso }: { sso: Data["sso"] }) {
           </a>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+type ReportPreview = {
+  subject: string;
+  html: string;
+  defaultTo: string;
+  stats: { total: number; active: number; newToday: number; stepsToday: number; bidsToday: number; overdue: number; closing: number };
+};
+
+/** One button that emails today's full report, like P2P's activity report. */
+function TodayReportPanel() {
+  const [to, setTo] = useState("");
+  const [preview, setPreview] = useState<ReportPreview | null>(null);
+  const [showing, setShowing] = useState(false);
+  const [busy, setBusy] = useState<"" | "preview" | "send">("");
+  const [result, setResult] = useState<{ ok?: string; error?: string } | null>(null);
+
+  const load = async () => {
+    const data = await apiGet<ReportPreview>("/reports/today");
+    setPreview(data);
+    setTo((current) => current || data.defaultTo);
+    return data;
+  };
+  const togglePreview = async () => {
+    if (showing) {
+      setShowing(false);
+      return;
+    }
+    setBusy("preview");
+    try {
+      await load();
+      setShowing(true);
+    } catch (error) {
+      setResult({ error: error instanceof Error ? error.message : "The report could not be built." });
+    } finally {
+      setBusy("");
+    }
+  };
+  const send = async () => {
+    setBusy("send");
+    setResult(null);
+    const form = new FormData();
+    form.set("to", to || preview?.defaultTo || "sathishkumar.r@refex.co.in");
+    const answer = await postAction("send-today-report", form);
+    setBusy("");
+    setResult(answer?.error ? { error: answer.error } : { ok: answer?.ok ?? "Report sent." });
+  };
+
+  return (
+    <section className="panel stack report-panel">
+      <header className="refex-sync-head">
+        <div>
+          <h2>Today&apos;s report</h2>
+          <p className="muted">
+            Emails the full detail for today: figures, every step that moved, new tenders, bids closing in 7 days, overdue tasks, open work by person, the
+            pipeline by stage and today&apos;s email, with every tender attached as a sheet that opens in Excel.
+          </p>
+        </div>
+        {preview ? (
+          <span className="pill info">
+            {preview.stats.stepsToday} steps · {preview.stats.newToday} new today
+          </span>
+        ) : null}
+      </header>
+      <div className="report-send">
+        <label>
+          Send to
+          <input
+            type="text"
+            value={to}
+            placeholder="sathishkumar.r@refex.co.in"
+            onChange={(event) => setTo(event.target.value)}
+            aria-label="Report recipients, separated by commas"
+          />
+        </label>
+        <button type="button" className="btn ghost" onClick={() => void togglePreview()} disabled={busy !== ""}>
+          {busy === "preview" ? "Building…" : showing ? "Hide preview" : "Preview report"}
+        </button>
+        <button type="button" className="btn" onClick={() => void send()} disabled={busy !== ""}>
+          {busy === "send" ? "Sending…" : "Send today's report"}
+        </button>
+      </div>
+      {result?.ok ? <p className="banner good">{result.ok}</p> : null}
+      {result?.error ? <p className="banner bad">{result.error}</p> : null}
+      {showing && preview ? <iframe className="mail-preview report-preview" title={preview.subject} srcDoc={preview.html} sandbox="" /> : null}
     </section>
   );
 }

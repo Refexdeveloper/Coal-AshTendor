@@ -6,7 +6,7 @@ import { NOT_FOUND, TENDER_FIELDS } from "../utils/fields";
 import { allowedUpload, deleteStored, pagesFromBuffer, sha256, storeFile } from "./files";
 import { extractUploadedFile, overlayHits } from "./ocr";
 import { CLOSED_OVERALL, CREATOR_ROLES, EDITOR_ROLES, MANAGER_ROLES, OPEN_TASK } from "../utils/labels";
-import { emailsFor, mailOcrResult, notifyAddresses, stepCopyAddresses } from "./notify";
+import { emailsFor, isStepAction, mailOcrResult, notifyAddresses, notifyStepMoved } from "./notify";
 
 export class WorkflowError extends Error {
   constructor(message: string) {
@@ -113,17 +113,12 @@ async function audit(
       after: (entry.after ?? "").slice(0, 8000),
     },
   });
-  const copyTo = stepCopyAddresses();
-  if (entry.tenderId && copyTo.length) {
+  if (entry.tenderId && isStepAction(entry.action)) {
     const { tenderId, action, actor, detail } = entry;
-    // Sent after a short pause so a surrounding transaction has committed (a new tender must exist to be mailed about).
+    // P2P-style step email (completed step → next step). Sent after a short pause so a surrounding
+    // transaction has committed and the next step's tasks exist.
     setTimeout(() => {
-      notifyAddresses({
-        tenderId,
-        event: "WORKFLOW_STEP",
-        addresses: copyTo,
-        extra: { action, actorName: actor.name, detail: (detail ?? "").slice(0, 1500) },
-      }).catch((error) => console.error("Step email failed", error));
+      notifyStepMoved({ tenderId, action, actorId: actor.id, actorName: actor.name, detail }).catch((error) => console.error("Step email failed", error));
     }, 3000);
   }
 }
@@ -660,7 +655,7 @@ export async function updateFields(actor: Actor, tenderId: string, values: Recor
     const value = (values[key] ?? "").trim();
     if (value && value !== NOT_FOUND && !parseDateTime(value, calendar.timeZone)) {
       const label = TENDER_FIELDS.find((field) => field.key === key)?.label ?? key;
-      warnings.push(`${label} "${value}" is not a date and time the system can read. Use DD/MM/YYYY HH:MM.`);
+      warnings.push(`${label} needs a date and time, for example 18/12/2026 15:00.`);
     }
   }
   return { changed: changes.length, warnings };

@@ -84,6 +84,80 @@ views.get("/notifications", async (req, res) => {
   res.json({ notes, calendar: calendarJson(calendar), smtpConfigured: Boolean(process.env.SMTP_HOST) });
 });
 
+/** Mail log for administrators, like P2P's email log: newest first, filtered by status, type and text. */
+views.get("/email-logs", async (req, res) => {
+  if (req.actor!.role !== "ADMIN") {
+    res.status(403).json({ error: "The mail log is limited to the system administrator." });
+    return;
+  }
+  const status = String(req.query.status || "");
+  const type = String(req.query.type || "");
+  const needle = String(req.query.q || "").trim().toLowerCase();
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const size = 50;
+  const rows = await db.notificationLog.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 3000,
+    select: {
+      id: true, tenderId: true, taskId: true, eventType: true, recipientEmail: true, recipientName: true, subject: true,
+      status: true, deliveredTo: true, messageId: true, errorMessage: true, attachments: true, note: true, sentAt: true, createdAt: true,
+    },
+  });
+  const tenderIds = [...new Set(rows.map((row) => row.tenderId).filter(Boolean))] as string[];
+  const tenders = tenderIds.length ? await db.tender.findMany({ where: { id: { in: tenderIds } }, select: { id: true, recordId: true, projectName: true } }) : [];
+  const byId = new Map(tenders.map((tender) => [tender.id, tender]));
+  const counts: Record<string, number> = {};
+  for (const row of rows) counts[row.status] = (counts[row.status] ?? 0) + 1;
+  const matching = rows.filter((row) => {
+    if (status && row.status !== status) return false;
+    if (type && row.eventType !== type) return false;
+    if (!needle) return true;
+    const tender = row.tenderId ? byId.get(row.tenderId) : undefined;
+    return [row.subject, row.recipientEmail, row.recipientName, row.deliveredTo, row.eventType, tender?.recordId, tender?.projectName].join(" ").toLowerCase().includes(needle);
+  });
+  const { mailConfig, mailReady } = await import("../services/notify");
+  const config = mailConfig();
+  res.json({
+    items: matching.slice((page - 1) * size, page * size).map((row) => ({
+      ...row,
+      attachments: row.attachments ? JSON.parse(row.attachments) : [],
+      tender: row.tenderId ? byId.get(row.tenderId) ?? null : null,
+    })),
+    total: matching.length,
+    page,
+    size,
+    counts,
+    types: [...new Set(rows.map((row) => row.eventType))].sort(),
+    mail: { ready: mailReady(), from: config.from, testInbox: config.redirectTo },
+  });
+});
+
+/** Today's report as it will be emailed, for the preview on the Administration page. */
+views.get("/reports/today", async (req, res) => {
+  if (req.actor!.role !== "ADMIN") {
+    res.status(403).json({ error: "Reports by email are limited to the system administrator." });
+    return;
+  }
+  const { REPORT_TO, buildTodayReportEmail, loadTodayReport } = await import("../services/daily-report");
+  const report = await loadTodayReport();
+  const built = await buildTodayReportEmail(report);
+  res.json({ subject: built.subject, html: built.html, stats: report.stats, defaultTo: REPORT_TO });
+});
+
+/** One logged email with its exact HTML, for the preview. */
+views.get("/email-logs/:id", async (req, res) => {
+  if (req.actor!.role !== "ADMIN") {
+    res.status(403).json({ error: "The mail log is limited to the system administrator." });
+    return;
+  }
+  const row = await db.notificationLog.findUnique({ where: { id: req.params.id } });
+  if (!row) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  res.json({ ...row, attachments: row.attachments ? JSON.parse(row.attachments) : [] });
+});
+
 views.get("/portals", async (_req, res) => {
   const [portals, exceptions, calendar] = await Promise.all([
     db.portal.findMany({ orderBy: { name: "asc" }, include: { runs: { orderBy: { startedAt: "desc" }, take: 1 } } }),

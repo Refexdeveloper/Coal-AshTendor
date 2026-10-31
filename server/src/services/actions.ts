@@ -85,7 +85,7 @@ export async function updateFieldsAction(actor: User, formData: FormData): Promi
     for (const field of TENDER_FIELDS) values[field.key] = String(formData.get(`field_${field.key}`) ?? "");
     const mode = formData.get("intent") === "validate" ? "validate" : "save";
     const result = await domain.updateFields(actor, tenderId, values, mode);
-    if (result.warnings.length) return { error: `Saved, but please fix: ${result.warnings.join(" ")}` };
+    if (result.warnings.length) return { error: `Saved. ${result.warnings.join(" ")}` };
     // "Save and send": corrections are stored first, then the validation task is submitted, so no edit is lost.
     if (formData.get("intent") === "validate") {
       await domain.submitForRelevance(actor, String(formData.get("taskId") || ""), formData.get("confirmed") === "yes");
@@ -211,6 +211,46 @@ export async function updateUserAccessAction(actor: User, formData: FormData): P
     });
   } catch (error) {
     return failure(error);
+  }
+}
+
+export async function sendTodayReportAction(actor: User, formData: FormData): Promise<ActionState> {
+  const denied = adminOnly(actor);
+  if (denied) return denied;
+  const { REPORT_TO, sendTodayReport } = await import("./daily-report");
+  const to = String(formData.get("to") || REPORT_TO)
+    .split(/[\s,;]+/)
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  const bad = to.filter((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+  if (!to.length) return { error: "Enter at least one email address." };
+  if (bad.length) return { error: `Not an email address: ${bad.join(", ")}` };
+  try {
+    const result = await sendTodayReport(to);
+    const sent = result.statuses.filter((status) => status === "SENT").length;
+    if (!sent) return { error: `The report was not sent (${result.statuses.join(", ").toLowerCase()}). The Email log shows why.` };
+    const { mailConfig } = await import("./notify");
+    const inbox = mailConfig().redirectTo;
+    return { ok: `Today's report sent to ${to.join(", ")}${inbox && to.some((email) => email !== inbox) ? ` (test mode: delivered to ${inbox})` : ""}.` };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "The report could not be sent." };
+  }
+}
+
+export async function resendEmailAction(actor: User, formData: FormData): Promise<ActionState> {
+  const denied = adminOnly(actor);
+  if (denied) return denied;
+  const extra = String(formData.get("extraTo") || "")
+    .split(/[\s,;]+/)
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  const bad = extra.filter((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+  if (bad.length) return { error: `Not an email address: ${bad.join(", ")}` };
+  try {
+    const { resendLogged } = await import("./notify");
+    return await resendLogged(String(formData.get("id") || ""), extra);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "The email could not be resent." };
   }
 }
 

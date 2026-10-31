@@ -270,10 +270,18 @@ CREATE TABLE `NotificationLog` (
   `subject` TEXT NOT NULL,
   `body` LONGTEXT NOT NULL,
   `status` VARCHAR(191) NOT NULL,
+  `deliveredTo` VARCHAR(191) NOT NULL DEFAULT '',
+  `messageId` VARCHAR(255) NOT NULL DEFAULT '',
+  `errorMessage` TEXT NULL,
+  `attachments` TEXT NULL,
+  `html` LONGTEXT NULL,
+  `note` TEXT NULL,
+  `sentAt` DATETIME(3) NULL,
   `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`id`),
   KEY `NotificationLog_tenderId_idx` (`tenderId`),
   KEY `NotificationLog_recipientEmail_idx` (`recipientEmail`),
+  KEY `NotificationLog_createdAt_idx` (`createdAt`),
   CONSTRAINT `NotificationLog_tenderId_fkey` FOREIGN KEY (`tenderId`) REFERENCES `Tender`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

@@ -471,6 +471,7 @@ const TOAST_ICONS = {
 
 /** Small dark toast in the bottom-right that dismisses itself. */
 export function fxToast(message: string, type: "ok" | "error" = "ok") {
+  const hold = type === "error" ? 8000 : 3600;
   let box = document.querySelector<HTMLDivElement>(".fx-toasts");
   if (!box) {
     box = document.createElement("div");
@@ -490,5 +491,5 @@ export function fxToast(message: string, type: "ok" | "error" = "ok") {
   window.setTimeout(() => {
     toast.classList.add("out");
     window.setTimeout(() => toast.remove(), 300);
-  }, 3600);
+  }, hold);
 }

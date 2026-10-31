@@ -170,8 +170,8 @@ export function extractFields(pages: PageText[]): Record<string, FieldHit> {
 export function parseDateTime(value: string, timeZone: string) {
   const cleaned = value.replace(/\bhrs?\b/gi, "").replace(/[—–]/g, "-").trim();
   const patterns = [
-    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})$/,
-    /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})\s+(\d{1,2}):(\d{2})\s*([ap]m)?$/i,
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::\d{2})?$/,
+    /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?$/i,
   ];
   const iso = cleaned.match(patterns[0]);
   if (iso) {

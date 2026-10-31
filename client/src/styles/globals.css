@@ -972,11 +972,11 @@ pre { white-space: pre-wrap; font-size: 0.85rem; }
 
 .fx-toasts { position: fixed; right: 20px; bottom: 20px; z-index: 10000; display: grid; gap: 10px; }
 .fx-toast {
-  display: flex; align-items: center; gap: 10px; max-width: 380px; padding: 12px 16px; border-radius: 14px; color: #fff; font-size: 0.88rem;
+  display: flex; align-items: flex-start; gap: 10px; max-width: min(420px, calc(100vw - 32px)); padding: 12px 16px; border-radius: 14px; color: #fff; font-size: 0.92rem; line-height: 1.4;
   background: #1c1917; box-shadow: 0 18px 40px -14px rgba(0, 0, 0, 0.5); animation: toastIn 0.4s cubic-bezier(0.3, 1.4, 0.5, 1) both;
 }
 .fx-toast.out { animation: toastOut 0.3s ease forwards; }
-.fx-toast-ic { width: 26px; height: 26px; border-radius: 50%; flex: none; display: grid; place-items: center; background: var(--moss); }
+.fx-toast-ic { width: 26px; height: 26px; margin-top: 1px; border-radius: 50%; flex: none; display: grid; place-items: center; background: var(--moss); }
 .fx-toast.error .fx-toast-ic { background: var(--wine); }
 .fx-toast-ic svg { width: 15px; height: 15px; }
 @keyframes toastIn { from { opacity: 0; transform: translateX(40px) scale(0.9); } to { opacity: 1; transform: none; } }
@@ -1578,7 +1578,7 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 .ceo-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .ceo-card-main strong { font-size: 0.98rem; font-weight: 700; line-height: 1.35; color: #0f172a; overflow-wrap: anywhere; }
 .ceo-card-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin: 2px 0 0; }
-.ceo-card-facts div:last-child { grid-column: 1 / -1; }
+.ceo-card-facts div:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .ceo-card-facts dt { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #64748b; }
 .ceo-card-facts dd { margin: 0; font-size: 0.86rem; color: #1e293b; overflow-wrap: anywhere; }
 .ceo-card-actions { display: flex; gap: 8px; }
@@ -1847,3 +1847,40 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
   .period-option { padding: 11px 14px; }
 }
 @keyframes periodSheet { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---------------- Email log (admin), after P2P's email log ---------------- */
+.mail-counts { display: flex; flex-wrap: wrap; gap: 10px; }
+.mail-count {
+  display: grid; gap: 2px; min-width: 120px; padding: 12px 16px; text-align: left; border-radius: 14px; border: 1px solid var(--line);
+  background: #fff; font: inherit; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.mail-count span { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.mail-count b { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+.mail-count.good b { color: var(--moss); } .mail-count.bad b { color: var(--wine); } .mail-count.warn b { color: var(--gold); } .mail-count.info b { color: var(--info); }
+.mail-count:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.mail-count.on { border-color: var(--ember); box-shadow: 0 0 0 3px var(--ember-soft); }
+.mail-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.mail-filters input { flex: 1 1 260px; }
+.mail-filters select { flex: 0 1 220px; }
+.mail-table td { vertical-align: top; }
+.mail-table .nowrap { white-space: nowrap; }
+.mail-subject { min-width: 240px; }
+.mail-row { cursor: pointer; }
+.mail-row:hover { background: #fbf8f5; }
+.mail-row.is-open { background: var(--ember-soft); }
+.mail-detail-row > td { background: #fcfbfa; }
+.mail-detail { display: grid; gap: 14px; padding: 6px 2px; }
+.mail-facts { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 6px 14px; margin: 0; font-size: 0.86rem; }
+.mail-facts dt { color: var(--muted); font-weight: 600; }
+.mail-facts dd { margin: 0; overflow-wrap: anywhere; }
+.mail-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.mail-actions input { flex: 1 1 260px; }
+.mail-preview { width: 100%; height: 640px; border: 1px solid var(--line); border-radius: 12px; background: #f5f4f2; }
+.mail-pages { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 14px; font-size: 0.86rem; color: var(--muted); }
+.mail-total { margin: 12px 0 0; font-size: 0.84rem; }
+@media (max-width: 700px) { .mail-facts { grid-template-columns: minmax(0, 1fr); } .mail-preview { height: 520px; } }
+
+/* ---------------- Administration: Today's report ---------------- */
+.report-send { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.report-send label { flex: 1 1 320px; }
+.report-preview { height: 820px; }

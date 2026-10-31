@@ -229,6 +229,11 @@ function createPool(): Pool {
 }
 
 const pool = createPool();
+// The app reads and writes every DATETIME as UTC (timezone "Z"). Defaults such as createdAt are filled by MySQL in
+// its session time zone, so make that UTC too; otherwise a server on India time stores them 5½ hours ahead.
+pool.on("connection", (connection) => {
+  connection.query("SET time_zone = '+00:00'");
+});
 
 function quote(name: string) {
   if (!IDENT.test(name)) throw new Error(`Unsupported SQL name "${name}".`);

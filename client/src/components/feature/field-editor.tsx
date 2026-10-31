@@ -73,10 +73,11 @@ export function FieldEditor({
       navigate(`/tenders/${tenderId}?tab=overview`);
     } else if (result?.ok) {
       fxToast(result.ok);
+    } else if (result?.error) {
+      fxToast(result.error, "error");
     }
     return result;
   }, null as ActionState);
-  const [onlyAttention, setOnlyAttention] = useState(justUploaded);
   const [confirmed, setConfirmed] = useState(false);
   const count = (statuses: string[]) => fields.filter((field) => statuses.includes(field.status)).length;
   const attention = count(ATTENTION);
@@ -96,7 +97,7 @@ export function FieldEditor({
             <p>
               We read <b>{read} of {fields.length}</b> fields from the document.{" "}
               {attention
-                ? `${attention} need a look: they are shown first. Fix what's wrong, leave blanks if the notice doesn't say.`
+                ? `${attention} need a look. Every field stays on this page so you can correct any of them. Leave a blank if the notice doesn't say.`
                 : "Nothing is flagged. Give it a quick look and send it for review."}
             </p>
             <div className="verify-meter" aria-hidden>
@@ -105,7 +106,6 @@ export function FieldEditor({
           </div>
         </section>
       ) : null}
-      {state?.error ? <p className="banner bad">{state.error}</p> : null}
       {locked ? (
         <p className="banner neutral">
           You can view these fields. They can be edited by the Tender Coordinator, Vishesh, Ranjana, an administrator, or whoever is validating this tender. Closed tenders keep their recorded values.
@@ -119,16 +119,11 @@ export function FieldEditor({
           <span className="pill bad">{count(["CONFLICT"])} conflicting</span>
           <span className="pill">{count(["NOT_FOUND"])} not in document</span>
         </div>
-        <label className="check">
-          <input type="checkbox" checked={onlyAttention} onChange={(event) => setOnlyAttention(event.target.checked)} />
-          Show only the {attention} field{attention === 1 ? "" : "s"} that need attention
-        </label>
       </section>
       {GROUPS.map(([from, to, title]) => {
         const group = fields.filter((field) => field.no >= from && field.no <= to);
-        const shown = onlyAttention ? group.filter((field) => ATTENTION.includes(field.status)) : group;
         return (
-        <section key={title} className="panel" hidden={!shown.length}>
+        <section key={title} className="panel" hidden={!group.length}>
           <header className="panel-head">
             <h2>{title}</h2>
             <span className="muted">
@@ -140,7 +135,7 @@ export function FieldEditor({
               .map((field) => {
                 const choice = choiceOptions(field, field.value);
                 return (
-                  <label key={field.key} className={`field ${field.status === "CONFLICT" ? "conflict" : ""}`} hidden={onlyAttention && !ATTENTION.includes(field.status)}>
+                  <label key={field.key} className={`field ${field.status === "CONFLICT" ? "conflict" : ""}`}>
                     <span className="field-label">
                       <span>
                         {field.no}. {field.label}

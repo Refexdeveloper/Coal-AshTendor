@@ -203,6 +203,19 @@ export function safeNext(value: unknown, req?: Request) {
   return next;
 }
 
+/**
+ * Link to a page of this app for emails, as in P2P: through Refex One sign-in when it is set up, so a click
+ * signs the person in and lands on the page. A plain link when sign-in is not ready.
+ */
+export function appLink(path: string) {
+  const page = safeNext(path);
+  const direct = `${(process.env.APP_URL || publicBase()).replace(/\/$/, "")}${page}`;
+  if (!refexOneReady()) return direct;
+  const url = new URL(ssoUrl());
+  url.searchParams.set("RelayState", `${publicBase()}${page}`);
+  return url.toString();
+}
+
 export async function refexOneLoginUrl(req: Request, next: string) {
   // As in the P2P app: open the Refex One SAML app's sign-in address with the page to come back to.
   const url = new URL(ssoUrl());

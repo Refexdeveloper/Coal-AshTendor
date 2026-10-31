@@ -91,6 +91,7 @@ export async function updateUserAccess(actorId: string, input: { userId: string;
     subject: "Your Coal & Ash sign-in",
     link: link || "/login",
     text: `Hello ${user.name},\n\nYou can sign in to Coal & Ash tenders.\n\nEmail: ${user.email}\nPassword: ${INITIAL_PASSWORD}`,
+    log: { eventType: "SIGN_IN_DETAILS" },
   }).catch(() => "FAILED");
   const sent = mailed === "SENT" ? " The sign-in details were emailed." : " Email is not set up, so give them this password.";
   return { ok: `${user.name} can sign in as ${user.email}. Password: ${INITIAL_PASSWORD}.${sent}` };
