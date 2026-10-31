@@ -1,6 +1,6 @@
 import { db, type User, type WorkflowTask } from "../db";
 import { formatWhen } from "../utils/calendar";
-import { BID, CLOSED_OVERALL, COSTING, EMD, EMD_TYPE, OPEN_TASK, OVERALL, RELEVANCE, STAGE } from "../utils/labels";
+import { CLOSED_OVERALL, EMD_TYPE, OPEN_TASK, OVERALL, STAGE } from "../utils/labels";
 import { inr, inrFull } from "../utils/money";
 import { REFEXONE_EMAIL_LOGO_URL, escapeHtml } from "./email-layout";
 import { deliver, emailLink, isStepAction } from "./notify";
@@ -26,8 +26,15 @@ const GROUPS = [
   { label: "Closed / not bid", statuses: ["REJECTED_CLOSED", "NOT_BID_DEADLINE_MISSED", "CLOSED_BUSINESS", "CANCELLED"] },
 ];
 
-/** The five steps every tender goes through, in order. */
+/** The five steps every tender goes through, in order, and the tasks that belong to each. */
 const TRACK = ["Intake & review", "Relevance review", "Costing & EMD", "Ready to bid", "Bid submitted"];
+const STEP_TASKS = [
+  ["DATA_VALIDATION", "OCR_EXCEPTION"],
+  ["RELEVANCE"],
+  ["DRAFT_COSTING", "SALES_INPUT", "FINAL_COSTING", "DEPT_APPROVAL", "EMD_CLARIFICATION", "EMD_BG", "EMD_ISB", "EMD_EXEMPTION", "EMD_OTHER"],
+  [],
+  ["BID_SUBMISSION"],
+];
 
 /** How far a tender has got: steps before the index are done, the index is the current step (5 = all done). */
 const TRACK_INDEX: Record<string, number> = {
@@ -152,34 +159,40 @@ export async function loadTodayReport(now = new Date()) {
       .sort((a, b) => (a.bidSubmissionEnd?.getTime() ?? Infinity) - (b.bidSubmissionEnd?.getTime() ?? Infinity))
       .map((tender) => {
         const index = TRACK_INDEX[tender.overallStatus] ?? 0;
-        const open = (tender.tasks as WorkflowTask[]).filter((task) => OPEN_TASK.includes(task.status));
-        const currentNote = open.length
-          ? open
-              .map((task) => {
-                const owners = ids(task.assigneeIds).map((id) => names.get(id) ?? "Unknown").join(", ");
-                const late = task.dueAt && task.dueAt.getTime() < nowMs;
-                return `${STAGE[task.stage] ?? task.title}${owners ? ` · with ${owners}` : ""}${task.dueAt ? ` · ${late ? "overdue since" : "due"} ${when(task.dueAt)}` : ""}`;
-              })
-              .join("; ")
-          : OVERALL[tender.overallStatus]?.label ?? "In progress";
-        const steps = TRACK.map((label, step) => ({
-          label,
-          state: (step < index ? "done" : step === index ? "current" : "todo") as "done" | "current" | "todo",
-          note:
-            step < index
-              ? step === 1
-                ? `Completed · ${RELEVANCE[tender.relevanceStatus]?.label ?? "Approved"}`
-                : step === 2
-                  ? `Completed · Costing ${COSTING[tender.costingStatus]?.label ?? ""} · EMD ${EMD[tender.emdStatus]?.label ?? ""}`
-                  : "Completed"
-              : step === index
-                ? step === 2
-                  ? `Costing: ${COSTING[tender.costingStatus]?.label ?? tender.costingStatus} · EMD: ${EMD[tender.emdStatus]?.label ?? tender.emdStatus}. ${currentNote}`
-                  : step === 4
-                    ? `${BID[tender.bidStatus]?.label ?? "Bid submitted"}. ${currentNote}`
-                    : currentNote
-                : "Pending",
-        }));
+        const tasks = tender.tasks as WorkflowTask[];
+        const person = (id: string) => (id ? names.get(id) ?? "" : "");
+        const stageOrder = STEP_TASKS.flat();
+        const steps: { label: string; state: "done" | "current" | "todo"; who: string; whenText: string }[] = [];
+        for (let step = 0; step < TRACK.length; step++) {
+          const state = (step < index ? "done" : step === index ? "current" : "todo") as "done" | "current" | "todo";
+          const related = tasks
+            .filter((task) => STEP_TASKS[step].includes(task.stage) && task.status !== "CANCELLED")
+            .sort((a, b) => stageOrder.indexOf(a.stage) - stageOrder.indexOf(b.stage));
+          const open = related.filter((task) => OPEN_TASK.includes(task.status));
+          const finished = related.filter((task) => !OPEN_TASK.includes(task.status));
+          if (state === "todo" || (!finished.length && !(state === "current" && open.length))) {
+            steps.push({ label: TRACK[step], state, who: "", whenText: "" });
+            continue;
+          }
+          for (const task of finished) {
+            steps.push({
+              label: STAGE[task.stage] ?? task.title,
+              state: "done",
+              who: person(task.completedById),
+              whenText: task.completedAt ? when(task.completedAt) : "",
+            });
+          }
+          if (state === "current") {
+            for (const task of open) {
+              steps.push({
+                label: STAGE[task.stage] ?? task.title,
+                state: "current",
+                who: [...new Set(ids(task.assigneeIds).map(person).filter(Boolean))].join(", "),
+                whenText: "",
+              });
+            }
+          }
+        }
         const late = (tender.tasks as WorkflowTask[]).some((task) => OPEN_TASK.includes(task.status) && task.dueAt && task.dueAt.getTime() < nowMs);
         return {
           id: tender.id,
@@ -286,29 +299,19 @@ function statCard(label: string, value: string, note: string, color: string) {
 
 const fileSize = (bytes: number) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
-/** The five-step track with arrows between steps: done (green tick), current (orange dot), still to come (grey). */
-function stageTrack(steps: Report["pending"][number]["steps"]) {
-  const look = {
-    done: { bg: "#ecfdf5", border: "#86efac", title: "#047857", mark: "&#10003;", markBg: "#16a34a" },
-    current: { bg: "#fff7ed", border: "#fb923c", title: "#c2410c", mark: "&#9679;", markBg: "#ea580c" },
-    todo: { bg: "#fafaf9", border: "#e7e5e4", title: "#a8a29e", mark: "&#9675;", markBg: "#d6d3d1" },
-  };
-  const cells = steps.map((step, index) => {
-    const style = look[step.state];
-    const chip = `<td valign="top" width="18%" style="padding:0;vertical-align:top">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${style.bg};border:1px solid ${style.border};border-radius:8px">
-<tr><td style="padding:8px 8px;vertical-align:top">
-<span style="display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:50%;background:${style.markBg};color:#ffffff;font-size:10px;font-weight:700">${style.mark}</span>
-<span style="font-size:12px;font-weight:800;color:${style.title};margin-left:4px">${escapeHtml(step.label)}</span>
-<div style="font-size:11px;line-height:1.35;color:${step.state === "todo" ? "#a8a29e" : "#44403c"};margin-top:4px">${escapeHtml(step.note)}</div>
-</td></tr></table></td>`;
-    const arrow =
-      index < steps.length - 1
-        ? `<td valign="middle" width="2.5%" style="padding:0 2px;text-align:center;vertical-align:middle;font-size:18px;font-weight:700;color:${step.state === "done" ? "#16a34a" : "#a8a29e"}">&#10140;</td>`
-        : "";
-    return chip + arrow;
-  });
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px"><tr>${cells.join("")}</tr></table>`;
+/** One row per stage: Completed or Awaiting, who finished it, and when. */
+function stageTable(steps: Report["pending"][number]["steps"]) {
+  return table(
+    ["Stage", "Status", "Who", "Time"],
+    steps.map((step) => {
+      const done = step.state === "done";
+      const status = done
+        ? `<span style="color:#047857;font-weight:700">Completed</span>`
+        : `<span style="color:${step.state === "current" ? "#c2410c" : "#a8a29e"};font-weight:700">Awaiting</span>`;
+      return [escapeHtml(step.label), status, escapeHtml(step.who || "—"), escapeHtml(step.whenText || "—")];
+    }),
+    "No stages.",
+  );
 }
 
 function detailPair(label: string, value: string) {
@@ -355,7 +358,7 @@ ${tender.reference ? `<div style="font-size:12px;color:#78716c;margin-top:2px">R
 <span style="display:inline-block;padding:4px 10px;border-radius:999px;background:#fff1e6;color:#9a3412;font-size:11px;font-weight:700">Now: ${escapeHtml(tender.stage)}</span>
 ${tender.late ? `<div style="margin-top:4px"><span style="display:inline-block;padding:3px 9px;border-radius:999px;background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:700">Overdue task</span></div>` : ""}
 </td></tr></table>
-${stageTrack(tender.steps)}
+${stageTable(tender.steps)}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px">${rows.join("")}</table>
 <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e7e5e4;font-size:13px">Tender file: ${file}</div>
 </td></tr></table>`;
@@ -412,8 +415,8 @@ export async function buildTodayReportEmail(report: Report) {
 ${cards.map((row) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${row.join("")}</tr></table>`).join("")}
 </td></tr>
 ${section(
-  "Pending tenders — where each one stands",
-  `${report.pending.length} open tender${report.pending.length === 1 ? "" : "s"}, soonest bid deadline first. ✓ completed · ● current step · ○ still to come`,
+  "Pending, tender by tender",
+  `${report.pending.length} open tender${report.pending.length === 1 ? "" : "s"}, soonest bid deadline first. Each tender has its own table. Completed names who finished it and when. Awaiting is what is still pending on that tender, and who has it.`,
   report.pending.length
     ? report.pending.map((tender) => pendingCard(tender, appUrl(tender.id), fileLinks.get(tender.id) ?? appUrl(tender.id))).join("")
     : `<p style="margin:8px 0 0;font-size:13px;color:#78716c">No open tenders.</p>`,
@@ -516,12 +519,14 @@ ${section(
     `Total ${stats.total} (${stats.active} active) · new today ${stats.newToday} · steps today ${stats.stepsToday} · bids today ${stats.bidsToday} · overdue ${stats.overdue} · closing in 7 days ${stats.closing}`,
     `Active pipeline ${inr(stats.pipelineValue)} · EMD exposure ${inr(stats.emdExposure)}`,
     "",
-    "Pending tenders:",
+    "Pending, tender by tender:",
     ...(report.pending.length
-      ? report.pending.map(
-          (tender) =>
-            `- ${tender.recordId} ${tender.project}: now ${tender.stage} · ${tender.steps.map((step) => `${step.state === "done" ? "✓" : step.state === "current" ? "●" : "○"} ${step.label}`).join(" → ")} · received ${when(tender.received)} · deadline ${when(tender.deadline)}${tender.file ? ` · file ${tender.file.fileName}` : ""}`,
-        )
+      ? report.pending.flatMap((tender) => [
+          `- ${tender.recordId} ${tender.project} · deadline ${when(tender.deadline)}`,
+          ...tender.steps.map(
+            (step) => `    ${step.label}: ${step.state === "done" ? "Completed" : "Awaiting"}${step.who ? ` · ${step.who}` : ""}${step.whenText ? ` · ${step.whenText}` : ""}`,
+          ),
+        ])
       : ["- none"]),
     "",
     "Today's activity:",
