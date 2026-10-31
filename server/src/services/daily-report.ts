@@ -299,27 +299,8 @@ function statCard(label: string, value: string, note: string, color: string) {
 
 const fileSize = (bytes: number) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
-/** One row per stage: Completed or Awaiting, who finished it, and when. */
-function stageTable(steps: Report["pending"][number]["steps"]) {
-  return table(
-    ["Stage", "Status", "Who", "Time"],
-    steps.map((step) => {
-      const done = step.state === "done";
-      const status = done
-        ? `<span style="color:#047857;font-weight:700">Completed</span>`
-        : `<span style="color:${step.state === "current" ? "#c2410c" : "#a8a29e"};font-weight:700">Awaiting</span>`;
-      return [escapeHtml(step.label), status, escapeHtml(step.who || "—"), escapeHtml(step.whenText || "—")];
-    }),
-    "No stages.",
-  );
-}
-
-function detailPair(label: string, value: string) {
-  return `<td width="50%" valign="top" style="padding:3px 8px 3px 0;vertical-align:top;font-size:12px"><span style="color:#78716c">${escapeHtml(label)}</span><br><b style="color:#1c1917;font-size:13px">${value}</b></td>`;
-}
-
-/** One card per pending tender: where it stands in the five steps, the dates, the money and the tender file. */
-function pendingCard(tender: Report["pending"][number], tenderUrl: string, fileUrl: string) {
+/** One table per pending tender: identity, each stage, the dates, the money and the file. */
+function pendingTable(tender: Report["pending"][number], tenderUrl: string, fileUrl: string) {
   const days =
     tender.daysLeft == null
       ? "No deadline"
@@ -329,39 +310,40 @@ function pendingCard(tender: Report["pending"][number], tenderUrl: string, fileU
           ? `${Math.max(1, Math.round(tender.daysLeft * 24))} hours left`
           : `${Math.floor(tender.daysLeft)} days left`;
   const daysColor = tender.daysLeft != null && tender.daysLeft <= 3 ? "#dc2626" : tender.daysLeft != null && tender.daysLeft <= 7 ? "#d97706" : "#16a34a";
-  const pairs = [
-    ["Client", escapeHtml(tender.client || "—")],
-    ["Location", escapeHtml(tender.location || "—")],
-    ["Tender start (received)", escapeHtml(when(tender.received))],
-    ["Tender end (bid deadline)", `${escapeHtml(when(tender.deadline))} <span style="color:${daysColor};font-size:12px">· ${escapeHtml(days)}</span>`],
-    ["Bid opening", escapeHtml(when(tender.opening))],
-    ["Portal", escapeHtml(tender.portal || "—")],
-    ["Estimated value", escapeHtml(tender.estimated ? `${inr(tender.estimated)} (${inrFull(tender.estimated)})` : "—")],
-    ["EMD", escapeHtml(tender.emd ? `${inr(tender.emd)} · ${tender.emdType}` : tender.emdType || "—")],
-    ["Final costing", escapeHtml(tender.finalCosting ? inr(tender.finalCosting) : "Not yet")],
-    ["Now with", escapeHtml(tender.withWhom || "—")],
-  ];
-  const rows: string[] = [];
-  for (let i = 0; i < pairs.length; i += 2) rows.push(`<tr>${detailPair(pairs[i][0], pairs[i][1])}${pairs[i + 1] ? detailPair(pairs[i + 1][0], pairs[i + 1][1]) : "<td></td>"}</tr>`);
+  const fact = (label: string, value: string) =>
+    `<tr><td style="${cell};color:#78716c;width:28%">${escapeHtml(label)}</td><td style="${cell}" colspan="3">${value}</td></tr>`;
+  const stageRows = tender.steps
+    .map((step) => {
+      const done = step.state === "done";
+      const status = done
+        ? `<span style="color:#047857;font-weight:700">Completed</span>`
+        : `<span style="color:${step.state === "current" ? "#c2410c" : "#a8a29e"};font-weight:700">Awaiting</span>`;
+      return `<tr><td style="${cell}">${escapeHtml(step.label)}</td><td style="${cell}">${status}</td><td style="${cell}">${escapeHtml(step.who || "—")}</td><td style="${cell}">${escapeHtml(step.whenText || "—")}</td></tr>`;
+    })
+    .join("");
   const file = tender.file
-    ? `<a href="${escapeHtml(fileUrl)}" style="color:#c2410c;font-weight:700;text-decoration:none">&#128196; ${escapeHtml(tender.file.fileName)}</a> <span style="color:#78716c">(${escapeHtml(fileSize(tender.file.sizeBytes))}) · opens the tender's documents</span>`
+    ? `<a href="${escapeHtml(fileUrl)}" style="color:#c2410c;font-weight:700;text-decoration:none">${escapeHtml(tender.file.fileName)}</a> <span style="color:#78716c">(${escapeHtml(fileSize(tender.file.sizeBytes))})</span>`
     : `<span style="color:#78716c">No tender file uploaded yet</span>`;
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;border:1px solid ${tender.late ? "#fecaca" : "#e7e5e4"};border-left:4px solid ${tender.late ? "#dc2626" : "#ea580c"};border-radius:10px;background:#ffffff">
-<tr><td style="padding:14px 16px">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-<td valign="top" style="vertical-align:top">
-<a href="${escapeHtml(tenderUrl)}" style="color:#c2410c;font-weight:800;font-size:14px;text-decoration:none">${escapeHtml(tender.recordId)}</a>
-<div style="font-size:15px;font-weight:700;color:#1c1917;margin-top:2px">${escapeHtml(tender.project)}</div>
-${tender.reference ? `<div style="font-size:12px;color:#78716c;margin-top:2px">Ref: ${escapeHtml(tender.reference)}</div>` : ""}
-</td>
-<td valign="top" align="right" style="vertical-align:top;white-space:nowrap">
-<span style="display:inline-block;padding:4px 10px;border-radius:999px;background:#fff1e6;color:#9a3412;font-size:11px;font-weight:700">Now: ${escapeHtml(tender.stage)}</span>
-${tender.late ? `<div style="margin-top:4px"><span style="display:inline-block;padding:3px 9px;border-radius:999px;background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:700">Overdue task</span></div>` : ""}
-</td></tr></table>
-${stageTable(tender.steps)}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px">${rows.join("")}</table>
-<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e7e5e4;font-size:13px">Tender file: ${file}</div>
-</td></tr></table>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:14px;border:1px solid #eeeae6">
+<tr><td colspan="4" style="${head};font-size:13px;text-transform:none;letter-spacing:0;font-weight:800;color:#1c1917">
+<a href="${escapeHtml(tenderUrl)}" style="color:#c2410c;font-weight:800;text-decoration:none">${escapeHtml(tender.recordId)}</a>
+ · ${escapeHtml(tender.project)}${tender.reference ? `<div style="font-size:12px;font-weight:500;color:#78716c;margin-top:2px">Ref: ${escapeHtml(tender.reference)}</div>` : ""}
+<div style="font-size:12px;font-weight:700;color:#9a3412;margin-top:2px">Now: ${escapeHtml(tender.stage)}${tender.late ? " · Overdue task" : ""}</div>
+</td></tr>
+<tr><th style="${head}">Stage</th><th style="${head}">Status</th><th style="${head}">Who</th><th style="${head}">Time</th></tr>
+${stageRows}
+${fact("Client", escapeHtml(tender.client || "—"))}
+${fact("Location", escapeHtml(tender.location || "—"))}
+${fact("Tender start (received)", escapeHtml(when(tender.received)))}
+${fact("Tender end (bid deadline)", `${escapeHtml(when(tender.deadline))} <span style="color:${daysColor};font-weight:700">· ${escapeHtml(days)}</span>`)}
+${fact("Bid opening", escapeHtml(when(tender.opening)))}
+${fact("Portal", escapeHtml(tender.portal || "—"))}
+${fact("Estimated value", escapeHtml(tender.estimated ? `${inr(tender.estimated)} (${inrFull(tender.estimated)})` : "—"))}
+${fact("EMD", escapeHtml(tender.emd ? `${inr(tender.emd)} · ${tender.emdType}` : tender.emdType || "—"))}
+${fact("Final costing", escapeHtml(tender.finalCosting ? inr(tender.finalCosting) : "Not yet"))}
+${fact("Now with", escapeHtml(tender.withWhom || "—"))}
+${fact("Tender file", file)}
+</table>`;
 }
 
 export async function buildTodayReportEmail(report: Report) {
@@ -418,7 +400,7 @@ ${section(
   "Pending, tender by tender",
   `${report.pending.length} open tender${report.pending.length === 1 ? "" : "s"}, soonest bid deadline first. Each tender has its own table. Completed names who finished it and when. Awaiting is what is still pending on that tender, and who has it.`,
   report.pending.length
-    ? report.pending.map((tender) => pendingCard(tender, appUrl(tender.id), fileLinks.get(tender.id) ?? appUrl(tender.id))).join("")
+    ? report.pending.map((tender) => pendingTable(tender, appUrl(tender.id), fileLinks.get(tender.id) ?? appUrl(tender.id))).join("")
     : `<p style="margin:8px 0 0;font-size:13px;color:#78716c">No open tenders.</p>`,
 )}
 ${section(
@@ -502,11 +484,6 @@ ${section(
     report.stages.map((row) => [escapeHtml(row.label), String(row.count), escapeHtml(inr(row.value))]),
     "No tenders yet.",
   ),
-)}
-${section(
-  "Email today",
-  "",
-  `<p style="margin:8px 0 0;font-size:13px;color:#44403c">${report.mail.sent} sent · ${report.mail.failed} failed · ${report.mail.notSent} not sent (mail not set up). Details are in Administration → Email log.</p>`,
 )}
 <tr><td style="padding:24px 28px 26px;text-align:center">
 <a href="${escapeHtml(base)}" style="display:inline-block;padding:12px 24px;background:#c2410c;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px">Open Coal &amp; Ash →</a>
