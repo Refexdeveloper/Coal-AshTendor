@@ -108,7 +108,7 @@ export function FieldEditor({
       ) : null}
       {locked ? (
         <p className="banner neutral">
-          You can view these fields. They can be edited by the Tender Coordinator, Vishesh, Ranjana, an administrator, or whoever is validating this tender. Closed tenders keep their recorded values.
+          You can view these fields. After data validation is submitted and the step moves, the bid submitter can edit all 44 fields, as can the Tender Coordinator, a reviewer, an administrator, or the person who has the current stage. Closed tenders keep their recorded values.
         </p>
       ) : null}
       <section className="panel field-summary">

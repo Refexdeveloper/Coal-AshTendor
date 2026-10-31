@@ -592,18 +592,20 @@ function canEdit(actor: Actor) {
   return EDITOR_ROLES.includes(actor.role);
 }
 
-/** Editors, or whoever holds an open validation or extraction-exception task on this tender (usually the uploader). */
+/** Editors, the person on the current stage, and the bid submitter once validation has been submitted and the step has moved. */
 export async function canEditFields(actor: Actor, tenderId: string) {
   if (canEdit(actor)) return true;
-  const task = await db.workflowTask.findFirst({
-    where: {
-      tenderId,
-      stage: { in: ["DATA_VALIDATION", "OCR_EXCEPTION"] },
-      status: { in: OPEN_TASK },
-      assigneeIds: { contains: `"${actor.id}"` },
-    },
-  });
-  return Boolean(task);
+  const [task, tender] = await Promise.all([
+    db.workflowTask.findFirst({
+      where: { tenderId, status: { in: OPEN_TASK }, assigneeIds: { contains: `"${actor.id}"` } },
+    }),
+    db.tender.findUnique({ where: { id: tenderId }, select: { submitterId: true, overallStatus: true } }),
+  ]);
+  if (task) return true;
+  if (!tender || CLOSED_OVERALL.includes(tender.overallStatus)) return false;
+  const stillValidating = ["UPLOADED", "OCR_PROCESSING", "DATA_VALIDATION_REQUIRED"].includes(tender.overallStatus);
+  if (stillValidating) return false;
+  return actor.role === "BID_SUBMITTER" || tender.submitterId === actor.id;
 }
 
 function listedChoice(value: string, options: string[]) {
@@ -615,7 +617,7 @@ export async function updateFields(actor: Actor, tenderId: string, values: Recor
   const tender = await db.tender.findUnique({ where: { id: tenderId }, include: { fields: true } });
   if (!tender) throw new WorkflowError("Tender not found.");
   if (CLOSED_OVERALL.includes(tender.overallStatus)) throw new WorkflowError("Closed tenders keep their recorded fields.");
-  if (!(await canEditFields(actor, tenderId))) throw new WorkflowError("Only the Tender Coordinator, a reviewer, or the person validating this tender can correct its fields.");
+  if (!(await canEditFields(actor, tenderId))) throw new WorkflowError("Only the Tender Coordinator, a reviewer, the person on the current stage, or the bid submitter after validation is submitted can correct these fields.");
   const changes: string[] = [];
   for (const field of tender.fields) {
     if (!(field.fieldKey in values)) continue;
