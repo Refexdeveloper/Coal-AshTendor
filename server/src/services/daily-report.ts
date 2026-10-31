@@ -12,7 +12,7 @@ import { deliver, emailLink, isStepAction } from "./notify";
  */
 
 /** Default recipient for the report button. */
-export const REPORT_TO = "sathishkumar.r@refex.co.in";
+export const REPORT_TO = "sathishkumar.r@refex.co.in, gowtham.s@refex.co.in";
 
 const TIME_ZONE = "Asia/Kolkata";
 
@@ -537,6 +537,7 @@ export async function sendTodayReport(to: string[]) {
         text: built.text,
         link: "",
         rawHtml: built.html,
+        direct: true,
         attachments: [{ filename: `coal-ash-tenders-${stamp}.csv`, content: built.csv, contentType: "text/csv" }],
         log: { eventType: "DAILY_REPORT" },
       }),

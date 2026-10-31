@@ -100,10 +100,10 @@ export default function EmailLogsPage() {
     setSending(true);
     setNotice(null);
     const form = new FormData();
-    form.set("to", "sathishkumar.r@refex.co.in");
+    form.set("to", "sathishkumar.r@refex.co.in, gowtham.s@refex.co.in");
     const answer = await postAction("send-today-report", form);
     setSending(false);
-    setNotice(answer?.error ? { error: answer.error } : { ok: answer?.ok ?? "Today's report sent to sathishkumar.r@refex.co.in." });
+    setNotice(answer?.error ? { error: answer.error } : { ok: answer?.ok ?? "Today's report sent to sathishkumar.r@refex.co.in and gowtham.s@refex.co.in." });
   };
 
   return (

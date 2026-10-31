@@ -219,10 +219,11 @@ export async function sendTodayReportAction(actor: User, formData: FormData): Pr
   const denied = adminOnly(actor);
   if (denied) return denied;
   const { REPORT_TO, sendTodayReport } = await import("./daily-report");
-  const to = String(formData.get("to") || REPORT_TO)
+  const listed = `${REPORT_TO}, ${String(formData.get("to") || "")}`
     .split(/[\s,;]+/)
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean);
+  const to = [...new Set(listed)];
   const bad = to.filter((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
   if (!to.length) return { error: "Enter at least one email address." };
   if (bad.length) return { error: `Not an email address: ${bad.join(", ")}` };
@@ -230,9 +231,7 @@ export async function sendTodayReportAction(actor: User, formData: FormData): Pr
     const result = await sendTodayReport(to);
     const sent = result.statuses.filter((status) => status === "SENT").length;
     if (!sent) return { error: `The report was not sent (${result.statuses.join(", ").toLowerCase()}). The Email log shows why.` };
-    const { mailConfig } = await import("./notify");
-    const inbox = mailConfig().redirectTo;
-    return { ok: `Today's report sent to ${to.join(", ")}${inbox && to.some((email) => email !== inbox) ? ` (test mode: delivered to ${inbox})` : ""}.` };
+    return { ok: `Today's report sent to ${to.join(", ")}.` };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "The report could not be sent." };
   }

@@ -222,11 +222,13 @@ export async function deliver(message: {
   content?: EmailContent;
   /** Exact HTML to send again (resend from the log); skips the layout. */
   rawHtml?: string;
+  /** Send to this address itself. The daily report uses this so an extra recipient is not folded into the test inbox. */
+  direct?: boolean;
   attachments?: MailAttachment[];
   log?: MailLog;
 }) {
   const config = mailConfig();
-  const target = deliveredTo(message.to, message.toName);
+  const target = message.direct ? { email: message.to, name: message.toName, forWhom: "" } : deliveredTo(message.to, message.toName);
   const intendedFor = target.forWhom || null;
   const subject = intendedFor ? `[for ${message.toName}] ${message.subject}` : message.subject;
   const content: EmailContent = {

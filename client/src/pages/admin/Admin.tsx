@@ -584,7 +584,7 @@ function TodayReportPanel() {
     setBusy("send");
     setResult(null);
     const form = new FormData();
-    form.set("to", to || preview?.defaultTo || "sathishkumar.r@refex.co.in");
+    form.set("to", to || preview?.defaultTo || "sathishkumar.r@refex.co.in, gowtham.s@refex.co.in");
     const answer = await postAction("send-today-report", form);
     setBusy("");
     setResult(answer?.error ? { error: answer.error } : { ok: answer?.ok ?? "Report sent." });
