@@ -46,6 +46,7 @@ import { Countdown } from "@client/components/feature/countdown";
 import { StageTrack } from "@client/components/feature/stage-track";
 import type { TaskContext } from "@client/components/feature/task-kit";
 import { ManagePanel, TaskCards, UploadForm } from "@client/components/feature/workbench";
+import { ExecutiveBrief, StageHistory } from "@client/pages/tenders/ExecutiveTender";
 
 const PdfViewer = lazy(() => import("@client/components/feature/pdf-viewer"));
 
@@ -55,6 +56,13 @@ const TABS = [
   ["documents", "Documents"],
   ["costing", "Costing, EMD & bid"],
   ["history", "History"],
+] as const;
+
+/** The Group CEO reads the tender rather than works it: a brief, the stage-by-stage history and the files. */
+const CEO_TABS = [
+  ["brief", "Executive brief"],
+  ["stages", "Stage-wise history"],
+  ["documents", "Documents"],
 ] as const;
 
 type Data = {
@@ -103,7 +111,9 @@ export default function TenderPage() {
   const query = { notice: search.get("notice"), error: search.get("error"), tab: search.get("tab"), new: search.get("new") };
   const { tender, users, fieldEditor } = data;
   const calendar = toCalendar(data.calendar);
-  const tab = TABS.find(([key]) => key === query.tab)?.[0] ?? "overview";
+  const ceo = actor.role === "GROUP_CEO";
+  const tabs: readonly (readonly [string, string])[] = ceo ? CEO_TABS : TABS;
+  const tab = tabs.find(([key]) => key === query.tab)?.[0] ?? tabs[0][0];
   const names = new Map(users.map((user) => [user.id, user.name]));
   const now = new Date();
   const day = dayLengthMinutes(calendar);
@@ -181,7 +191,7 @@ export default function TenderPage() {
       when: formatWhen(record.createdAt, tz),
     })),
   };
-  const tabBadge: Record<string, number> = { overview: mineCount, details: attention, documents: tender.documents.length };
+  const tabBadge: Record<string, number> = { overview: mineCount, details: attention, documents: tender.documents.length, stages: tender.approvals.length };
 
   return (
     <>
@@ -270,7 +280,7 @@ export default function TenderPage() {
       </section>
 
       <nav className="tabs" aria-label="Tender sections">
-        {TABS.map(([key, label]) => (
+        {tabs.map(([key, label]) => (
           <Link key={key} to={`/tenders/${tender.id}?tab=${key}`} className={`tab ${tab === key ? "active" : ""}`}>
             {label}
             {tabBadge[key] ? <span className="cnt">{tabBadge[key]}</span> : null}
@@ -279,6 +289,8 @@ export default function TenderPage() {
       </nav>
 
       <div key={tab} className="tab-body">
+      {tab === "brief" ? <ExecutiveBrief tender={tender} users={users} calendar={calendar} /> : null}
+      {tab === "stages" ? <StageHistory tender={tender} users={users} calendar={calendar} /> : null}
       {tab === "overview" ? (
         <div className="overview">
           <div className="stack">

@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import { BID, COSTING, EMD, labelOf } from "@client/lib/labels";
 import type { ApprovalRecord, PublicUser, WorkflowTask } from "@client/lib/types";
 
-type StepState = "done" | "current" | "failed" | "todo" | "skipped";
+export type StepState = "done" | "current" | "failed" | "todo" | "skipped";
 type SubStep = { title: string; who: string; state: StepState };
 type Step = { key: string; title: string; note: string; state: StepState; subs?: SubStep[] };
 
@@ -234,6 +234,13 @@ export function stagesFor(t: TrackInput, crew: Crew): (Step | [Step, Step])[] {
       state: bidState,
     },
   ];
+}
+
+/** State of each lifecycle step by key (upload, validate, relevance, costing, emd, ready, bid), using the same rules as the track. */
+export function stepStates(tender: Parameters<typeof StageTrack>[0]["tender"], users: PublicUser[]): Record<string, StepState> {
+  const out: Record<string, StepState> = {};
+  for (const step of stagesFor(tender, crewFrom(users, tender)).flat()) out[step.key] = step.state;
+  return out;
 }
 
 const MARK: Record<StepState, string> = { done: "✓", current: "●", failed: "✕", todo: "", skipped: "–" };
