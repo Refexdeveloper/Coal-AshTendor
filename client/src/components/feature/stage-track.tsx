@@ -236,55 +236,60 @@ export function stagesFor(t: TrackInput, crew: Crew): (Step | [Step, Step])[] {
   ];
 }
 
-const reached = (state: StepState) => state === "done" || state === "current" || state === "failed";
-
 const MARK: Record<StepState, string> = { done: "✓", current: "●", failed: "✕", todo: "", skipped: "–" };
 
-const SUB_LIST: CSSProperties = { display: "grid", gap: 3, marginTop: 6 };
-const SUB_ROW: CSSProperties = { display: "flex", alignItems: "flex-start", gap: 6, fontSize: "0.7rem", color: "var(--muted)", whiteSpace: "normal" };
-const SUB_DOT: CSSProperties = {
-  width: 16,
-  height: 16,
-  borderRadius: "50%",
-  flex: "none",
-  display: "grid",
-  placeItems: "center",
-  fontSize: "0.6rem",
-  fontWeight: 700,
-  background: "#f0eeeb",
-  color: "var(--muted)",
-  border: "1px solid var(--line)",
-};
-const SUB_TONE: Record<StepState, { row: CSSProperties; dot: CSSProperties }> = {
-  done: { row: { color: "inherit" }, dot: { background: "var(--moss)", borderColor: "var(--moss)", color: "#fff" } },
-  current: { row: { color: "var(--ember)", fontWeight: 700 }, dot: { background: "var(--ember-bright)", borderColor: "var(--ember-bright)", color: "#fff" } },
-  failed: { row: { color: "var(--wine)", fontWeight: 700 }, dot: { background: "var(--wine)", borderColor: "var(--wine)", color: "#fff" } },
-  todo: { row: {}, dot: {} },
-  skipped: { row: { opacity: 0.45 }, dot: {} },
-};
+const BRANCH_ICON: Record<string, string> = { costing: "∑", emd: "⛨" };
 
-function StepView({ step, index }: { step: Step; index: number | string }) {
+/** Folds the costing/EMD pair into one rail node so the main line reads as six steps. */
+function mergePair([a, b]: [Step, Step]): Step {
+  const states = [a.state, b.state];
+  const state: StepState = states.includes("failed")
+    ? "failed"
+    : states.every((s) => s === "done")
+      ? "done"
+      : states.some((s) => s === "current" || s === "done")
+        ? "current"
+        : states.every((s) => s === "skipped")
+          ? "skipped"
+          : "todo";
+  const subs = [...(a.subs ?? []), ...(b.subs ?? [])];
+  const done = subs.filter((sub) => sub.state === "done").length;
+  const note = state === "todo" || state === "skipped" ? a.note : `${done} of ${subs.length} sub-steps done`;
+  return { key: "branches", title: "Costing & EMD", note, state };
+}
+
+function BranchCard({ step }: { step: Step }) {
+  const subs = step.subs ?? [];
+  const done = subs.filter((sub) => sub.state === "done").length;
   return (
-    <div className={`step ${step.state}`} style={step.subs?.length ? { alignItems: "flex-start" } : undefined}>
-      <span className="step-dot">{MARK[step.state] || index}</span>
-      <span className="step-copy">
-        <strong>{step.title}</strong>
-        <small>{step.note}</small>
-        {step.subs?.length ? (
-          <span style={SUB_LIST} aria-label={`${step.title} stages`}>
-            {step.subs.map((sub, i) => (
-              <span key={sub.title} style={{ ...SUB_ROW, ...SUB_TONE[sub.state].row }}>
-                <span style={{ ...SUB_DOT, ...SUB_TONE[sub.state].dot }}>{MARK[sub.state] || i + 1}</span>
-                <span>
-                  {sub.title}
-                  {sub.who ? <small style={{ display: "block", fontWeight: sub.state === "current" ? 700 : 500 }}>{sub.who}</small> : null}
-                </span>
-              </span>
-            ))}
-          </span>
-        ) : null}
+    <section className={`branch ${step.state}`} style={{ "--p": subs.length ? done / subs.length : 0 } as CSSProperties}>
+      <header className="branch-head">
+        <span className="branch-icon" aria-hidden>
+          {BRANCH_ICON[step.key] ?? "•"}
+        </span>
+        <span className="branch-copy">
+          <strong>{step.title}</strong>
+          <small>{step.note}</small>
+        </span>
+        <span className="branch-count">
+          {done}/{subs.length}
+        </span>
+      </header>
+      <span className="branch-bar" aria-hidden>
+        <i />
       </span>
-    </div>
+      <ol className="mini-steps" aria-label={`${step.title} stages`}>
+        {subs.map((sub, i) => (
+          <li key={sub.title} className={`sub-step ${sub.state}`} style={{ "--s": i } as CSSProperties}>
+            <span className="mini-dot">{MARK[sub.state] || i + 1}</span>
+            <span className="mini-copy">
+              <b>{sub.title}</b>
+              {sub.who ? <small>{sub.who}</small> : null}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
@@ -296,25 +301,54 @@ export function StageTrack({
   users: PublicUser[];
 }) {
   const steps = stagesFor(tender, crewFrom(users, tender));
+  const pair = steps.find((step): step is [Step, Step] => Array.isArray(step));
+  const rail = steps.map((step) => (Array.isArray(step) ? mergePair(step) : step));
+  const subs = pair ? pair.flatMap((step) => step.subs ?? []) : [];
+  const score = rail.reduce((sum, step) => {
+    if (step.key === "branches") return sum + (subs.length ? subs.filter((sub) => sub.state === "done").length / subs.length : 0);
+    return sum + (step.state === "done" ? 1 : 0);
+  }, 0);
+  const pct = Math.round((score / rail.length) * 100);
+  const lastReached = rail.reduce((at, step, i) => (step.state === "done" || step.state === "current" || step.state === "failed" ? i : at), 0);
+  const focus = rail.find((step) => step.state === "failed") ?? rail.find((step) => step.state === "current") ?? rail[rail.length - 1];
+  const finished = rail.every((step) => step.state === "done");
+
   return (
-    <ol className="track" aria-label="Workflow progress">
-      {steps.map((step, index) =>
-        Array.isArray(step) ? (
-          <li
-            key="parallel"
-            className={`track-item parallel ${reached(step[0].state) || reached(step[1].state) ? "reached" : ""}`}
-            style={{ "--s": index, flex: 1.8, minWidth: 280 } as CSSProperties}
-          >
-            <span className="parallel-tag">In parallel</span>
-            <StepView step={step[0]} index={`${index + 1}a`} />
-            <StepView step={step[1]} index={`${index + 1}b`} />
+    <div className="journey">
+      <header className="journey-head">
+        <div className="journey-now">
+          <span className="eyebrow">{finished ? "Workflow complete" : focus.state === "failed" ? "Workflow stopped at" : "Now at"}</span>
+          <h2>{focus.title}</h2>
+          {focus.note ? <p>{focus.note}</p> : null}
+        </div>
+        <div className="journey-meter" style={{ "--p": pct / 100 } as CSSProperties} aria-label={`${pct}% of the workflow complete`}>
+          <span className="journey-meter-top">
+            <b>{pct}%</b>
+            <small>complete</small>
+          </span>
+          <span className="journey-meter-bar" aria-hidden>
+            <i />
+          </span>
+        </div>
+      </header>
+
+      <ol className="rail" aria-label="Workflow progress" style={{ "--n": rail.length, "--fill": rail.length > 1 ? lastReached / (rail.length - 1) : 0 } as CSSProperties}>
+        {rail.map((step, index) => (
+          <li key={step.key} className={`rail-step ${step.state}${step === focus && !finished ? " focus" : ""}`} style={{ "--s": index } as CSSProperties}>
+            <span className="rail-dot">{MARK[step.state] || index + 1}</span>
+            <strong>{step.title}</strong>
+            {step.note ? <small>{step.note}</small> : null}
           </li>
-        ) : (
-          <li key={step.key} className={`track-item ${reached(step.state) ? "reached" : ""}`} style={{ "--s": index } as CSSProperties}>
-            <StepView step={step} index={index + 1} />
-          </li>
-        ),
-      )}
-    </ol>
+        ))}
+      </ol>
+
+      {pair ? (
+        <div className="branches">
+          <span className="branches-tag">Running in parallel</span>
+          <BranchCard step={pair[0]} />
+          <BranchCard step={pair[1]} />
+        </div>
+      ) : null}
+    </div>
   );
 }

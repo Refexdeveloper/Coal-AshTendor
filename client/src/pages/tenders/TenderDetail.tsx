@@ -201,14 +201,32 @@ export default function TenderPage() {
           <h1>
             <span className="ember-text">{tender.projectName || "Untitled tender"}</span>
           </h1>
-          <p className="hero-meta">
-            {[tender.clientName || "Client not set", tender.location, tender.portalName, tender.tenderRef || tender.externalTenderId].filter(Boolean).join("  ·  ")}
-          </p>
+          <ul className="hero-meta">
+            {[
+              { icon: "client", text: tender.clientName && tender.clientName !== tender.projectName ? tender.clientName : tender.clientName ? "" : "Client not set" },
+              { icon: "pin", text: tender.location },
+              { icon: "globe", text: tender.portalName },
+              { icon: "hash", text: tender.tenderRef || tender.externalTenderId },
+            ]
+              .filter((item) => item.text)
+              .map((item) => (
+                <li key={item.icon}>
+                  <MetaIcon name={item.icon} />
+                  {item.text}
+                </li>
+              ))}
+          </ul>
         </div>
         <aside className="tender-hero-side">
-          <p className="hero-side-lbl">{closed ? "Bid deadline" : "Time to bid deadline"}</p>
+          <p className="hero-side-lbl">
+            <span className="live-dot" aria-hidden />
+            {closed ? "Bid deadline" : "Time to bid deadline"}
+          </p>
           {closed ? <p className="countdown-note">{formatWhen(tender.bidSubmissionEnd, tz)}</p> : <Countdown deadline={tender.bidSubmissionEnd?.toISOString() ?? null} />}
-          <p className="hero-deadline">{formatWhen(tender.bidSubmissionEnd, tz)}</p>
+          <p className="hero-deadline">
+            <MetaIcon name="clock" />
+            {formatWhen(tender.bidSubmissionEnd, tz)}
+          </p>
         </aside>
       </section>
       {query.error ? <p className="banner bad">{query.error}</p> : null}
@@ -227,7 +245,7 @@ export default function TenderPage() {
         </p>
       ) : null}
 
-      <section className="panel track-panel">
+      <section className="panel track-panel journey-panel">
         <StageTrack tender={tender} users={users} />
       </section>
 
@@ -672,6 +690,22 @@ function NoticePane({ document }: { document: TenderDocument | null }) {
       {document && !pdf && !image ? <p className="empty">This file cannot be shown here. Use Open to view it.</p> : null}
       {document ? null : <p className="empty">Upload the tender notice on the Documents tab to see it beside these fields.</p>}
     </aside>
+  );
+}
+
+const META_PATHS: Record<string, string> = {
+  client: "M3 21h18M5 21V7l7-4 7 4v14M9 9h1M14 9h1M9 13h1M14 13h1M10 21v-4h4v4",
+  pin: "M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21zM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
+  globe: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z",
+  hash: "M5 9h14M5 15h14M10 3 8 21M16 3l-2 18",
+  clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2",
+};
+
+function MetaIcon({ name }: { name: string }) {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={META_PATHS[name]} />
+    </svg>
   );
 }
 
