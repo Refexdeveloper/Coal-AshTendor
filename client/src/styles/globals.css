@@ -1002,6 +1002,9 @@ pre { white-space: pre-wrap; font-size: 0.85rem; }
 .manual-details .form-grid { margin-top: 10px; }
 .sample-row { display: flex; align-items: center; gap: 12px; justify-content: center; }
 
+.reading-wait {
+  display: grid; place-content: center; justify-items: center; gap: 14px; min-height: 360px; text-align: center;
+}
 .reading {
   position: absolute; inset: 0; z-index: 5; border-radius: inherit; display: grid; place-content: center; justify-items: center; gap: 14px; text-align: center;
   background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(4px); animation: tabIn 0.3s ease both;
@@ -1884,3 +1887,16 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 .report-send { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
 .report-send label { flex: 1 1 320px; }
 .report-preview { height: 820px; }
+
+/* ---------------- Email log: send report card (P2P style) ---------------- */
+.report-card { margin: 0 0 16px; padding: 16px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; }
+.report-card h2 { margin: 0; font-size: 0.9rem; font-weight: 600; color: #0f172a; }
+.report-card > p { margin: 4px 0 12px; font-size: 0.78rem; line-height: 1.5; color: #64748b; }
+.report-card .banner { margin: 12px 0 0; }
+.report-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.report-btn { display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: 8px; border: 1px solid #14503a; background: #14503a; color: #fff; font: inherit; font-size: 0.86rem; text-decoration: none; cursor: pointer; }
+.report-btn:hover { background: #0f3f2e; }
+.report-btn:disabled { opacity: 0.6; cursor: wait; }
+.report-btn.outline { background: #fff; color: #14503a; }
+.report-btn.outline:hover { background: #f0f7f3; }
+@media (max-width: 640px) { .report-btn { flex: 1 1 100%; } }

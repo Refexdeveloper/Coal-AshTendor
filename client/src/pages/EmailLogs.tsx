@@ -1,6 +1,6 @@
 import { Fragment, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { apiGet, postAction, useApi } from "@client/api/client";
+import { apiGet, apiUrl, postAction, useApi } from "@client/api/client";
 import { useActor } from "@client/api/session";
 import { LoadFailed, Loading } from "@client/components/base/loading";
 
@@ -117,16 +117,29 @@ export default function EmailLogsPage() {
           </p>
         </div>
         <div className="actions">
-          <button type="button" className="btn" onClick={() => void sendReport()} disabled={sending}>
-            {sending ? "Sending…" : "Send today's report"}
-          </button>
           <button type="button" className="btn ghost" onClick={() => void reload()}>
             Refresh
           </button>
         </div>
       </header>
-      {notice?.ok ? <p className="banner good">{notice.ok}</p> : null}
-      {notice?.error ? <p className="banner bad">{notice.error}</p> : null}
+
+      <section className="report-card">
+        <h2>Send today&apos;s tender report</h2>
+        <p>
+          Total, active and new tenders, bids closing in 7 days, overdue tasks, and every pending tender with its stage, dates, value, EMD and tender file. Sends
+          to sathishkumar.r@refex.co.in and gowtham.s@refex.co.in, with the Excel file attached. Download Excel lists every tender.
+        </p>
+        <div className="report-card-actions">
+          <button type="button" className="report-btn" onClick={() => void sendReport()} disabled={sending}>
+            {sending ? "Sending…" : "Send report to sathishkumar.r and gowtham.s"}
+          </button>
+          <a className="report-btn outline" href={apiUrl("/reports/today.csv")} download>
+            Download Excel
+          </a>
+        </div>
+        {notice?.ok ? <p className="banner good">{notice.ok}</p> : null}
+        {notice?.error ? <p className="banner bad">{notice.error}</p> : null}
+      </section>
 
       <section className={`banner ${data.mail.ready ? (data.mail.testInbox ? "warn" : "good") : "bad"}`}>
         {data.mail.ready ? `Sending from ${data.mail.from}.` : "Mail is not set up (no SMTP password), so emails are logged but not sent."}

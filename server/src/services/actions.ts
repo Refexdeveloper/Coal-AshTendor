@@ -231,7 +231,10 @@ export async function sendTodayReportAction(actor: User, formData: FormData): Pr
     const result = await sendTodayReport(to);
     const sent = result.statuses.filter((status) => status === "SENT").length;
     if (!sent) return { error: `The report was not sent (${result.statuses.join(", ").toLowerCase()}). The Email log shows why.` };
-    return { ok: `Today's report sent to ${to.join(", ")}.` };
+    const { stats } = result;
+    return {
+      ok: `Today's report sent to ${to.join(", ")} — total tenders ${stats.total}, active ${stats.active}, new today ${stats.newToday}, closing in 7 days ${stats.closing}, overdue tasks ${stats.overdue}.`,
+    };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "The report could not be sent." };
   }

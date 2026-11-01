@@ -169,6 +169,21 @@ views.get("/reports/today", async (req, res) => {
   res.json({ subject: built.subject, html: built.html, stats: report.stats, defaultTo: REPORT_TO });
 });
 
+/** The sheet attached to today's report, for the Download Excel button. */
+views.get("/reports/today.csv", async (req, res) => {
+  if (req.actor!.role !== "ADMIN") {
+    res.status(403).json({ error: "Reports are limited to the system administrator." });
+    return;
+  }
+  const { buildTodayReportEmail, loadTodayReport } = await import("../services/daily-report");
+  const report = await loadTodayReport();
+  const built = await buildTodayReportEmail(report);
+  const stamp = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(report.now);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="coal-ash-tenders-${stamp}.csv"`);
+  res.send(built.csv);
+});
+
 /** One logged email with its exact HTML, for the preview. */
 views.get("/email-logs/:id", async (req, res) => {
   if (req.actor!.role !== "ADMIN") {

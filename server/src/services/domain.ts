@@ -404,21 +404,8 @@ export async function createTender(
 
   for (const item of prepared) {
     item.storedPath = await storeFile("incoming", item.file.name, item.file.buffer);
-    try {
-      const remote = await extractUploadedFile(item.storedPath, item.file.name);
-      item.ocrHits = remote.hits;
-      item.ocrNote = remote.note;
-      item.ocrRaw = remote.raw;
-    } catch (error) {
-      console.error(error);
-      item.ocrNote = "The extraction service did not return fields.";
-      item.ocrRaw = error instanceof Error ? error.message : "OCR request failed.";
-    }
   }
-  const preview = overlayHits(
-    extractFields(prepared.flatMap((item) => item.extracted.pages.map((text, index) => ({ documentId: "preview", page: index + 1, text })))),
-    Object.assign({}, ...prepared.map((item) => item.ocrHits)),
-  );
+  const preview = extractFields(prepared.flatMap((item) => item.extracted.pages.map((text, index) => ({ documentId: "preview", page: index + 1, text }))));
   const readable = (key: string) => {
     const hit = preview[key];
     if (!hit || hit.status === "MISSING" || hit.status === "CONFLICT") return "";
@@ -480,13 +467,8 @@ export async function createTender(
   await rememberManual(tender.id, "tender_ref", input.tenderRef, actor);
   await rememberManual(tender.id, "tender_id", input.externalTenderId, actor);
 
-  const pages: PageText[] = [];
-  const ocrHits: Record<string, FieldHit> = {};
-  let anyText = false;
-  let ocrNotes: string[] = [];
+  const stored: { id: string; fileName: string; storedPath: string; pages: string[]; failed: boolean }[] = [];
   for (const item of prepared) {
-    if (!item.extracted.failed) anyText = true;
-    if (item.ocrNote) ocrNotes.push(item.ocrNote);
     const document = await createDocument({
       tenderId: tender.id,
       fileName: item.file.name,
@@ -498,13 +480,57 @@ export async function createTender(
       version: 1,
       uploadedById: actor.id,
       textExtract: item.extracted.pages.join("\n\f").slice(0, 150000),
-      ocrJson: item.ocrRaw,
+      ocrJson: "PENDING",
       pageCount: item.extracted.pages.length,
     });
-    if (item.ocrRaw) await mailOcrResult(tender.id, item.file.name, item.ocrRaw);
-    for (const [key, hit] of Object.entries(item.ocrHits)) {
+    stored.push({
+      id: document.id,
+      fileName: item.file.name,
+      storedPath: item.storedPath,
+      pages: item.extracted.pages,
+      failed: item.extracted.failed,
+    });
+  }
+  // The upload response returns now. The OCR POST keeps running, and the page stops loading when that response is stored.
+  void finishExtraction(tender.id, recordId, actor, input.source, stored).catch(async (error) => {
+    console.error("OCR did not finish", error);
+    const message = error instanceof Error ? error.message : "OCR request failed.";
+    await db.tenderDocument.updateMany({ where: { tenderId: tender.id, ocrJson: "PENDING" }, data: { ocrJson: message } }).catch(() => undefined);
+    await db.tender.updateMany({ where: { id: tender.id, ocrStatus: "PROCESSING" }, data: { ocrStatus: "FAILED", overallStatus: "DATA_VALIDATION_REQUIRED" } }).catch(() => undefined);
+  });
+  return { duplicate: false as const, tenderId: tender.id, recordId };
+}
+
+/** Posts the stored file to OCR, saves that response, then opens the review step. */
+async function finishExtraction(
+  tenderId: string,
+  recordId: string,
+  actor: Actor,
+  source: "MANUAL" | "CRAWLER",
+  stored: { id: string; fileName: string; storedPath: string; pages: string[]; failed: boolean }[],
+) {
+  const pages: PageText[] = [];
+  const ocrHits: Record<string, FieldHit> = {};
+  let anyText = false;
+  const ocrNotes: string[] = [];
+  for (const item of stored) {
+    if (!item.failed) anyText = true;
+    let remote: { hits: Record<string, FieldHit>; note: string; raw: string };
+    try {
+      remote = await extractUploadedFile(item.storedPath, item.fileName, item.id);
+    } catch (error) {
+      console.error(error);
+      remote = { hits: {}, note: "The extraction service did not return fields.", raw: error instanceof Error ? error.message : "OCR request failed." };
+    }
+    if (remote.note) ocrNotes.push(remote.note);
+    const ocrJson = remote.raw || remote.note || "OCR returned no response.";
+    await db.tenderDocument.update({ where: { id: item.id }, data: { ocrJson } }).catch((error) => {
+      if (!missingColumn(error, "ocrJson")) throw error;
+    });
+    if (remote.raw) await mailOcrResult(tenderId, item.fileName, remote.raw);
+    for (const [key, hit] of Object.entries(remote.hits)) {
       if (!hit.value) continue;
-      const next = { ...hit, documentId: document.id };
+      const next = { ...hit, documentId: item.id };
       const existing = ocrHits[key];
       if (existing?.value && existing.value.trim().toLowerCase() !== next.value.trim().toLowerCase()) {
         ocrHits[key] = {
@@ -517,24 +543,24 @@ export async function createTender(
         ocrHits[key] = next;
       }
     }
-    item.extracted.pages.forEach((text, index) => pages.push({ documentId: document.id, page: index + 1, text }));
+    item.pages.forEach((text, index) => pages.push({ documentId: item.id, page: index + 1, text }));
   }
 
   const ocrFilled = Object.values(ocrHits).some((hit) => hit.value);
-  let ocrFailed = !input.files.length || (!anyText && !ocrFilled);
+  let ocrFailed = !stored.length || (!anyText && !ocrFilled);
   try {
-    if (pages.length || ocrFilled) await applyExtraction(tender.id, pages, actor, ocrHits);
+    if (pages.length || ocrFilled) await applyExtraction(tenderId, pages, actor, ocrHits);
   } catch (error) {
     console.error(error);
     ocrFailed = true;
   }
-  await refreshMaster(tender.id, actor);
+  await refreshMaster(tenderId, actor);
 
   const calendar = await getCalendar();
   const coordinator = await db.user.findFirst({ where: { personKey: "coordinator", active: true } });
   const vishesh = await db.user.findFirst({ where: { personKey: "vishesh", active: true } });
   const validationOwners =
-    input.source === "CRAWLER"
+    source === "CRAWLER"
       ? [vishesh?.id].filter((id): id is string => Boolean(id))
       : [...new Set([actor.id, coordinator?.id].filter((id): id is string => Boolean(id)))];
   if (!validationOwners.length) throw new WorkflowError("No reviewer is available to validate this tender.");
@@ -543,12 +569,12 @@ export async function createTender(
   const exceptionPlan = await plannedDue("OCR_EXCEPTION", calendar);
   const created = await db.$transaction(async (tx) => {
     await tx.tender.update({
-      where: { id: tender.id },
+      where: { id: tenderId },
       data: { overallStatus: "DATA_VALIDATION_REQUIRED", ocrStatus: ocrFailed ? "FAILED" : "COMPLETED" },
     });
     const tasks: WorkflowTask[] = [];
     const validation = await createTask(tx, {
-      tenderId: tender.id,
+      tenderId,
       branch: "MAIN",
       stage: "DATA_VALIDATION",
       title: "Review extracted tender data",
@@ -559,11 +585,11 @@ export async function createTender(
     if (ocrFailed) {
       const admins = await tx.user.findMany({ where: { role: "ADMIN", active: true } });
       const exception = await createTask(tx, {
-        tenderId: tender.id,
+        tenderId,
         branch: "EXCEPTION",
         stage: "OCR_EXCEPTION",
         title: "Resolve document extraction failure",
-        assigneeIds: [...admins.map((user) => user.id), coordinator?.id, input.source === "CRAWLER" ? vishesh?.id : undefined].filter(
+        assigneeIds: [...admins.map((user) => user.id), coordinator?.id, source === "CRAWLER" ? vishesh?.id : undefined].filter(
           (id): id is string => Boolean(id),
         ),
         ...exceptionPlan,
@@ -571,21 +597,20 @@ export async function createTender(
       if (exception.created) tasks.push(exception.task);
     }
     await audit(tx, {
-      tenderId: tender.id,
+      tenderId,
       actor,
       action: "Created tender",
       entity: "Tender",
-      detail: [`${recordId} from ${input.source === "CRAWLER" ? "discovered portal intake" : "manual upload"}.`, ...ocrNotes].filter(Boolean).join(" "),
+      detail: [`${recordId} from ${source === "CRAWLER" ? "discovered portal intake" : "manual upload"}.`, ...ocrNotes].filter(Boolean).join(" "),
     });
     return tasks;
   });
 
-  await notifyTasks(tender.id, created.filter((task) => task.stage === "DATA_VALIDATION"), calendar);
+  await notifyTasks(tenderId, created.filter((task) => task.stage === "DATA_VALIDATION"), calendar);
   const exceptions = created.filter((task) => task.stage === "OCR_EXCEPTION");
   if (exceptions.length) {
-    await notifyTasks(tender.id, exceptions, calendar, "OCR_FAILED");
+    await notifyTasks(tenderId, exceptions, calendar, "OCR_FAILED");
   }
-  return { duplicate: false as const, tenderId: tender.id, recordId };
 }
 
 function canEdit(actor: Actor) {
@@ -1533,9 +1558,6 @@ export async function addDocuments(
   const tender = await db.tender.findUnique({ where: { id: tenderId } });
   if (!tender || CLOSED_OVERALL.includes(tender.overallStatus)) throw new WorkflowError("Documents cannot be added to a closed tender.");
   if (!canEdit(actor) && actor.id !== tender.createdById) throw new WorkflowError("You cannot add documents to this tender.");
-  const pages: PageText[] = [];
-  const ocrHits: Record<string, FieldHit> = {};
-  let anyText = false;
   for (const file of files) {
     if (file.buffer.length > 20 * 1024 * 1024) throw new WorkflowError(`${file.name} is larger than 20 MB.`);
     if (!allowedUpload(file.name, file.type)) throw new WorkflowError(`${file.name} must be a PDF, text file, or image.`);
@@ -1544,7 +1566,6 @@ export async function addDocuments(
     if (same) throw new WorkflowError(`${file.name} is already stored on this tender.`);
     const storedPath = await storeFile(tenderId, file.name, file.buffer);
     const extracted = await pagesFromBuffer(file.buffer, file.type, file.name);
-    if (!extracted.failed) anyText = true;
     const version = (await db.tenderDocument.count({ where: { tenderId, docType } })) + 1;
     const document = await createDocument({
       tenderId,
@@ -1557,30 +1578,31 @@ export async function addDocuments(
       version,
       uploadedById: actor.id,
       textExtract: extracted.pages.join("\n\f").slice(0, 150000),
+      ocrJson: "PENDING",
       pageCount: extracted.pages.length,
     });
-    try {
-      const remote = await extractUploadedFile(storedPath, file.name, document.id);
-      if (remote.raw) {
-        await db.tenderDocument.update({ where: { id: document.id }, data: { ocrJson: remote.raw } }).catch((error) => {
+    const documentId = document.id;
+    const fileName = file.name;
+    const pageTexts = extracted.pages.map((text, index) => ({ documentId, page: index + 1, text }));
+    void extractUploadedFile(storedPath, fileName, documentId)
+      .then(async (remote) => {
+        const ocrJson = remote.raw || remote.note || "OCR returned no response.";
+        await db.tenderDocument.update({ where: { id: documentId }, data: { ocrJson } }).catch((error) => {
           if (!missingColumn(error, "ocrJson")) throw error;
         });
-        await mailOcrResult(tenderId, file.name, remote.raw);
-      }
-      for (const [key, hit] of Object.entries(remote.hits)) {
-        if (hit.value) ocrHits[key] = hit;
-      }
-    } catch (error) {
-      console.error(error);
-      const raw = error instanceof Error ? error.message : "OCR request failed.";
-      await db.tenderDocument.update({ where: { id: document.id }, data: { ocrJson: raw } }).catch(() => undefined);
-      await mailOcrResult(tenderId, file.name, raw);
-    }
-    extracted.pages.forEach((text, index) => pages.push({ documentId: document.id, page: index + 1, text }));
-  }
-  if (pages.length || Object.keys(ocrHits).length) await applyExtraction(tenderId, pages, actor, ocrHits);
-  if ((anyText || Object.keys(ocrHits).length) && tender.ocrStatus === "FAILED") {
-    await db.tender.update({ where: { id: tenderId }, data: { ocrStatus: "COMPLETED" } });
+        if (remote.raw) await mailOcrResult(tenderId, fileName, remote.raw);
+        const hits = Object.fromEntries(Object.entries(remote.hits).filter(([, hit]) => hit.value));
+        if (pageTexts.length || Object.keys(hits).length) await applyExtraction(tenderId, pageTexts, actor, hits);
+        if (Object.keys(hits).length && tender.ocrStatus === "FAILED") {
+          await db.tender.update({ where: { id: tenderId }, data: { ocrStatus: "COMPLETED" } });
+        }
+      })
+      .catch(async (error) => {
+        console.error(error);
+        const raw = error instanceof Error ? error.message : "OCR request failed.";
+        await db.tenderDocument.update({ where: { id: documentId }, data: { ocrJson: raw } }).catch(() => undefined);
+        if (pageTexts.length) await applyExtraction(tenderId, pageTexts, actor).catch(() => undefined);
+      });
   }
   await audit(db, { tenderId, actor, action: "Uploaded documents", entity: "TenderDocument", detail: files.map((file) => file.name).join(", ") });
 }

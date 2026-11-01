@@ -2,23 +2,35 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createSampleAction, createTenderAction } from "@client/api/actions";
 import type { ActionState } from "@client/api/action-state";
+import { apiGet } from "@client/api/client";
 import { Submit, useFormPending } from "@client/components/base/submit";
 
-const READING_STEPS = ["Uploading your document", "Sending the file to OCR", "Filling the tender fields", "Checking for duplicates", "Preparing the verify screen"];
+const READING_STEPS = ["Uploading your document", "Sending the file to OCR", "Waiting for the OCR response"];
 
-/** Full-card overlay while the server uploads and extracts; cycles through what it is doing. */
-function Reading() {
+type OcrWatch = { tender: { ocrStatus: string; documents: { ocrJson?: string }[] } };
+
+function stillReading(data: OcrWatch) {
+  return data.tender.ocrStatus === "PROCESSING" || data.tender.documents.some((document) => (document.ocrJson ?? "").trim() === "PENDING");
+}
+
+/** Full-card overlay until the OCR response is stored. */
+function Reading({ hold }: { hold: boolean }) {
   const { pending } = useFormPending();
+  const active = pending || hold;
   const [step, setStep] = useState(0);
   useEffect(() => {
-    if (!pending) {
+    if (!active) {
       setStep(0);
       return;
     }
-    const timer = setInterval(() => setStep((current) => Math.min(current + 1, READING_STEPS.length - 1)), 1100);
+    if (hold) {
+      setStep(READING_STEPS.length - 1);
+      return;
+    }
+    const timer = setInterval(() => setStep((current) => Math.min(current + 1, READING_STEPS.length - 2)), 1100);
     return () => clearInterval(timer);
-  }, [pending]);
-  if (!pending) return null;
+  }, [active, hold]);
+  if (!active) return null;
   return (
     <div className="reading" role="status">
       <div className="reading-doc" aria-hidden>
@@ -42,12 +54,35 @@ export function CreateForm() {
   const formRef = useRef<HTMLFormElement>(null);
   const [names, setNames] = useState<string[]>([]);
   const [over, setOver] = useState(false);
+  const [hold, setHold] = useState("");
   const [state, action] = useActionState(createTenderAction, null as ActionState);
   const [sample, sampleAction] = useActionState(createSampleAction, null as ActionState);
   useEffect(() => {
     const next = state?.tenderId && state.ok ? state.tenderId : sample?.tenderId && sample.ok ? sample.tenderId : "";
-    if (next) navigate(`/tenders/${next}?tab=details&new=1`);
-  }, [state, sample, navigate]);
+    if (next) setHold(next);
+  }, [state, sample]);
+  useEffect(() => {
+    if (!hold) return;
+    let cancelled = false;
+    let timer = 0;
+    const look = async () => {
+      try {
+        const data = await apiGet<OcrWatch>(`/tenders/${encodeURIComponent(hold)}`);
+        if (!stillReading(data)) {
+          if (!cancelled) navigate(`/tenders/${hold}?tab=details&new=1`);
+          return;
+        }
+      } catch {
+        // The file is saved. Keep the loading screen until the OCR response can be read.
+      }
+      if (!cancelled) timer = window.setTimeout(() => void look(), 2000);
+    };
+    timer = window.setTimeout(() => void look(), 800);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [hold, navigate]);
   const failed = state?.error ? state : sample?.error ? sample : null;
   return (
     <div className="stack">
@@ -74,7 +109,7 @@ export function CreateForm() {
         </div>
       ) : null}
       <form ref={formRef} action={action} className="panel upload-card">
-        <Reading />
+        <Reading hold={Boolean(hold)} />
         <label
           className={`drop-hero ${over ? "over" : ""} ${names.length ? "has-file" : ""}`}
           onDragOver={() => setOver(true)}

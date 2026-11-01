@@ -1,5 +1,5 @@
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { lazy, Suspense, type CSSProperties } from "react";
+import { lazy, Suspense, useEffect, type CSSProperties } from "react";
 import { documentUrl, toCalendar, useApi } from "@client/api/client";
 import { useActor } from "@client/api/session";
 import type {
@@ -81,7 +81,25 @@ export default function TenderPage() {
   const [search] = useSearchParams();
   const actor = useActor();
   const { data, error, reload } = useApi<Data>(`/tenders/${encodeURIComponent(id)}`);
+  const readingOcr = Boolean(data?.tender.ocrStatus === "PROCESSING" || data?.tender.documents.some((document) => document.ocrJson?.trim() === "PENDING"));
+  useEffect(() => {
+    if (!readingOcr) return;
+    const timer = window.setInterval(() => void reload(), 3000);
+    return () => window.clearInterval(timer);
+  }, [readingOcr, reload]);
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
+  if (readingOcr) {
+    return (
+      <section className="panel reading-wait" role="status">
+        <div className="reading-doc" aria-hidden>
+          <i /><i /><i /><i />
+          <span className="scan" />
+        </div>
+        <strong>Waiting for the OCR response…</strong>
+        <p className="muted">This stays until the extract comes back. The tender is shown after that.</p>
+      </section>
+    );
+  }
   const query = { notice: search.get("notice"), error: search.get("error"), tab: search.get("tab"), new: search.get("new") };
   const { tender, users, fieldEditor } = data;
   const calendar = toCalendar(data.calendar);
@@ -605,7 +623,10 @@ function formatOcr(raw: string) {
 }
 
 function OcrResults({ documents }: { documents: TenderDocument[] }) {
-  const shown = documents.filter((document) => document.ocrJson?.trim());
+  const shown = documents.filter((document) => {
+    const raw = document.ocrJson?.trim();
+    return Boolean(raw && raw !== "PENDING");
+  });
   if (!shown.length) return null;
   return (
     <section className="panel stack">

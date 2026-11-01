@@ -215,6 +215,8 @@ async function postUntilResult(body: object) {
       const text = await response.text();
       const raw = prettyJson(text).slice(0, 200_000);
       lastRaw = raw;
+      // A gateway timeout sometimes still carries the extract. A real result ends the wait.
+      if (looksLikeOcr(text)) return { ok: true, text, raw, note: "" };
       if (RETRY_STATUS.has(response.status)) {
         console.log(`OCR gateway ${response.status} on attempt ${attempt}; waiting and posting again for the result.`);
         await sleep(Math.min(20_000, 4_000 * attempt));
@@ -231,6 +233,15 @@ async function postUntilResult(body: object) {
     }
   }
   return { ok: false, text: "", raw: lastRaw, note: "OCR gateway timed out before a result came back. The extract will be tried again on the next upload." };
+}
+
+function looksLikeOcr(text: string) {
+  try {
+    const payload = JSON.parse(text) as OcrPayload;
+    return Boolean(payload.ProcessedAttachments?.some((item) => item.Extracted_Data?.length) || payload.message?.some((item) => item.ERROR_MESSAGE || item.DOCUMENT_NAME));
+  } catch {
+    return false;
+  }
 }
 
 function prettyJson(text: string) {
