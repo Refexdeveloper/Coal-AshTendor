@@ -43,7 +43,7 @@ import { inr, parseInr } from "@client/utils/money";
 import { Status } from "@client/components/base/pill";
 import { FieldEditor } from "@client/components/feature/field-editor";
 import { Countdown } from "@client/components/feature/countdown";
-import { StageTrack } from "@client/components/feature/stage-track";
+import { StageTrack, type StagePlan } from "@client/components/feature/stage-track";
 import type { TaskContext } from "@client/components/feature/task-kit";
 import { ManagePanel, TaskCards, UploadForm } from "@client/components/feature/workbench";
 import { ExecutiveBrief, StageHistory } from "@client/pages/tenders/ExecutiveTender";
@@ -82,6 +82,7 @@ type Data = {
   bgRequiresBoth: boolean;
   fieldEditor: boolean;
   checklist: ChecklistItem[];
+  plan: StagePlan;
 };
 
 export default function TenderPage() {
@@ -206,6 +207,10 @@ export default function TenderPage() {
           <div className="hero-chips">
             <span className="id-chip">{tender.recordId}</span>
             <Status map={OVERALL} value={tender.overallStatus} />
+            <span className={`line-chip ${data.plan.line === "COAL" ? "coal" : "ash"}`}>
+              {data.plan.line === "COAL" ? "Coal business" : "Ash business"}
+              {data.plan.state ? <small>· Sales: {data.plan.state}</small> : null}
+            </span>
             {tender.source === "CRAWLER" ? <span className="pill info">Discovered on portal</span> : null}
           </div>
           <h1>
@@ -256,7 +261,7 @@ export default function TenderPage() {
       ) : null}
 
       <section className="panel track-panel journey-panel">
-        <StageTrack tender={tender} users={users} />
+        <StageTrack tender={tender} users={users} plan={data.plan} />
       </section>
 
       <section className="facts">
@@ -290,7 +295,7 @@ export default function TenderPage() {
 
       <div key={tab} className="tab-body">
       {tab === "brief" ? <ExecutiveBrief tender={tender} users={users} calendar={calendar} /> : null}
-      {tab === "stages" ? <StageHistory tender={tender} users={users} calendar={calendar} /> : null}
+      {tab === "stages" ? <StageHistory tender={tender} users={users} calendar={calendar} plan={data.plan} /> : null}
       {tab === "overview" ? (
         <div className="overview">
           <div className="stack">
@@ -322,6 +327,7 @@ export default function TenderPage() {
                 tenderId={tender.id}
                 users={users.map((user) => ({ id: user.id, name: user.name, role: user.role }))}
                 submitterId={tender.submitterId}
+                businessLine={data.plan.line}
                 bidSubmitted={bidSubmitted}
               />
             ) : null}

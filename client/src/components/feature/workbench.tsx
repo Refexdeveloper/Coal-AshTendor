@@ -84,11 +84,13 @@ export function ManagePanel({
   tenderId,
   users,
   submitterId,
+  businessLine,
   bidSubmitted,
 }: {
   tenderId: string;
   users: { id: string; name: string; role: string }[];
   submitterId: string | null;
+  businessLine: string;
   bidSubmitted: boolean;
 }) {
   const current = users.find((user) => user.id === submitterId);
@@ -97,10 +99,11 @@ export function ManagePanel({
       <summary>
         <span>
           <strong>Manage this tender</strong>
-          <small>Bid submitter{current ? `: ${current.name}` : " not assigned"} · close without bidding{bidSubmitted ? " · record outcome" : ""}</small>
+          <small>{businessLine === "COAL" ? "Coal" : "Ash"} team · bid submitter{current ? `: ${current.name}` : " not assigned"} · close without bidding{bidSubmitted ? " · record outcome" : ""}</small>
         </span>
       </summary>
       <div className="split-2">
+        <LineForm tenderId={tenderId} businessLine={businessLine} />
         <AssignForm tenderId={tenderId} users={users} submitterId={submitterId} />
         {bidSubmitted ? <OutcomeForm tenderId={tenderId} /> : <CloseForm tenderId={tenderId} />}
         {bidSubmitted ? <CloseForm tenderId={tenderId} /> : null}
@@ -208,7 +211,7 @@ function TaskForm({
       <BoundForm>
         <input type="hidden" name="tenderId" value={tenderId} />
         <input type="hidden" name="taskId" value={task.id} />
-        {task.stage === "EMD_BG" && bgRequiresBoth ? <p className="muted wide">Both Krishnanath and Surya M must verify this guarantee.</p> : null}
+        {task.stage === "EMD_BG" && bgRequiresBoth ? <p className="muted wide">Both Krishnananth S and Surya M must verify this guarantee.</p> : null}
         {task.stage === "EMD_EXEMPTION" ? (
           <label className="wide">
             Exemption basis
@@ -281,6 +284,26 @@ function TaskForm({
     );
   }
   return null;
+}
+
+function LineForm({ tenderId, businessLine }: { tenderId: string; businessLine: string }) {
+  return (
+    <BoundForm>
+      <h3 className="wide">Business line</h3>
+      <p className="muted wide">Set from the notice text. Ash and Coal tenders go to different reviewers, final costing and bid submitters from the next stage on.</p>
+      <input type="hidden" name="tenderId" value={tenderId} />
+      <label className="wide">
+        Line
+        <select name="businessLine" defaultValue={businessLine}>
+          <option value="ASH">Ash</option>
+          <option value="COAL">Coal</option>
+        </select>
+      </label>
+      <Submit name="intent" value="set-line">
+        Save business line
+      </Submit>
+    </BoundForm>
+  );
 }
 
 function AssignForm({

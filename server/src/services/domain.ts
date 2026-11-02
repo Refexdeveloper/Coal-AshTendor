@@ -6,6 +6,7 @@ import { NOT_FOUND, TENDER_FIELDS } from "../utils/fields";
 import { allowedUpload, deleteStored, pagesFromBuffer, sha256, storeFile } from "./files";
 import { extractUploadedFile, overlayHits } from "./ocr";
 import { CLOSED_OVERALL, CREATOR_ROLES, EDITOR_ROLES, MANAGER_ROLES, OPEN_TASK } from "../utils/labels";
+import { BUSINESS_LINES, detectLine, ownersFor, type BusinessLine } from "./team";
 import { emailsFor, isStepAction, mailOcrResult, notifyAddresses, notifyStepMoved } from "./notify";
 
 export class WorkflowError extends Error {
@@ -65,12 +66,6 @@ async function minutesFor(stage: string, calendar: Calendar) {
   if (!policy) return dayLengthMinutes(calendar);
   if (policy.durationUnit === "HOURS") return policy.durationValue * 60;
   return policy.durationValue * dayLengthMinutes(calendar);
-}
-
-async function mustUser(personKey: string) {
-  const user = await db.user.findFirst({ where: { personKey, active: true } });
-  if (!user) throw new WorkflowError(`No active user is configured for ${personKey}.`);
-  return user;
 }
 
 function parseIds(value: string) {
@@ -155,13 +150,13 @@ export function classifyEmd(fields: FieldRow[]) {
 }
 
 const EMD_PLAN = {
-  BG: { stage: "EMD_BG", title: "Prepare bank guarantee", emdStatus: "PENDING_BG", owners: ["krishnanath", "surya"] },
-  ISB: { stage: "EMD_ISB", title: "Prepare ISB / surety bond", emdStatus: "PENDING_ISB", owners: ["sanjeev"] },
-  EXEMPTION: { stage: "EMD_EXEMPTION", title: "Verify EMD exemption", emdStatus: "EXEMPTION_VERIFICATION", owners: ["krishnanath", "surya"] },
-  DD: { stage: "EMD_OTHER", title: "Prepare demand draft", emdStatus: "IN_PROGRESS", owners: ["krishnanath", "surya"] },
-  ONLINE: { stage: "EMD_OTHER", title: "Prepare online EMD payment", emdStatus: "IN_PROGRESS", owners: ["krishnanath", "surya"] },
-  OTHER: { stage: "EMD_OTHER", title: "Prepare EMD instrument", emdStatus: "IN_PROGRESS", owners: ["krishnanath", "surya"] },
-  UNCLEAR: { stage: "EMD_CLARIFICATION", title: "Clarify EMD requirement", emdStatus: "CLARIFICATION_REQUIRED", owners: ["vishesh"] },
+  BG: { stage: "EMD_BG", title: "Prepare bank guarantee", emdStatus: "PENDING_BG" },
+  ISB: { stage: "EMD_ISB", title: "Prepare ISB / surety bond", emdStatus: "PENDING_ISB" },
+  EXEMPTION: { stage: "EMD_EXEMPTION", title: "Verify EMD exemption", emdStatus: "EXEMPTION_VERIFICATION" },
+  DD: { stage: "EMD_OTHER", title: "Prepare demand draft", emdStatus: "IN_PROGRESS" },
+  ONLINE: { stage: "EMD_OTHER", title: "Prepare online EMD payment", emdStatus: "IN_PROGRESS" },
+  OTHER: { stage: "EMD_OTHER", title: "Prepare EMD instrument", emdStatus: "IN_PROGRESS" },
+  UNCLEAR: { stage: "EMD_CLARIFICATION", title: "Clarify EMD requirement", emdStatus: "CLARIFICATION_REQUIRED" },
 } as const;
 
 async function createTask(
@@ -558,11 +553,11 @@ async function finishExtraction(
 
   const calendar = await getCalendar();
   const coordinator = await db.user.findFirst({ where: { personKey: "coordinator", active: true } });
-  const vishesh = await db.user.findFirst({ where: { personKey: "vishesh", active: true } });
-  const validationOwners =
-    source === "CRAWLER"
-      ? [vishesh?.id].filter((id): id is string => Boolean(id))
-      : [...new Set([actor.id, coordinator?.id].filter((id): id is string => Boolean(id)))];
+  const line = await detectTenderLine(tenderId);
+  const routed = await db.tender.update({ where: { id: tenderId }, data: { businessLine: line } });
+  const listed = await ownersFor("DATA_VALIDATION", routed, "COORDINATOR");
+  // The uploader can always finish validating their own upload.
+  const validationOwners = [...new Set(source === "CRAWLER" ? listed : [actor.id, ...listed])];
   if (!validationOwners.length) throw new WorkflowError("No reviewer is available to validate this tender.");
 
   const validationPlan = await plannedDue("DATA_VALIDATION", calendar);
@@ -589,9 +584,7 @@ async function finishExtraction(
         branch: "EXCEPTION",
         stage: "OCR_EXCEPTION",
         title: "Resolve document extraction failure",
-        assigneeIds: [...admins.map((user) => user.id), coordinator?.id, source === "CRAWLER" ? vishesh?.id : undefined].filter(
-          (id): id is string => Boolean(id),
-        ),
+        assigneeIds: [...new Set([...admins.map((user) => user.id), ...validationOwners, coordinator?.id].filter((id): id is string => Boolean(id)))],
         ...exceptionPlan,
       });
       if (exception.created) tasks.push(exception.task);
@@ -722,9 +715,8 @@ export async function submitForRelevance(actor: Actor, taskId: string, confirmed
 
   const calendar = await getCalendar();
   const plan = await plannedDue("RELEVANCE", calendar);
-  const vishesh = await mustUser("vishesh");
-  const ranjana = await mustUser("ranjana");
-  const reviewers = task.tender.source === "CRAWLER" ? [vishesh.id] : [vishesh.id, ranjana.id];
+  const reviewers = await ownersFor("RELEVANCE", task.tender, "REVIEWER");
+  if (!reviewers.length) throw new WorkflowError("No relevance reviewer can sign in. Add one in Administration.");
   const relevance = await db.$transaction(async (tx) => {
     const closed = await tx.workflowTask.updateMany({
       where: { id: task.id, status: { in: OPEN_TASK } },
@@ -807,12 +799,15 @@ export async function decideRelevance(actor: Actor, taskId: string, decision: "A
 
   const kind = classifyEmd(task.tender.fields);
   const plan = EMD_PLAN[kind];
-  const owners = await Promise.all(plan.owners.map((key) => mustUser(key)));
-  const sundar = await mustUser("sundarlingam");
-  const sales = await db.user.findMany({ where: { role: "SALES", active: true } });
-  const heads = await db.user.findMany({ where: { role: "DEPT_HEAD", active: true } });
+  const owners = await ownersFor(plan.stage, task.tender, "ACCOUNTS");
+  const drafters = await ownersFor("DRAFT_COSTING", task.tender, "COSTING");
+  const sales = await ownersFor("SALES_INPUT", task.tender, "SALES");
+  const heads = await ownersFor("DEPT_APPROVAL", task.tender, "DEPT_HEAD");
+  if (!owners.length) throw new WorkflowError("Nobody who prepares this EMD type can sign in. Add them in Administration.");
+  if (!drafters.length) throw new WorkflowError("Add an active costing user before approving tenders.");
   if (!sales.length) throw new WorkflowError("Add an active Sales user before approving tenders.");
   if (!heads.length) throw new WorkflowError("Add an active Department Head before approving tenders.");
+  const submitter = task.tender.submitterId ? null : (await ownersFor("BID_SUBMISSION", task.tender, "BID_SUBMITTER"))[0] ?? null;
   const draft = await plannedDue("DRAFT_COSTING", calendar);
   const emd = await plannedDue(plan.stage, calendar);
   const tasks = await db.$transaction(async (tx) => {
@@ -830,8 +825,16 @@ export async function decideRelevance(actor: Actor, taskId: string, decision: "A
         costingStatus: "DRAFT_IN_PROGRESS",
         emdStatus: plan.emdStatus,
         emdType: kind,
+        ...(submitter ? { submitterId: submitter } : {}),
       },
     });
+    if (submitter) {
+      await tx.bidSubmission.upsert({
+        where: { tenderId: task.tenderId },
+        create: { tenderId: task.tenderId, submitterId: submitter, status: task.tender.bidStatus },
+        update: { submitterId: submitter },
+      });
+    }
     await tx.emdRecord.upsert({
       where: { tenderId: task.tenderId },
       create: { tenderId: task.tenderId, instrumentType: kind, preparationStatus: "NOT_STARTED" },
@@ -846,7 +849,7 @@ export async function decideRelevance(actor: Actor, taskId: string, decision: "A
       branch: "COSTING",
       stage: "DRAFT_COSTING",
       title: "Draft costing",
-      assigneeIds: [sundar.id],
+      assigneeIds: drafters,
       ...draft,
     });
     const instrument = await createTask(tx, {
@@ -854,7 +857,7 @@ export async function decideRelevance(actor: Actor, taskId: string, decision: "A
       branch: "EMD",
       stage: plan.stage,
       title: plan.title,
-      assigneeIds: owners.map((owner) => owner.id),
+      assigneeIds: owners,
       ...emd,
     });
     if (costing.created) created.push(costing.task);
@@ -922,12 +925,14 @@ export async function completeCosting(
   if (task.stage === "FINAL_COSTING" && amount == null) throw new WorkflowError("Enter the final costing amount as a number, without crore or lakh wording.");
   const storedPath = await storeFile(task.tenderId, input.file.name, input.file.buffer);
   const version = (await db.costingRecord.count({ where: { tenderId: task.tenderId } })) + 1;
+  const routing = await db.tender.findUnique({ where: { id: task.tenderId } });
   const nextStage =
     task.stage === "DRAFT_COSTING"
-      ? { stage: "SALES_INPUT", title: "Sales costing input", status: "SALES_PENDING", owners: (await db.user.findMany({ where: { role: "SALES", active: true } })).map((user) => user.id) }
+      ? { stage: "SALES_INPUT", title: "Sales costing input", status: "SALES_PENDING", owners: await ownersFor("SALES_INPUT", routing, "SALES") }
       : task.stage === "SALES_INPUT"
-        ? { stage: "FINAL_COSTING", title: "Final costing", status: "FINAL_IN_PROGRESS", owners: [(await mustUser("vishesh")).id] }
-        : { stage: "DEPT_APPROVAL", title: "Department head approval", status: "PENDING_DEPT", owners: (await db.user.findMany({ where: { role: "DEPT_HEAD", active: true } })).map((user) => user.id) };
+        ? { stage: "FINAL_COSTING", title: "Final costing", status: "FINAL_IN_PROGRESS", owners: await ownersFor("FINAL_COSTING", routing, "COSTING") }
+        : { stage: "DEPT_APPROVAL", title: "Department head approval", status: "PENDING_DEPT", owners: await ownersFor("DEPT_APPROVAL", routing, "DEPT_HEAD") };
+  if (!nextStage.owners.length) throw new WorkflowError(`Nobody for ${nextStage.title.toLowerCase()} can sign in. Add them in Administration.`);
   const plan = await plannedDue(nextStage.stage, calendar);
   const created = await db.$transaction(async (tx) => {
     const document = await tx.tenderDocument.create({
@@ -1019,8 +1024,8 @@ export async function decideDepartment(
     });
     await evaluateReadiness(task.tenderId);
   } else if (decision === "REJECTED") {
-    const vishesh = await mustUser("vishesh");
-    const coordinator = await mustUser("coordinator");
+    const routing = await db.tender.findUnique({ where: { id: task.tenderId } });
+    const deciders = await ownersFor("BUSINESS_DECISION", routing, "DEPT_HEAD");
     const plan = await plannedDue("BUSINESS_DECISION", calendar);
     const follow = await db.$transaction(async (tx) => {
       const closed = await tx.workflowTask.updateMany({
@@ -1040,7 +1045,7 @@ export async function decideDepartment(
         branch: "COSTING",
         stage: "BUSINESS_DECISION",
         title: "Business decision after costing rejection",
-        assigneeIds: [vishesh.id, coordinator.id],
+        assigneeIds: deciders.length ? deciders : [actor.id],
         ...plan,
       });
       await audit(tx, { tenderId: task.tenderId, actor, action: "Rejected final costing", entity: "Approval", detail: comments.trim() });
@@ -1049,12 +1054,9 @@ export async function decideDepartment(
     if (follow) await notifyTasks(task.tenderId, [follow], calendar);
   } else {
     const stage = ["DRAFT_COSTING", "SALES_INPUT", "FINAL_COSTING"].includes(returnStage) ? returnStage : "FINAL_COSTING";
-    const owners =
-      stage === "DRAFT_COSTING"
-        ? [(await mustUser("sundarlingam")).id]
-        : stage === "SALES_INPUT"
-          ? (await db.user.findMany({ where: { role: "SALES", active: true } })).map((user) => user.id)
-          : [(await mustUser("vishesh")).id];
+    const routing = await db.tender.findUnique({ where: { id: task.tenderId } });
+    const owners = await ownersFor(stage, routing, stage === "SALES_INPUT" ? "SALES" : "COSTING");
+    if (!owners.length) throw new WorkflowError("Nobody for that costing step can sign in. Add them in Administration.");
     const plan = settings?.revisionResetsSla === false && stage === "FINAL_COSTING"
       ? { dueAt: task.dueAt, slaMinutes: task.slaMinutes }
       : await plannedDue(stage, calendar);
@@ -1237,7 +1239,8 @@ export async function resolveEmdClarification(actor: Actor, taskId: string, choi
   const kind = (["BG", "ISB", "EXEMPTION", "DD", "ONLINE", "OTHER"] as const).find((item) => item === choice);
   if (!kind) throw new WorkflowError("Choose an EMD type. The system will not assume one.");
   const plan = EMD_PLAN[kind];
-  const owners = await Promise.all(plan.owners.map((key) => mustUser(key)));
+  const owners = await ownersFor(plan.stage, await db.tender.findUnique({ where: { id: task.tenderId } }), "ACCOUNTS");
+  if (!owners.length) throw new WorkflowError("Nobody who prepares this EMD type can sign in. Add them in Administration.");
   const calendar = await getCalendar();
   const due = await plannedDue(plan.stage, calendar);
   const formValue =
@@ -1273,7 +1276,7 @@ export async function resolveEmdClarification(actor: Actor, taskId: string, choi
       branch: "EMD",
       stage: plan.stage,
       title: plan.title,
-      assigneeIds: owners.map((owner) => owner.id),
+      assigneeIds: owners,
       ...due,
     });
     await audit(tx, { tenderId: task.tenderId, actor, action: "Clarified EMD requirement", entity: "EmdRecord", detail: `${formValue}. ${comments.trim()}` });
@@ -1298,9 +1301,9 @@ export function readinessChecklist(tender: ReadinessInput) {
   const conflicts = tender.fields.filter((field) => field.validationStatus === "CONFLICT");
   const deadlineOpen = Boolean(tender.bidSubmissionEnd && tender.bidSubmissionEnd.getTime() > Date.now());
   return [
-    { label: "Relevance approved", gap: "Relevance is not approved.", ok: tender.relevanceStatus === "APPROVED", owner: "Vishesh or Ranjana" },
+    { label: "Relevance approved", gap: "Relevance is not approved.", ok: tender.relevanceStatus === "APPROVED", owner: "Relevance reviewers (Ash: Ranjana or Vishesh · Coal: Aditya)" },
     { label: "Final costing approved by the Department Head", gap: "Final costing is not approved by the Department Head.", ok: tender.costingStatus === "APPROVED", owner: "Costing team, then Department Head" },
-    { label: "EMD prepared and verified, or exemption documented", gap: "EMD is not prepared and verified, and no exemption is recorded.", ok: EMD_READY.includes(tender.emdStatus), owner: "Accounts or Sanjeev" },
+    { label: "EMD prepared and verified, or exemption documented", gap: "EMD is not prepared and verified, and no exemption is recorded.", ok: EMD_READY.includes(tender.emdStatus), owner: "Ranjana, Krishnananth / Surya (BG) or Sanjeev (ISB)" },
     {
       label: "Mandatory tender information validated",
       gap: conflicts.length
@@ -1364,6 +1367,32 @@ export async function evaluateReadiness(tenderId: string) {
       extra: { dueAt: formatWhen(tender.bidSubmissionEnd, calendar.timeZone), taskTitle: task.task.title },
     });
   }
+}
+
+/** Ash or Coal from the project name, work description and scope. */
+async function detectTenderLine(tenderId: string): Promise<BusinessLine> {
+  const tender = await db.tender.findUnique({ where: { id: tenderId }, include: { fields: true } });
+  if (!tender) return "ASH";
+  const read = ["project_name", "work_description", "scope"];
+  const text = [tender.projectName, ...tender.fields.filter((field: FieldRow) => read.includes(field.fieldKey)).map((field: FieldRow) => effectiveValue(field))].join(" ");
+  return detectLine(text);
+}
+
+/** Moves a tender between the Ash and Coal teams. Later stages are routed to the new team. */
+export async function setBusinessLine(actor: Actor, tenderId: string, value: string) {
+  if (!MANAGER_ROLES.includes(actor.role)) throw new WorkflowError("You cannot change the business line.");
+  const line = BUSINESS_LINES.find((item) => item === value);
+  if (!line) throw new WorkflowError("Choose Ash or Coal.");
+  const tender = await db.tender.findUnique({ where: { id: tenderId } });
+  if (!tender || CLOSED_OVERALL.includes(tender.overallStatus)) throw new WorkflowError("This tender is closed.");
+  if (tender.businessLine === line) return;
+  // A submitter picked for the old line follows the line; one chosen by hand stays.
+  const before = (await ownersFor("BID_SUBMISSION", tender))[0];
+  const after = (await ownersFor("BID_SUBMISSION", { ...tender, businessLine: line }))[0];
+  const submitterId = tender.submitterId && tender.submitterId === before && after && tender.bidStatus === "NOT_YET_SUBMITTED" ? after : tender.submitterId;
+  await db.tender.update({ where: { id: tenderId }, data: { businessLine: line, submitterId } });
+  if (submitterId && submitterId !== tender.submitterId) await db.bidSubmission.updateMany({ where: { tenderId }, data: { submitterId } });
+  await audit(db, { tenderId, actor, action: "Changed business line", entity: "Tender", detail: `${tender.businessLine === "COAL" ? "Coal" : "Ash"} → ${line === "COAL" ? "Coal" : "Ash"}` });
 }
 
 export async function assignSubmitter(actor: Actor, tenderId: string, submitterId: string) {

@@ -14,7 +14,7 @@ export function IngestForm({ portals }: { portals: { name: string }[] }) {
   return (
     <form action={action} className="panel form-grid">
       <h2 className="wide">Register a discovered tender</h2>
-      <p className="muted wide">This opens the same Phase 1 workflow and assigns validation to Vishesh. It does not crawl the portal.</p>
+      <p className="muted wide">This opens the same Phase 1 workflow and assigns validation to the Ash or Coal team. It does not crawl the portal.</p>
       {state?.error ? (
         <p className="banner bad wide">
           {state.error} {state.tenderId ? <Link to={`/tenders/${state.tenderId}`}>Open it</Link> : null}
@@ -50,7 +50,7 @@ export function IngestForm({ portals }: { portals: { name: string }[] }) {
         <input name="files" type="file" />
       </label>
       <div className="wide">
-        <Submit>Create and assign to Vishesh</Submit>
+        <Submit>Create and assign</Submit>
       </div>
     </form>
   );

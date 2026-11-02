@@ -99,7 +99,7 @@ export function RelevanceReview({ taskId, tenderId, ctx }: { taskId: string; ten
         <b>What happens next:</b>{" "}
         {rejecting
           ? "the tender moves to Rejected / Closed and the uploader is emailed your reason."
-          : "Ranjana and Sundarlingam get the draft costing task, and the EMD task goes to its owner."}
+          : "Sundaralingam gets the draft costing task, the EMD task goes to its owner, and the bid submitter is set for the business line."}
       </div>
       <div className="actions wide">
         {rejecting ? (
@@ -205,9 +205,9 @@ export function DeptReview({ taskId, tenderId, ctx }: { taskId: string; tenderId
         <label className="wide">
           Send it back to
           <select name="returnStage" defaultValue="FINAL_COSTING">
-            <option value="FINAL_COSTING">Final costing · Vishesh</option>
-            <option value="SALES_INPUT">Sales costing input · Sales Team</option>
-            <option value="DRAFT_COSTING">Draft costing · Ranjana and Sundarlingam</option>
+            <option value="FINAL_COSTING">Final costing · Ash: Sundaralingam & Waseem · Coal: Aditya</option>
+            <option value="SALES_INPUT">Sales costing input · state sales team</option>
+            <option value="DRAFT_COSTING">Draft costing · Sundaralingam</option>
           </select>
         </label>
       ) : null}

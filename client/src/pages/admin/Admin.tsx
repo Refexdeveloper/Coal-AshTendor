@@ -38,7 +38,7 @@ type Run = (name: string) => (formData: FormData) => Promise<void>;
 const DECISIONS = [
   "Official working hours and the holiday calendar are still to be confirmed. The default is 09:00–18:00, Monday to Friday, Asia/Kolkata.",
   "Escalation mailboxes below are placeholders until the business owner confirms them.",
-  "Bank guarantee tasks go to both Krishnanath and Surya M. Either can complete the task unless “both must verify” is turned on.",
+  "Bank guarantee tasks go to both Krishnananth S and Surya M. Either can complete the task unless “both must verify” is turned on.",
   "EMD completion means the instrument is prepared and internally verified. Submission to the authority is recorded separately.",
   "Exemption still needs a written basis and evidence. It is verified by Accounts.",
   "Department Head is the seeded role. Delegation is a second active Department Head user.",

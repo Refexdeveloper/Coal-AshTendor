@@ -3,21 +3,10 @@ import bcrypt from "bcryptjs";
 import { db } from "../db";
 import { deliver } from "./notify";
 import { ROLES } from "../utils/labels";
+import { TEAM } from "./team";
 
 /** Same initial password shown on the sign-in page. */
 export const INITIAL_PASSWORD = "CoalAsh@2026";
-
-const DEFAULT_LOGINS = [{ personKey: "lokesh", name: "Lokesh B", email: "lokesh.b@refex.co.in", role: "BID_SUBMITTER" }];
-
-/**
- * Real mailboxes for the people the workflow addresses by personKey.
- * The key stays the same so existing task routing keeps working.
- */
-const WORKFLOW_SEATS = [
-  { personKey: "vishesh", demoKey: "vishesh-demo", name: "Vishesh H Mehta", email: "vishesh.h@refex.co.in", role: "REVIEWER" },
-  { personKey: "ranjana", demoKey: "ranjana-demo", name: "Ranjana Singh", email: "ranjana.s@refex.co.in", role: "REVIEWER" },
-  { personKey: "sundarlingam", demoKey: "sundarlingam-demo", name: "Sundaralingam G", email: "sundaralingam.g@refex.co.in", role: "COSTING" },
-];
 
 function personKeyFor(email: string) {
   const base = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 40);
@@ -97,50 +86,49 @@ export async function updateUserAccess(actorId: string, input: { userId: string;
   return { ok: `${user.name} can sign in as ${user.email}. Password: ${INITIAL_PASSWORD}.${sent}` };
 }
 
-/** Inserts built-in logins that are not in the database yet, and points relevance review at the real reviewer mailbox. */
+/** Makes sure everyone on the responsibility list can sign in. Runs on every start. */
 export async function ensureDefaultUsers() {
-  for (const login of DEFAULT_LOGINS) {
-    const existing = await db.user.findFirst({ where: { email: login.email } });
-    if (existing) continue;
-    const result = await createAccount(login);
-    if (result.ok) console.log(`[db] Added default login ${login.email}`);
-  }
-  for (const seat of WORKFLOW_SEATS) await ensureWorkflowSeat(seat);
+  for (const person of TEAM) await ensureTeamMember(person).catch((error) => console.error(`[db] ${person.email}:`, error instanceof Error ? error.message : error));
 }
 
 /**
- * Points a workflow personKey at a real mailbox.
- * Only replaces the demo coalandash.local account, so a later role change in Administration is left alone.
+ * Creates or switches on a roster member. A role set later in Administration is left alone,
+ * except for people still waiting for access (PENDING). A legacy personKey held by a demo
+ * coalandash.local account moves to the real mailbox, with that account's open tasks.
  */
-async function ensureWorkflowSeat(seat: (typeof WORKFLOW_SEATS)[number]) {
-  const { personKey, demoKey, name, email, role } = seat;
-  const target = await db.user.findFirst({ where: { email } });
-  const holder = await db.user.findFirst({ where: { personKey } });
-  if (holder && holder.id !== target?.id && holder.email.toLowerCase().endsWith("@coalandash.local")) {
-    await db.user.update({ where: { id: holder.id }, data: { personKey: demoKey, active: false } });
-    if (target) await moveOpenAssignments(holder.id, target.id);
+async function ensureTeamMember(person: (typeof TEAM)[number]) {
+  const { email, name, role } = person;
+  const key = "key" in person ? person.key : undefined;
+  let demo: { id: string } | null = null;
+  let user = await db.user.findFirst({ where: { email } });
+  if (key) {
+    const holder = await db.user.findFirst({ where: { personKey: key } });
+    if (holder && holder.id !== user?.id && holder.email.toLowerCase().endsWith("@coalandash.local")) {
+      const spare = (await db.user.findFirst({ where: { personKey: `${key}-demo` } })) ? `${key}-demo-${Date.now().toString(36)}` : `${key}-demo`;
+      await db.user.update({ where: { id: holder.id }, data: { personKey: spare, active: false } });
+      demo = holder;
+    }
   }
-  if (!target) {
-    const created = await createAccount({ personKey, name, email, role });
-    const createdUser = await db.user.findFirst({ where: { email } });
-    if (holder && createdUser && holder.id !== createdUser.id) await moveOpenAssignments(holder.id, createdUser.id);
-    if (created.ok) console.log(`[db] ${name} is ${email}`);
-    return;
+  if (!user) {
+    const free = key && !(await db.user.findFirst({ where: { personKey: key } }));
+    const created = await createAccount({ name, email, role, personKey: free ? key : undefined });
+    if (created.ok) console.log(`[db] Added ${name} (${email}) as ${ROLES[role] ?? role}`);
+    user = await db.user.findFirst({ where: { email } });
+  } else {
+    const waiting = !ROLES[user.role];
+    const data: Record<string, unknown> = {};
+    if (!user.active) {
+      data.active = true;
+      data.passwordHash = bcrypt.hashSync(INITIAL_PASSWORD, 10);
+    }
+    if (waiting) data.role = role;
+    if (key && user.personKey !== key && !(await db.user.findFirst({ where: { personKey: key } }))) data.personKey = key;
+    if (Object.keys(data).length) {
+      await db.user.update({ where: { id: user.id }, data });
+      console.log(`[db] Updated ${user.name} (${email})`);
+    }
   }
-  if (target.personKey === personKey && target.role === role && target.active) return;
-  const blocker = await db.user.findFirst({ where: { personKey } });
-  if (blocker && blocker.id !== target.id) return;
-  const turningOn = !target.active;
-  await db.user.update({
-    where: { id: target.id },
-    data: {
-      personKey,
-      role,
-      active: true,
-      ...(turningOn ? { passwordHash: bcrypt.hashSync(INITIAL_PASSWORD, 10) } : {}),
-    },
-  });
-  console.log(`[db] ${ROLES[role] ?? role} is ${email}`);
+  if (demo && user) await moveOpenAssignments(demo.id, user.id);
 }
 
 /** Open tasks addressed to the demo reviewer follow the real mailbox. */

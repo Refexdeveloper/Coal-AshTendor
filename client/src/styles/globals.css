@@ -2193,3 +2193,9 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 @media (prefers-reduced-motion: reduce) {
   .exec-metric, .exec-bars li, .exec-bars li i, .exec-duration-bar i, .exec-stage, .exec-stage-node { animation: none !important; }
 }
+
+/* Business line chip in the tender hero */
+.line-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-size: 0.76rem; font-weight: 700; border: 1px solid; backdrop-filter: blur(6px); }
+.line-chip small { font-weight: 500; opacity: 0.85; font-size: 0.74rem; }
+.line-chip.ash { color: #e7e5e4; background: rgba(168, 162, 158, 0.18); border-color: rgba(214, 211, 209, 0.35); }
+.line-chip.coal { color: #fde68a; background: rgba(0, 0, 0, 0.35); border-color: rgba(253, 230, 138, 0.35); }

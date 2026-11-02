@@ -8,8 +8,8 @@ type Step = { key: string; title: string; note: string; state: StepState; subs?:
 
 type Crew = {
   names: Map<string, string>;
-  keyName: (key: string) => string;
-  roleNames: (role: string) => string;
+  /** Who owns a stage for this tender, from the server's routing (business line, state). */
+  planned: (stage: string) => string;
   tasks: WorkflowTask[];
   approvals: ApprovalRecord[];
   costings: { stage: string; createdById: string }[];
@@ -33,12 +33,13 @@ function join(parts: string[]) {
   return [...new Set(parts.map((part) => part.trim()).filter(Boolean))].join(", ");
 }
 
-function crewFrom(users: PublicUser[], tender: { tasks: WorkflowTask[]; approvals: ApprovalRecord[]; costings: { stage: string; createdById: string }[]; createdById: string; submitterId: string | null; emdType: string }): Crew {
-  const active = users.filter((user) => user.active);
+/** Stage owners per tender, as /tenders/:id sends them. */
+export type StagePlan = { line: string; state: string | null; stages: Record<string, string[]> };
+
+function crewFrom(users: PublicUser[], tender: { tasks: WorkflowTask[]; approvals: ApprovalRecord[]; costings: { stage: string; createdById: string }[]; createdById: string; submitterId: string | null; emdType: string }, plan?: StagePlan): Crew {
   return {
     names: new Map(users.map((user) => [user.id, user.name])),
-    keyName: (key) => active.find((user) => user.personKey === key)?.name ?? "",
-    roleNames: (role) => join(active.filter((user) => user.role === role).map((user) => user.name)),
+    planned: (stage) => join(plan?.stages[stage] ?? []),
     tasks: tender.tasks,
     approvals: tender.approvals,
     costings: tender.costings,
@@ -166,21 +167,21 @@ export function stagesFor(t: TrackInput, crew: Crew): (Step | [Step, Step])[] {
         : halted
           ? "skipped"
           : "todo";
-  const submitter = (crew.submitterId && crew.names.get(crew.submitterId)) || crew.roleNames("BID_SUBMITTER");
-  const instrument = crew.emdType === "ISB" ? crew.keyName("sanjeev") : crew.emdType === "UNCLEAR" ? crew.keyName("vishesh") : join([crew.keyName("krishnanath"), crew.keyName("surya")]);
+  const submitter = (crew.submitterId && crew.names.get(crew.submitterId)) || crew.planned("BID_SUBMISSION");
+  const instrument = crew.planned("EMD_INSTRUMENT");
 
   return [
     { key: "upload", title: "Uploaded", note: creator ? `By ${creator}` : "Record created", state: "done" },
     {
       key: "validate",
       title: "Data validation",
-      note: mention(validateState, actorsFor(crew, ["DATA_VALIDATION"]), crew.keyName("coordinator"), false) || (validated ? "Fields confirmed" : "Check the 44 fields"),
+      note: mention(validateState, actorsFor(crew, ["DATA_VALIDATION"]), crew.planned("DATA_VALIDATION"), false) || (validated ? "Fields confirmed" : "Check the 44 fields"),
       state: validateState,
     },
     {
       key: "relevance",
       title: "Relevance review",
-      note: mention(relevanceState, actorsFor(crew, ["RELEVANCE"]), join([crew.keyName("vishesh"), crew.keyName("ranjana")]), true) || "Vishesh or Ranjana",
+      note: mention(relevanceState, actorsFor(crew, ["RELEVANCE"]), crew.planned("RELEVANCE"), true) || "Relevance reviewers",
       state: relevanceState,
     },
     [
@@ -191,10 +192,10 @@ export function stagesFor(t: TrackInput, crew: Crew): (Step | [Step, Step])[] {
         state: after(approved, costingDone, t.costingStatus === "REJECTED"),
         subs: subStepsFor(
           [
-            { title: "Draft costing", stages: ["DRAFT_COSTING"], planned: crew.keyName("sundarlingam") },
-            { title: "Sales input", stages: ["SALES_INPUT"], planned: crew.roleNames("SALES") },
-            { title: "Final costing", stages: ["FINAL_COSTING"], planned: crew.keyName("vishesh") },
-            { title: "Department Head approval", stages: ["DEPT_APPROVAL"], planned: crew.roleNames("DEPT_HEAD"), approval: true },
+            { title: "Draft costing", stages: ["DRAFT_COSTING"], planned: crew.planned("DRAFT_COSTING") },
+            { title: "Sales input", stages: ["SALES_INPUT"], planned: crew.planned("SALES_INPUT") },
+            { title: "Final costing", stages: ["FINAL_COSTING"], planned: crew.planned("FINAL_COSTING") },
+            { title: "Department Head approval", stages: ["DEPT_APPROVAL"], planned: crew.planned("DEPT_APPROVAL"), approval: true },
           ],
           COSTING_AT[t.costingStatus],
           approved && !halted,
@@ -209,7 +210,7 @@ export function stagesFor(t: TrackInput, crew: Crew): (Step | [Step, Step])[] {
         state: after(approved, emdDone, t.emdStatus === "OVERDUE"),
         subs: subStepsFor(
           [
-            { title: "Requirement check", stages: ["EMD_CLARIFICATION"], planned: crew.keyName("vishesh") },
+            { title: "Requirement check", stages: ["EMD_CLARIFICATION"], planned: crew.planned("EMD_CLARIFICATION") },
             { title: "Instrument preparation", stages: ["EMD_BG", "EMD_ISB", "EMD_EXEMPTION", "EMD_OTHER"], planned: instrument },
             { title: "Second verification", stages: ["EMD_BG", "EMD_ISB", "EMD_EXEMPTION", "EMD_OTHER"], planned: instrument },
             { title: "Completed", stages: ["EMD_BG", "EMD_ISB", "EMD_EXEMPTION", "EMD_OTHER"], planned: instrument },
@@ -237,9 +238,9 @@ export function stagesFor(t: TrackInput, crew: Crew): (Step | [Step, Step])[] {
 }
 
 /** State of each lifecycle step by key (upload, validate, relevance, costing, emd, ready, bid), using the same rules as the track. */
-export function stepStates(tender: Parameters<typeof StageTrack>[0]["tender"], users: PublicUser[]): Record<string, StepState> {
+export function stepStates(tender: Parameters<typeof StageTrack>[0]["tender"], users: PublicUser[], plan?: StagePlan): Record<string, StepState> {
   const out: Record<string, StepState> = {};
-  for (const step of stagesFor(tender, crewFrom(users, tender)).flat()) out[step.key] = step.state;
+  for (const step of stagesFor(tender, crewFrom(users, tender, plan)).flat()) out[step.key] = step.state;
   return out;
 }
 
@@ -303,11 +304,13 @@ function BranchCard({ step }: { step: Step }) {
 export function StageTrack({
   tender,
   users,
+  plan,
 }: {
   tender: TrackInput & { tasks: WorkflowTask[]; approvals: ApprovalRecord[]; costings: { stage: string; createdById: string }[]; createdById: string; submitterId: string | null; emdType: string };
   users: PublicUser[];
+  plan?: StagePlan;
 }) {
-  const steps = stagesFor(tender, crewFrom(users, tender));
+  const steps = stagesFor(tender, crewFrom(users, tender, plan));
   const pair = steps.find((step): step is [Step, Step] => Array.isArray(step));
   const rail = steps.map((step) => (Array.isArray(step) ? mergePair(step) : step));
   const subs = pair ? pair.flatMap((step) => step.subs ?? []) : [];

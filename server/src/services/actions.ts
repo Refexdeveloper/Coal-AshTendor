@@ -90,7 +90,7 @@ export async function updateFieldsAction(actor: User, formData: FormData): Promi
     // "Save and send": corrections are stored first, then the validation task is submitted, so no edit is lost.
     if (formData.get("intent") === "validate") {
       await domain.submitForRelevance(actor, String(formData.get("taskId") || ""), formData.get("confirmed") === "yes");
-        return { ok: "Verified and sent for relevance review. Vishesh and Ranjana have been notified.", tenderId };
+        return { ok: "Verified and sent for relevance review. The reviewers have been notified.", tenderId };
     }
     return { ok: result.changed ? `${result.changed} field${result.changed === 1 ? "" : "s"} saved.` : "No changes to save." };
   } catch (error) {
@@ -143,6 +143,7 @@ export async function taskAction(actor: User, formData: FormData): Promise<Actio
         file,
       });
     } else if (intent === "exception") await domain.completeException(actor, taskId, notes);
+    else if (intent === "set-line") await domain.setBusinessLine(actor, tenderId, String(formData.get("businessLine") || ""));
     else if (intent === "assign-submitter") await domain.assignSubmitter(actor, tenderId, String(formData.get("submitterId") || ""));
     else if (intent === "close") await domain.closeBusiness(actor, tenderId, notes);
     else if (intent === "outcome") {
@@ -419,7 +420,7 @@ export async function ingestDiscoveredAction(actor: User, formData: FormData): P
       files: await filesFrom(formData, "files"),
     });
     if (result.duplicate) return { error: `Open tender ${result.recordId} already covers this discovery.`, tenderId: result.tenderId };
-    return { ok: `${result.recordId} assigned to Vishesh.`, tenderId: result.tenderId };
+    return { ok: `${result.recordId} created and sent for data validation.`, tenderId: result.tenderId };
   } catch (error) {
     return failure(error);
   }

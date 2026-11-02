@@ -7,6 +7,7 @@ import { OPEN_TASK } from "../utils/labels";
 import { loadDashboard, loadReports } from "../services/metrics";
 import { db } from "../db";
 import { publicUser } from "../middleware/auth";
+import { plannedOwners } from "../services/team";
 
 /** Calendar sets do not survive JSON; the client rebuilds them. */
 export function calendarJson(calendar: Calendar) {
@@ -153,7 +154,7 @@ views.get("/email-logs", async (req, res) => {
     size,
     counts,
     types: [...new Set(rows.map((row) => row.eventType))].sort(),
-    mail: { ready: mailReady(), from: config.from, testInbox: config.redirectTo },
+    mail: { ready: mailReady(), from: config.from, testInbox: config.redirectTo, cc: config.cc },
   });
 });
 
@@ -258,11 +259,12 @@ views.get("/tenders/:id", async (req, res) => {
     res.status(404).json({ error: "Tender not found" });
     return;
   }
-  const [users, calendar, settings, fieldEditor] = await Promise.all([
+  const [users, calendar, settings, fieldEditor, plan] = await Promise.all([
     peopleFor(tender),
     getCalendar(),
     db.appSettings.findUnique({ where: { id: "default" } }),
     canEditFields(actor, tender.id),
+    plannedOwners(tender),
   ]);
   res.json({
     tender,
@@ -271,5 +273,6 @@ views.get("/tenders/:id", async (req, res) => {
     bgRequiresBoth: Boolean(settings?.bgRequiresBoth),
     fieldEditor,
     checklist: readinessChecklist(tender),
+    plan,
   });
 });

@@ -6,7 +6,7 @@ const STEPS = [
   ["Drop the notice", "Choose the PDF or scan. Nothing else to type."],
   ["We read it", "The uploaded file is sent to OCR. Returned fields are placed on the tender form."],
   ["You verify", "Check what was read, fix anything highlighted, and send it for review in one click."],
-  ["Review", "Vishesh and Ranjana are emailed. Either one approves or rejects within 24 working hours."],
+  ["Review", "Ash tenders go to Ranjana and Vishesh, Coal tenders to Aditya. Either approves or rejects within 24 working hours."],
 ];
 
 export default function NewTenderPage() {

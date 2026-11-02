@@ -97,11 +97,10 @@ function fill(template: string, vars: Record<string, string>) {
  * Everything is set here, as in P2P; server/.env (SMTP_HOST, SMTP_USER, SMTP_PASS, ...) can still override it.
  */
 /**
- * Test mode: every email goes only to this inbox, whoever it is for. The subject starts with "[for Name]"
- * and a banner names the real recipient, so each workflow step can be checked from one mailbox.
- * Set this to "" (or MAIL_REDIRECT_TO= on the server) when the app goes live and people should get their own mail.
+ * Each person gets their own email. sathishkumar.r@refex.co.in is copied on every message.
+ * MAIL_REDIRECT_TO, if set to an address, still folds every message into that one inbox for a test.
  */
-const TEST_INBOX = "sathishkumar.r@refex.co.in";
+const COPY_INBOX = "sathishkumar.r@refex.co.in";
 
 const SMTP_DEFAULTS = {
   host: "smtp.gmail.com",
@@ -113,7 +112,7 @@ const SMTP_DEFAULTS = {
   fromName: "Coal & Ash Tenders",
 };
 
-/** Mail settings. MAIL_REDIRECT_TO sends every message to one inbox for testing. */
+/** Mail settings. MAIL_REDIRECT_TO is off, so each person gets their own mail. MAIL_CC is copied on every message. */
 export function mailConfig() {
   const port = Number(process.env.SMTP_PORT || SMTP_DEFAULTS.port);
   const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || SMTP_DEFAULTS.pass).replace(/\s+/g, "");
@@ -128,7 +127,13 @@ export function mailConfig() {
     from:
       (process.env.SMTP_FROM || "").trim() ||
       `"${(process.env.SMTP_FROM_NAME || SMTP_DEFAULTS.fromName).trim()}" <${(process.env.SMTP_FROM_EMAIL || SMTP_DEFAULTS.fromEmail).trim()}>`,
-    redirectTo: (process.env.MAIL_REDIRECT_TO ?? TEST_INBOX).trim(),
+    redirectTo: (() => {
+      const value = (process.env.MAIL_REDIRECT_TO ?? "").trim();
+      // The old test inbox is no longer the destination. Each person gets their own mail, and this address is copied.
+      if (!value || value.toLowerCase() === COPY_INBOX.toLowerCase()) return "";
+      return value;
+    })(),
+    cc: (process.env.MAIL_CC ?? COPY_INBOX).trim(),
   };
 }
 
@@ -191,13 +196,20 @@ function plainContent(subject: string, text: string, link: string): EmailContent
   return { headline: subject, intro, body: blocks.join("\n\n"), cta: { label: "Open Coal & Ash →", url: link } };
 }
 
-/** Who actually receives the message. Workflow mail goes only to the test inbox while that is set. */
+/** Who actually receives the message. With no redirect, that is the person the mail is for. */
 export function deliveredTo(to: string, toName: string) {
   const inbox = mailConfig().redirectTo;
   if (inbox && inbox.toLowerCase() !== to.toLowerCase()) {
     return { email: inbox, name: "Sathishkumar", forWhom: `${toName} <${to}>` };
   }
   return { email: to, name: toName, forWhom: "" };
+}
+
+/** Copy address for a message. Skipped when that person is already the recipient. */
+function copyOf(to: string) {
+  const cc = mailConfig().cc;
+  if (!cc || cc.toLowerCase() === to.toLowerCase()) return "";
+  return cc;
 }
 
 export type MailAttachment = { filename: string; content: string | Buffer; contentType: string; documentId?: string };
@@ -253,6 +265,7 @@ export async function deliver(message: {
 }) {
   const config = mailConfig();
   const target = message.direct ? { email: message.to, name: message.toName, forWhom: "" } : deliveredTo(message.to, message.toName);
+  const cc = copyOf(target.email);
   const intendedFor = target.forWhom || null;
   const subject = intendedFor ? `[for ${message.toName}] ${message.subject}` : message.subject;
   const content: EmailContent = {
@@ -303,6 +316,7 @@ export async function deliver(message: {
   const mail = {
     from: config.from,
     to: target.email,
+    cc: cc || undefined,
     subject,
     text,
     html: logo ? logo.html : html,
@@ -474,10 +488,10 @@ export async function notifyStepMoved(step: { tenderId: string; action: string; 
   };
   if (actor?.active) add(actor.email, actor.name, "actor");
   if (creator?.active) add(creator.email, creator.name, "fyi");
-  // In test mode everything already reaches the test inbox, so its own step copy would only repeat the same step.
-  const inbox = mailConfig().redirectTo.toLowerCase();
+  // The copy inbox already receives every message as Cc, so it is not also a separate To.
+  const cc = mailConfig().cc.toLowerCase();
   for (const copy of stepCopyAddresses()) {
-    if (inbox && copy.email.toLowerCase() === inbox && recipients.size) continue;
+    if (cc && copy.email.toLowerCase() === cc) continue;
     add(copy.email, copy.name, "fyi");
   }
   if (!recipients.size) return;

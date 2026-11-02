@@ -17,7 +17,7 @@ import { BID, DECISION, DOC_TYPE, EMD_TYPE, ROLES, STAGE, TASK } from "@client/l
 import { businessMinutesBetween, dayLengthMinutes, formatDay, formatDuration, formatWhen, type Calendar } from "@client/utils/calendar";
 import { effectiveValue } from "@client/utils/format";
 import { inr, parseInr } from "@client/utils/money";
-import { stepStates, type StepState } from "@client/components/feature/stage-track";
+import { stepStates, type StagePlan, type StepState } from "@client/components/feature/stage-track";
 
 export type ExecTender = Tender & {
   fields: TenderField[];
@@ -30,7 +30,7 @@ export type ExecTender = Tender & {
   audits: AuditLog[];
 };
 
-type Props = { tender: ExecTender; users: PublicUser[]; calendar: Calendar };
+type Props = { tender: ExecTender; users: PublicUser[]; calendar: Calendar; plan?: StagePlan };
 
 const OPEN = new Set(["NOT_STARTED", "IN_PROGRESS", "OVERDUE", "RETURNED_FOR_REVISION", "BLOCKED"]);
 
@@ -306,7 +306,7 @@ type Event = { at: Date; kind: "open" | "done" | "late" | "good" | "bad" | "warn
 export function StageHistory(props: Props) {
   const { tender, users, calendar } = props;
   const { name, day, tz, now } = useTenderMaths(props);
-  const states = stepStates(tender, users);
+  const states = stepStates(tender, users, props.plan);
 
   const groups = STAGE_GROUPS.map((group) => {
     const stages: readonly string[] = group.stages;

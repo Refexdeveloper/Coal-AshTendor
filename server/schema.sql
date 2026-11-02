@@ -87,6 +87,7 @@ CREATE TABLE `Tender` (
   `finalCostingValue` DOUBLE NULL,
   `emdExposure` DOUBLE NULL,
   `emdType` VARCHAR(191) NOT NULL DEFAULT 'UNCLEAR',
+  `businessLine` VARCHAR(191) NOT NULL DEFAULT 'ASH',
   `overallStatus` VARCHAR(191) NOT NULL,
   `relevanceStatus` VARCHAR(191) NOT NULL DEFAULT 'NOT_STARTED',
   `costingStatus` VARCHAR(191) NOT NULL DEFAULT 'NOT_STARTED',

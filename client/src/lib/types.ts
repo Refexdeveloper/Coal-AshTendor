@@ -17,6 +17,7 @@ export type Tender = {
   finalCostingValue: number | null;
   emdExposure: number | null;
   emdType: string;
+  businessLine: string;
   overallStatus: string;
   relevanceStatus: string;
   costingStatus: string;

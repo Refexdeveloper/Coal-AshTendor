@@ -28,7 +28,7 @@ export type TaskContext = {
 };
 
 const SUCCESS: Record<string, { message: string; celebrate?: boolean }> = {
-  validate: { message: "Sent for relevance review. Vishesh and Ranjana have been notified." },
+  validate: { message: "Sent for relevance review. The reviewers have been notified." },
   "approve-relevance": { message: "Tender approved. Costing and EMD have both started.", celebrate: true },
   "reject-relevance": { message: "Tender rejected and closed. The reason is in the history." },
   "cost-complete": { message: "Costing step completed and handed to the next owner." },
