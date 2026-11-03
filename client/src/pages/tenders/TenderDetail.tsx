@@ -568,7 +568,36 @@ export default function TenderPage() {
       ) : null}
 
       {tab === "history" ? (
-        <div className="split-2">
+        <div className="stack">
+          <section className="panel">
+            <h2>Where it is now</h2>
+            {openTasks.length ? (
+              <>
+                <p>
+                  Pending at <b>{[...new Set(openTasks.map((task) => STAGE[task.stage] ?? task.title))].join(", ")}</b>
+                  {" with "}
+                  <b>{[...new Set(openTasks.flatMap((task) => task.assignees.split(", ").map((name) => name.trim()).filter((name) => name && name !== "Unknown")))].join(", ") || "no owner assigned"}</b>.
+                </p>
+                <ul className="timeline">
+                  {openTasks.map((task, index) => (
+                    <li key={task.id} style={{ "--r": index } as CSSProperties} className={task.late ? "bad" : "warn"}>
+                      <strong>{STAGE[task.stage] ?? task.title}</strong>
+                      <small>
+                        Pending with {task.assignees || "no owner"} · <Status map={TASK} value={task.status} />
+                        {task.due ? ` · due ${task.due}` : ""} {task.remaining}
+                      </small>
+                      <p>{task.title}</p>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="empty">
+                Nothing is pending. This tender is {OVERALL[tender.overallStatus]?.label ?? tender.overallStatus}.
+              </p>
+            )}
+          </section>
+          <div className="split-2">
           <div className="stack">
             <section className="panel">
               <h2>Decisions</h2>
@@ -647,6 +676,7 @@ export default function TenderPage() {
               </ul>
             </section>
           </div>
+        </div>
         </div>
       ) : null}
       </div>
