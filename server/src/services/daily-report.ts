@@ -537,7 +537,6 @@ export async function sendTodayReport(to: string[]) {
         text: built.text,
         link: "",
         rawHtml: built.html,
-        direct: true,
         attachments: [{ filename: `coal-ash-tenders-${stamp}.csv`, content: built.csv, contentType: "text/csv" }],
         log: { eventType: "DAILY_REPORT" },
       }),

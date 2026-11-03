@@ -143,7 +143,7 @@ export default function EmailLogsPage() {
 
       <section className={`banner ${data.mail.ready ? (data.mail.testInbox ? "warn" : "good") : "bad"}`}>
         {data.mail.ready ? `Sending from ${data.mail.from}.` : "Mail is not set up (no SMTP password), so emails are logged but not sent."}
-        {data.mail.testInbox ? ` Test mode: every email goes only to ${data.mail.testInbox}.` : data.mail.cc ? ` Each person gets their own email. ${data.mail.cc} is copied.` : ""}
+        {data.mail.testInbox ? ` Test mode: every email goes only to ${data.mail.testInbox}.` : ""}
       </section>
 
       <div className="mail-counts">

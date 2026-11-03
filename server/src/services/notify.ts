@@ -96,11 +96,8 @@ function fill(template: string, vars: Record<string, string>) {
  * support@refexone.com, one pooled connection with a rate limit so Gmail is not flooded.
  * Everything is set here, as in P2P; server/.env (SMTP_HOST, SMTP_USER, SMTP_PASS, ...) can still override it.
  */
-/**
- * Each person gets their own email. sathishkumar.r@refex.co.in is copied on every message.
- * MAIL_REDIRECT_TO, if set to an address, still folds every message into that one inbox for a test.
- */
-const COPY_INBOX = "sathishkumar.r@refex.co.in";
+/** Local mail goes only to this inbox. The subject starts with "[for Name]" so you can see who it was for. Real people are not emailed. */
+const TEST_INBOX = "sathishkumar.r@refex.co.in";
 
 const SMTP_DEFAULTS = {
   host: "smtp.gmail.com",
@@ -112,7 +109,7 @@ const SMTP_DEFAULTS = {
   fromName: "Coal & Ash Tenders",
 };
 
-/** Mail settings. MAIL_REDIRECT_TO is off, so each person gets their own mail. MAIL_CC is copied on every message. */
+/** Mail settings. Every message is delivered to redirectTo, not to the real person. */
 export function mailConfig() {
   const port = Number(process.env.SMTP_PORT || SMTP_DEFAULTS.port);
   const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || SMTP_DEFAULTS.pass).replace(/\s+/g, "");
@@ -127,13 +124,8 @@ export function mailConfig() {
     from:
       (process.env.SMTP_FROM || "").trim() ||
       `"${(process.env.SMTP_FROM_NAME || SMTP_DEFAULTS.fromName).trim()}" <${(process.env.SMTP_FROM_EMAIL || SMTP_DEFAULTS.fromEmail).trim()}>`,
-    redirectTo: (() => {
-      const value = (process.env.MAIL_REDIRECT_TO ?? "").trim();
-      // The old test inbox is no longer the destination. Each person gets their own mail, and this address is copied.
-      if (!value || value.toLowerCase() === COPY_INBOX.toLowerCase()) return "";
-      return value;
-    })(),
-    cc: (process.env.MAIL_CC ?? COPY_INBOX).trim(),
+    redirectTo: (process.env.MAIL_REDIRECT_TO ?? TEST_INBOX).trim() || TEST_INBOX,
+    cc: (process.env.MAIL_CC ?? "").trim(),
   };
 }
 
@@ -196,7 +188,7 @@ function plainContent(subject: string, text: string, link: string): EmailContent
   return { headline: subject, intro, body: blocks.join("\n\n"), cta: { label: "Open Coal & Ash →", url: link } };
 }
 
-/** Who actually receives the message. With no redirect, that is the person the mail is for. */
+/** Who actually receives the message. Local mail always goes to the test inbox, not the real person. */
 export function deliveredTo(to: string, toName: string) {
   const inbox = mailConfig().redirectTo;
   if (inbox && inbox.toLowerCase() !== to.toLowerCase()) {
@@ -264,7 +256,7 @@ export async function deliver(message: {
   log?: MailLog;
 }) {
   const config = mailConfig();
-  const target = message.direct ? { email: message.to, name: message.toName, forWhom: "" } : deliveredTo(message.to, message.toName);
+  const target = deliveredTo(message.to, message.toName);
   const cc = copyOf(target.email);
   const intendedFor = target.forWhom || null;
   const subject = intendedFor ? `[for ${message.toName}] ${message.subject}` : message.subject;
@@ -488,10 +480,10 @@ export async function notifyStepMoved(step: { tenderId: string; action: string; 
   };
   if (actor?.active) add(actor.email, actor.name, "actor");
   if (creator?.active) add(creator.email, creator.name, "fyi");
-  // The copy inbox already receives every message as Cc, so it is not also a separate To.
-  const cc = mailConfig().cc.toLowerCase();
+  // In test mode everything already reaches the test inbox, so its own step copy would only repeat the same step.
+  const inbox = mailConfig().redirectTo.toLowerCase();
   for (const copy of stepCopyAddresses()) {
-    if (cc && copy.email.toLowerCase() === cc) continue;
+    if (inbox && copy.email.toLowerCase() === inbox && recipients.size) continue;
     add(copy.email, copy.name, "fyi");
   }
   if (!recipients.size) return;
