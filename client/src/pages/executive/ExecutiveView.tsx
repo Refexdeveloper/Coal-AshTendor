@@ -176,7 +176,7 @@ export type ExecutiveData = {
 };
 type Row = ExecutiveData["tenders"][number];
 
-export function ExecutiveView({ user, group, data }: { user: { name: string; role: string }; group?: string; data: ExecutiveData }) {
+export function ExecutiveView({ user, group, data, toggle }: { user: { name: string; role: string }; group?: string; data: ExecutiveData; toggle?: ReactNode }) {
   const { tenders: everyTender, users, calendar } = data;
   const tz = calendar.timeZone;
   const names = new Map(users.map((item) => [item.id, item.name]));
@@ -352,6 +352,7 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
           </p>
         </div>
         <div className="dk-hero-tools">
+          {toggle}
           <PeriodPicker value={filter.period || "all"} onChange={(key) => setFilter("period", key)} earliest={earliest} compact align="right" />
         </div>
       </section>

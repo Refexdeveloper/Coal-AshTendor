@@ -1,4 +1,4 @@
-import { Fragment, useActionState, useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useActionState, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useApi } from "@client/api/client";
 import { importBondsAction } from "@client/api/actions";
@@ -125,7 +125,13 @@ const CARD_ROWS: Record<string, { label: string; match: (row: Row) => boolean; s
   premium: { label: "Bonds by premium paid", match: () => true, sort: "premium" },
 };
 
-export default function BondsPage() {
+/**
+ * The bond register. `embedded` shows it inside the Group CEO dashboard (at /?board=emd),
+ * so its links stay on that page; `toggle` is the Tender | EMD switch for the banner.
+ */
+export default function BondsPage({ embedded = false, toggle }: { embedded?: boolean; toggle?: ReactNode } = {}) {
+  const path = embedded ? "/" : "/bonds";
+  const fixed = embedded ? ["board=emd"] : [];
   const { data, error, reload } = useApi<Data>("/bonds");
   const [params, setParams] = useSearchParams();
   const [importing, setImporting] = useState(false);
@@ -148,7 +154,7 @@ export default function BondsPage() {
   const resetFilters = () => {
     setDraft("");
     setAdded([]);
-    setParams({}, { preventScrollReset: true });
+    setParams(embedded ? { board: "emd" } : {}, { preventScrollReset: true });
   };
   // The period scopes the whole page (cards, charts and table), by issue date or by expiry date.
   const byExpiry = filter.basis === "expiry";
@@ -156,9 +162,9 @@ export default function BondsPage() {
   const period = resolvePeriod(filter.period || "all", undefined, { future: byExpiry });
   const rows = everyBond.filter((row) => inPeriod(period, byExpiry ? row.expiry : row.issueDate));
   const earliest = everyBond.reduce<Date | null>((min, row) => (row.issueDate && (!min || row.issueDate < min) ? row.issueDate : min), null);
-  const keep = ["period", "basis"].filter((key) => params.get(key)).map((key) => `${key}=${encodeURIComponent(params.get(key)!)}`);
-  const cardHref = (key: string) => `/bonds?${[...keep, `card=${key}`].join("&")}#bond-list`;
-  const allHref = `/bonds${keep.length ? `?${keep.join("&")}` : ""}#bond-list`;
+  const keep = [...fixed, ...["period", "basis"].filter((key) => params.get(key)).map((key) => `${key}=${encodeURIComponent(params.get(key)!)}`)];
+  const cardHref = (key: string) => `${path}?${[...keep, `card=${key}`].join("&")}#bond-list`;
+  const allHref = `${path}${keep.length ? `?${keep.join("&")}` : ""}#bond-list`;
 
   const emd = rows.filter((row) => row.kind === "EMD");
   const pb = rows.filter((row) => row.kind === "PERFORMANCE");
@@ -242,6 +248,7 @@ export default function BondsPage() {
           <h1>Surety &amp; performance bonds</h1>
         </div>
         <div className="dk-hero-tools">
+          {toggle}
           <PeriodPicker key={byExpiry ? "expiry" : "issued"} value={filter.period || "all"} onChange={(key) => setFilter("period", key)} earliest={earliest} compact align="right" future={byExpiry} />
           {data.canImport ? (
             <button type="button" className={`dk-btn${importing ? " is-on" : ""}`} onClick={() => setImporting((value) => !value)}>
@@ -517,7 +524,7 @@ export default function BondsPage() {
         </section>
 
         <aside className="dk-side">
-          <NextToExpire rows={rows} today={today} />
+          <NextToExpire rows={rows} today={today} search={(query) => `${path}?${[...fixed, `q=${encodeURIComponent(query)}`].join("&")}#bond-list`} />
           <section className="dk-panel">
             <header className="dk-panel-head">
               <span className="dk-panel-icon">
@@ -693,7 +700,7 @@ function Timeline({ rows, today }: { rows: Row[]; today: Date }) {
   );
 }
 
-function NextToExpire({ rows, today }: { rows: Row[]; today: Date }) {
+function NextToExpire({ rows, today, search }: { rows: Row[]; today: Date; search: (query: string) => string }) {
   const upcoming = rows.filter((row) => row.expiry && row.expiry >= today).sort((a, b) => a.expiry!.getTime() - b.expiry!.getTime()).slice(0, 6);
   return (
     <section className="dk-panel">
@@ -710,7 +717,7 @@ function NextToExpire({ rows, today }: { rows: Row[]; today: Date }) {
       <ul className="dk-deadlines">
         {upcoming.map((row) => (
           <li key={row.id}>
-            <Link to={`/bonds?q=${encodeURIComponent(row.bondNumber)}#bond-list`} className={`dk-deadline ${row.days! <= 30 ? "hot" : row.days! <= 60 ? "warm" : ""}`}>
+            <Link to={search(row.bondNumber)} className={`dk-deadline ${row.days! <= 30 ? "hot" : row.days! <= 60 ? "warm" : ""}`}>
               <span className="dk-date">
                 <b>{row.days}</b>
                 <small>days</small>

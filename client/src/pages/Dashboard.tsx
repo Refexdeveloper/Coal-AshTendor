@@ -11,6 +11,28 @@ import { Status } from "@client/components/base/pill";
 import { CountUp } from "@client/components/feature/count-up";
 import { KpiCard } from "@client/components/feature/kpi-card";
 import { ExecutiveView, type ExecutiveData } from "@client/pages/executive/ExecutiveView";
+import BondsPage from "@client/pages/bonds/Bonds";
+
+/** Tender | EMD switch on the Group CEO dashboard banner. EMD shows the bond register in place. */
+function BoardToggle({ board }: { board: "tender" | "emd" }) {
+  return (
+    <nav className="board-toggle" aria-label="Dashboard">
+      <Link to="/" className={board === "tender" ? "is-on" : ""} aria-current={board === "tender" ? "page" : undefined}>
+        <svg viewBox="0 0 24 24" aria-hidden>
+          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6" />
+        </svg>
+        Tender
+      </Link>
+      <Link to="/?board=emd" className={board === "emd" ? "is-on" : ""} aria-current={board === "emd" ? "page" : undefined}>
+        <svg viewBox="0 0 24 24" aria-hidden>
+          <path d="M12 3.5 5 6v5.5c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6l-7-2.5z" />
+          <path d="m9 12 2.2 2.2L15.5 10" />
+        </svg>
+        EMD
+      </Link>
+    </nav>
+  );
+}
 
 type PipelineData = {
   kind: "pipeline";
@@ -80,7 +102,10 @@ export default function DashboardPage() {
   const params = { view: search.get("view") ?? undefined, group: search.get("group") ?? undefined };
   const { data, error, reload } = useApi<PipelineData | ExecutiveData>("/dashboard");
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
-  if (data.kind === "executive") return <ExecutiveView user={user} group={params.group} data={data} />;
+  if (data.kind === "executive") {
+    const board = search.get("board") === "emd" ? "emd" : "tender";
+    return board === "emd" ? <BondsPage embedded toggle={<BoardToggle board="emd" />} /> : <ExecutiveView user={user} group={params.group} data={data} toggle={<BoardToggle board="tender" />} />;
+  }
   const mine = data.mine;
   const tz = data.calendar.timeZone;
   const now = new Date();
