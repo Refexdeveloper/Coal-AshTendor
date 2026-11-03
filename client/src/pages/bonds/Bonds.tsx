@@ -173,7 +173,6 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
   const claim = rows.filter((row) => row.health === "claim");
   const live = rows.filter((row) => CARD_ROWS.active.match(row));
   const tech = emd.filter((row) => CARD_ROWS.tech.match(row));
-  const checks = rows.filter((row) => row.dateCheck);
 
   const cards = [
     { key: "emd", label: "EMD exposure", fx: "shield" as CardFx, value: sum(emd, (row) => row.amount), money: true, note: `${emd.length} insurance surety bonds`, icon: "shield", tone: "orange" },
@@ -286,11 +285,6 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
         ))}
       </section>
 
-      {checks.length ? (
-        <p className="banner warn">
-          {checks.length} bond{checks.length === 1 ? " has" : "s have"} an issue date after the expiry date in the workbook ({checks.map((row) => `${row.kind === "EMD" ? "EMD" : "PB"} #${row.serialNo ?? "?"}`).join(", ")}). Check those dates in the sheet.
-        </p>
-      ) : null}
 
       <Timeline rows={rows} today={today} />
 
