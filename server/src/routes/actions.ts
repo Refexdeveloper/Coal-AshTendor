@@ -28,6 +28,7 @@ const ACTIONS: Record<string, Action> = {
   "toggle-portal": actions.togglePortalAction,
   "log-exception": actions.logExceptionAction,
   "ingest-discovered": actions.ingestDiscoveredAction,
+  "import-bonds": actions.importBondsAction,
 };
 
 /** Rebuilds the browser's FormData so the actions read fields and files exactly as they did before. */

@@ -5,6 +5,7 @@ import { AmountInput, BoundForm, FilePick, type TaskContext } from "./task-kit";
 import { Status } from "@client/components/base/pill";
 import { Submit } from "@client/components/base/submit";
 import { documentUrl } from "@client/api/client";
+import { BgRequestFields, parseBgRequest } from "./bg-request";
 
 export type WorkTask = {
   id: string;
@@ -27,6 +28,7 @@ type EmdDraft = {
   notes: string;
   authorityNote: string;
   submitted: boolean;
+  bgRequest: string;
 };
 
 export function TaskCards({
@@ -177,11 +179,20 @@ function TaskForm({
     );
   }
   if (task.stage === "DEPT_APPROVAL") return <DeptReview taskId={task.id} tenderId={tenderId} ctx={ctx} />;
+  const bgRequest = (
+    <BgRequestFields
+      tenderId={tenderId}
+      bankDetails={task.stage !== "EMD_CLARIFICATION"}
+      saved={parseBgRequest(emd?.bgRequest)}
+      defaults={{ beneficiaryName: ctx.client, beneficiaryAddress: ctx.location, contractSummary: ctx.workDescription, amount: ctx.emdFeeValue != null ? String(ctx.emdFeeValue) : "" }}
+    />
+  );
   if (task.stage === "EMD_CLARIFICATION") {
     return (
       <BoundForm>
         <input type="hidden" name="tenderId" value={tenderId} />
         <input type="hidden" name="taskId" value={task.id} />
+        {bgRequest}
         <label>
           Instrument
           <select name="choice" defaultValue="">
@@ -201,7 +212,7 @@ function TaskForm({
           <textarea name="notes" rows={3} required />
         </label>
         <Submit name="intent" value="emd-clarify">
-          Create the EMD task
+          Save and create the EMD task
         </Submit>
       </BoundForm>
     );
@@ -211,6 +222,7 @@ function TaskForm({
       <BoundForm>
         <input type="hidden" name="tenderId" value={tenderId} />
         <input type="hidden" name="taskId" value={task.id} />
+        {task.stage === "EMD_BG" ? bgRequest : null}
         {task.stage === "EMD_BG" && bgRequiresBoth ? <p className="muted wide">Both Krishnananth S and Surya M must verify this guarantee.</p> : null}
         {task.stage === "EMD_EXEMPTION" ? (
           <label className="wide">
@@ -219,7 +231,7 @@ function TaskForm({
           </label>
         ) : (
           <>
-            <AmountInput name="amount" label="EMD amount" defaultValue={emd?.amount || ctx.emdFee.replace(/[^0-9.]/g, "")} />
+            <AmountInput name="amount" label="EMD amount" defaultValue={emd?.amount || (ctx.emdFeeValue != null ? String(ctx.emdFeeValue) : "")} />
             <label>
               Beneficiary
               <input name="beneficiary" defaultValue={emd?.beneficiary || ctx.client} />

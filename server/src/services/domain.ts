@@ -1231,6 +1231,106 @@ export async function saveEmdProgress(
   await evaluateReadiness(task.tenderId);
 }
 
+/** The yellow-marked details of the bank guarantee request letter sent to the issuing bank. */
+export const BG_REQUEST_KEYS = [
+  "letterDate",
+  "beneficiaryName",
+  "beneficiaryCin",
+  "beneficiaryAddress",
+  "contractSummary",
+  "bankName",
+  "bankBranch",
+  "accountNumber",
+  "accountName",
+  "ifsc",
+  "percent",
+  "amount",
+  "marginPercent",
+  "expiryDate",
+  "claimExpiryDate",
+] as const;
+
+const EMD_STAGES = ["EMD_CLARIFICATION", "EMD_BG", "EMD_ISB", "EMD_EXEMPTION", "EMD_OTHER"];
+
+async function assertEmdWorker(actor: Actor, tenderId: string) {
+  const holder = await db.workflowTask.findFirst({
+    where: { tenderId, status: { in: OPEN_TASK }, assigneeIds: { contains: `"${actor.id}"` }, stage: { in: EMD_STAGES } },
+  });
+  if (!holder && !MANAGER_ROLES.includes(actor.role)) throw new WorkflowError("Only the person on the EMD task can do this.");
+}
+
+/** True when the form carried BG letter details worth saving. */
+export function hasBgRequest(input: Record<string, string>) {
+  return Boolean((input.beneficiaryName ?? "").trim());
+}
+
+/**
+ * Stores any supporting files from an EMD task: any file type, up to 20 MB each.
+ * A file already on the tender is skipped rather than refused, so a retried form does not fail.
+ */
+export async function attachEmdDocuments(actor: Actor, tenderId: string, files: { name: string; type: string; buffer: Buffer }[]) {
+  if (!files.length) return 0;
+  await assertEmdWorker(actor, tenderId);
+  for (const file of files) if (file.buffer.length > 20 * 1024 * 1024) throw new WorkflowError(`${file.name} is larger than 20 MB.`);
+  const stored: string[] = [];
+  for (const file of files) {
+    const hash = sha256(file.buffer);
+    if (await db.tenderDocument.findFirst({ where: { tenderId, sha256: hash } })) continue;
+    const storedPath = await storeFile(tenderId, file.name, file.buffer);
+    const version = (await db.tenderDocument.count({ where: { tenderId, docType: "EMD_DOCUMENT" } })) + 1;
+    await createDocument({
+      tenderId,
+      fileName: file.name,
+      storedPath,
+      mimeType: file.type || "application/octet-stream",
+      sizeBytes: file.buffer.length,
+      sha256: hash,
+      docType: "EMD_DOCUMENT",
+      version,
+      uploadedById: actor.id,
+      textExtract: "",
+    });
+    stored.push(file.name);
+  }
+  if (stored.length) await audit(db, { tenderId, actor, action: "Uploaded EMD documents", entity: "TenderDocument", detail: stored.join(", ") });
+  return stored.length;
+}
+
+/** Saves the BG request details. Open for whoever holds the EMD task, and for managers. */
+export async function saveBgRequest(actor: Actor, tenderId: string, input: Record<string, string>) {
+  const emd = await db.emdRecord.findUnique({ where: { tenderId } });
+  if (!emd) throw new WorkflowError("EMD starts when relevance is approved.");
+  await assertEmdWorker(actor, tenderId);
+  // Fields the form did not carry (the requirement check has no bank section) keep what was saved before.
+  let previous: Record<string, string> = {};
+  try {
+    previous = emd.bgRequest ? (JSON.parse(emd.bgRequest) as Record<string, string>) : {};
+  } catch {
+    previous = {};
+  }
+  const data = Object.fromEntries(BG_REQUEST_KEYS.map((key) => [key, (key in input ? input[key] : previous[key] ?? "").trim().slice(0, key === "beneficiaryAddress" || key === "contractSummary" ? 1000 : 200)]));
+  if (!data.beneficiaryName) throw new WorkflowError("Enter the beneficiary name.");
+  const amount = parseInr(data.amount);
+  if (data.amount && amount == null) throw new WorkflowError("Enter the BG amount as digits only, e.g. 10000000.");
+  if (data.ifsc && !/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(data.ifsc)) throw new WorkflowError("The IFSC code should look like UTIB0000128.");
+  if (data.accountNumber && !/^\d{6,20}$/.test(data.accountNumber.replace(/\s/g, ""))) throw new WorkflowError("The account number should be 6 to 20 digits.");
+  const margin = data.marginPercent ? Number(data.marginPercent.replace(/%/g, "")) : null;
+  if (margin != null && !(Number.isFinite(margin) && margin >= 0 && margin <= 100)) throw new WorkflowError("Margin % should be a number from 0 to 100.");
+  if (margin != null) data.marginPercent = String(margin);
+  data.ifsc = data.ifsc.toUpperCase();
+  data.accountNumber = data.accountNumber.replace(/\s/g, "");
+  if (amount != null) data.amount = String(amount);
+  await db.emdRecord.update({
+    where: { tenderId },
+    data: {
+      bgRequest: JSON.stringify(data),
+      ...(emd.beneficiary ? {} : { beneficiary: data.beneficiaryName }),
+      ...(emd.amount || amount == null ? {} : { amount: String(amount) }),
+    },
+  });
+  await audit(db, { tenderId, actor, action: "Saved BG request details", entity: "EmdRecord", detail: `${data.beneficiaryName}${amount != null ? ` · ₹${amount.toLocaleString("en-IN")}` : ""}` });
+}
+
 export async function resolveEmdClarification(actor: Actor, taskId: string, choice: string, comments: string) {
   const task = await db.workflowTask.findUnique({ where: { id: taskId } });
   if (!task || task.stage !== "EMD_CLARIFICATION") throw new WorkflowError("Clarification task not found.");

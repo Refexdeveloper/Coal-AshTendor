@@ -8,6 +8,7 @@ export const createTenderAction = bound("create-tender");
 export const createSampleAction = bound("create-sample");
 export const updateFieldsAction = bound("update-fields");
 export const taskAction = bound("task");
+export const importBondsAction = bound("import-bonds");
 export const ingestDiscoveredAction = bound("ingest-discovered");
 
 export async function loginAction(_state: ActionState, formData: FormData): Promise<ActionState> {

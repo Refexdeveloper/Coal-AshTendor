@@ -10,19 +10,23 @@ import PortalsPage from "@client/pages/portals/Portals";
 import RegisterPage from "@client/pages/Register";
 import ReportsPage from "@client/pages/Reports";
 import TenderPage from "@client/pages/tenders/TenderDetail";
+import BgLetterPage from "@client/pages/tenders/BgLetter";
 import WorklistPage from "@client/pages/Worklist";
+import BondsPage from "@client/pages/bonds/Bonds";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/tenders/:id/bg-letter" element={<BgLetterPage />} />
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
         <Route path="worklist" element={<WorklistPage />} />
         <Route path="register" element={<RegisterPage />} />
         <Route path="tenders/new" element={<NewTenderPage />} />
         <Route path="tenders/:id" element={<TenderPage />} />
+        <Route path="bonds" element={<BondsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="email-logs" element={<EmailLogsPage />} />

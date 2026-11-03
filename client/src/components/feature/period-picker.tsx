@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
  * Period filter: a dropdown with quick picks (Today, MTD, QTD, This FY) and lists of weeks, months and
  * Indian financial years (1 April to 31 March), plus a custom range.
  * The selection is a short key so it fits in the URL: all, today, mtd, qtd, fy, w:2026-10-26, m:2026-10, y:2026, c:2026-01-01:2026-03-31.
+ * Forward-looking keys, for dates that lie ahead such as bond expiries: next:30, next:90, rfy (rest of this FY).
  */
 export type Period = { key: string; from: Date | null; to: Date | null; label: string; detail: string };
 
@@ -24,16 +25,28 @@ export const fyStartYear = (date: Date) => (date.getMonth() >= 3 ? date.getFullY
 const fyName = (year: number) => `FY ${year}–${String(year + 1).slice(2)}`;
 const monday = (date: Date) => addDays(startOfDay(date), -((date.getDay() + 6) % 7));
 
-/** Range for a key. `to` is exclusive; open periods run to the end of today. */
-export function resolvePeriod(key: string, now = new Date()): Period {
+/**
+ * Range for a key. `to` is exclusive; open periods run to the end of today,
+ * unless `future` is set, when months, weeks and years run to their real end.
+ */
+export function resolvePeriod(key: string, now = new Date(), { future = false }: { future?: boolean } = {}): Period {
   const today = startOfDay(now);
   const tomorrow = addDays(today, 1);
   const range = (from: Date, end: Date) => {
-    const to = end > tomorrow ? tomorrow : end;
-    const open = end > tomorrow;
+    const open = !future && end > tomorrow;
+    const to = open ? tomorrow : end;
     return { from, to, detail: `${fmt.format(from)} → ${open ? "Today" : fmt.format(addDays(to, -1))}` };
   };
   const [kind, a, b] = key.split(":");
+  if (kind === "next" && Number(a) > 0) {
+    const days = Number(a);
+    const to = addDays(today, days + 1);
+    return { key, from: today, to, label: `Next ${days} days`, detail: `${fmt.format(today)} → ${fmt.format(addDays(to, -1))}` };
+  }
+  if (kind === "rfy") {
+    const to = new Date(fyStartYear(today) + 1, 3, 1);
+    return { key, from: today, to, label: `Rest of ${fyName(fyStartYear(today))}`, detail: `${fmt.format(today)} → ${fmt.format(addDays(to, -1))}` };
+  }
   if (kind === "today") return { key, from: today, to: tomorrow, label: "Today", detail: fmt.format(today) };
   if (kind === "mtd") return { key, ...range(new Date(today.getFullYear(), today.getMonth(), 1), tomorrow), label: "Month to date" };
   if (kind === "qtd") {
@@ -89,6 +102,11 @@ const QUICK = [
   { key: "qtd", label: "QTD" },
   { key: "fy", label: "This FY" },
 ];
+const AHEAD = [
+  { key: "next:30", label: "Next 30 days" },
+  { key: "next:90", label: "Next 90 days" },
+  { key: "rfy", label: "Rest of FY" },
+];
 
 export function PeriodPicker({
   value,
@@ -96,6 +114,7 @@ export function PeriodPicker({
   earliest,
   compact = false,
   align = "left",
+  future = false,
 }: {
   value: string;
   onChange: (key: string) => void;
@@ -104,8 +123,10 @@ export function PeriodPicker({
   compact?: boolean;
   /** Open the panel toward the left, for a picker at the right edge. */
   align?: "left" | "right";
+  /** Offer ranges that lie ahead (next 30/90 days, rest of FY, coming weeks and months) and stop capping at today. */
+  future?: boolean;
 }) {
-  const period = resolvePeriod(value);
+  const period = resolvePeriod(value, undefined, { future });
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>(value.startsWith("w:") ? "week" : value.startsWith("m:") ? "month" : value.startsWith("c:") ? "custom" : "year");
   const [customFrom, setCustomFrom] = useState(period.from ? iso(period.from) : "");
@@ -135,14 +156,15 @@ export function PeriodPicker({
 
   const now = new Date();
   const thisWeek = monday(now);
-  const weeks = Array.from({ length: 12 }, (_, i) => addDays(thisWeek, -7 * i));
-  const months = Array.from({ length: 12 }, (_, i) => new Date(now.getFullYear(), now.getMonth() - i, 1));
+  const step = future ? 1 : -1;
+  const weeks = Array.from({ length: 12 }, (_, i) => addDays(thisWeek, 7 * i * step));
+  const months = Array.from({ length: 12 }, (_, i) => new Date(now.getFullYear(), now.getMonth() + i * step, 1));
   const currentFy = fyStartYear(now);
   const oldestFy = Math.min(currentFy - 4, earliest ? fyStartYear(earliest) : currentFy);
-  const years = Array.from({ length: currentFy - oldestFy + 1 }, (_, i) => currentFy - i);
+  const years = [...(future ? [currentFy + 1] : []), ...Array.from({ length: currentFy - oldestFy + 1 }, (_, i) => currentFy - i)];
 
   const option = (key: string, title: string, badge?: string) => {
-    const resolved = resolvePeriod(key);
+    const resolved = resolvePeriod(key, undefined, { future });
     return (
       <button type="button" key={key} className={`period-option${value === key ? " is-on" : ""}`} onClick={() => pick(key)}>
         <b>{title}</b>
@@ -186,6 +208,15 @@ export function PeriodPicker({
               </button>
             </span>
           </div>
+          {future ? (
+            <div className="period-quick period-ahead" aria-label="Coming up">
+              {AHEAD.map((item) => (
+                <button type="button" key={item.key} className={value === item.key ? "is-on" : ""} onClick={() => pick(item.key)}>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="period-quick">
             {QUICK.map((item) => (
               <button type="button" key={item.key} className={value === item.key ? "is-on" : ""} onClick={() => pick(item.key)}>
@@ -203,7 +234,7 @@ export function PeriodPicker({
 
           {tab === "week" ? (
             <>
-              <p className="period-hint">Monday to Sunday · last 12 weeks</p>
+              <p className="period-hint">Monday to Sunday · {future ? "next 12 weeks" : "last 12 weeks"}</p>
               <div className="period-list">
                 {weeks.map((start, i) => option(`w:${iso(start)}`, `${fmtShort.format(start)} – ${fmtShort.format(addDays(start, 6))}`, i === 0 ? "This week" : undefined))}
               </div>
@@ -211,7 +242,7 @@ export function PeriodPicker({
           ) : null}
           {tab === "month" ? (
             <>
-              <p className="period-hint">Calendar months · last 12 months</p>
+              <p className="period-hint">Calendar months · {future ? "next 12 months" : "last 12 months"}</p>
               <div className="period-list">
                 {months.map((start, i) => option(`m:${iso(start).slice(0, 7)}`, fmtMonth.format(start), i === 0 ? "Current month" : undefined))}
               </div>
@@ -220,7 +251,7 @@ export function PeriodPicker({
           {tab === "year" ? (
             <>
               <p className="period-hint">Indian financial year · 1 April → 31 March next year</p>
-              <div className="period-list">{years.map((year) => option(`y:${year}`, fyName(year), year === currentFy ? "Current financial year" : undefined))}</div>
+              <div className="period-list">{years.map((year) => option(`y:${year}`, fyName(year), year === currentFy ? "Current financial year" : year > currentFy ? "Next financial year" : undefined))}</div>
             </>
           ) : null}
           {tab === "custom" ? (

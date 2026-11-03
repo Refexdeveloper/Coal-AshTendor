@@ -8,6 +8,7 @@ import { loadDashboard, loadReports } from "../services/metrics";
 import { db } from "../db";
 import { publicUser } from "../middleware/auth";
 import { plannedOwners } from "../services/team";
+import { BOND_MANAGERS, listBonds } from "../services/bonds";
 
 /** Calendar sets do not survive JSON; the client rebuilds them. */
 export function calendarJson(calendar: Calendar) {
@@ -236,6 +237,12 @@ views.get("/admin", async (req, res) => {
     refexone: { configured: directoryConfigured(), lastSync: await lastSync(), schedule: await syncSchedule() },
     sso: ssoStatus(req),
   });
+});
+
+/** The EMD / performance bond register for the dashboard. */
+views.get("/bonds", async (req, res) => {
+  const bonds = await listBonds();
+  res.json({ bonds, canImport: BOND_MANAGERS.includes(req.actor!.role), importedAt: bonds.reduce((latest: Date | null, bond: { importedAt: Date }) => (!latest || bond.importedAt > latest ? bond.importedAt : latest), null) });
 });
 
 views.get("/tenders/:id", async (req, res) => {

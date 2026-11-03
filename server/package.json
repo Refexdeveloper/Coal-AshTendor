@@ -12,7 +12,8 @@
     "db:reset": "tsx scripts/db-setup.ts --reset && tsx scripts/seed.ts",
     "db:seed": "tsx scripts/seed.ts",
     "tunnel": "tsx scripts/tunnel.ts",
-    "db:demo": "tsx scripts/demo-data.ts"
+    "db:demo": "tsx scripts/demo-data.ts",
+    "db:demo:emd": "tsx scripts/demo-emd.ts"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.22.0",

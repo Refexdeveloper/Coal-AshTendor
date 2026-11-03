@@ -119,6 +119,7 @@ export type EmdRecord = {
   submittedToAuthority: boolean;
   authorityNote: string;
   notes: string;
+  bgRequest?: string | null;
 };
 
 export type ApprovalRecord = {
@@ -200,3 +201,41 @@ export type ChecklistItem = { label: string; gap: string; ok: boolean; owner: st
 
 /** Calendar as sent over JSON; toCalendar() turns it back into the Calendar the helpers expect. */
 export type CalendarJson = { timeZone: string; startMin: number; endMin: number; workingDays: number[]; holidays: string[] };
+
+/** A row of the EMD / performance bond register, imported from the bond workbook. */
+export type SuretyBond = {
+  id: string;
+  kind: "EMD" | "PERFORMANCE";
+  serialNo: number | null;
+  state: string;
+  line: string;
+  tenderRef: string;
+  tenderDetails: string;
+  plant: string;
+  customer: string;
+  amount: number | null;
+  onlineAmount: number | null;
+  isbAmount: number | null;
+  broker: string;
+  insurer: string;
+  bondNumber: string;
+  issueDate: Date | null;
+  startDate: Date | null;
+  expiryDate: Date | null;
+  claimExpiryDate: Date | null;
+  ext1IssueDate: Date | null;
+  ext1StartDate: Date | null;
+  ext1ExpiryDate: Date | null;
+  ext1ClaimDate: Date | null;
+  ext2Date: Date | null;
+  ext2ClaimDate: Date | null;
+  premium: number | null;
+  premiumPercent: number | null;
+  stampDuty: number | null;
+  mode: string;
+  transferType: string;
+  status: string;
+  usedFor: string;
+  sourceFile: string;
+  importedAt: Date;
+};

@@ -71,6 +71,7 @@ const MODELS: Record<string, string> = {
   portal: "Portal",
   crawlerRun: "CrawlerRun",
   crawlerException: "CrawlerException",
+  suretyBond: "SuretyBond",
 };
 
 const RELATIONS: Record<string, Record<string, Relation>> = {
@@ -174,6 +175,7 @@ export interface Db {
   portal: Model;
   crawlerRun: Model;
   crawlerException: Model;
+  suretyBond: Model;
   $transaction<T>(work: (tx: Db) => Promise<T>): Promise<T>;
   $transaction<T>(work: Lazy<T>[]): Promise<T[]>;
   $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Lazy<unknown>;

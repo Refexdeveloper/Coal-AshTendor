@@ -225,6 +225,7 @@ CREATE TABLE `EmdRecord` (
   `submittedToAuthority` BOOLEAN NOT NULL DEFAULT false,
   `authorityNote` TEXT NOT NULL DEFAULT (''),
   `notes` TEXT NOT NULL DEFAULT (''),
+  `bgRequest` LONGTEXT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `EmdRecord_tenderId_key` (`tenderId`),
   CONSTRAINT `EmdRecord_tenderId_fkey` FOREIGN KEY (`tenderId`) REFERENCES `Tender`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
@@ -344,4 +345,45 @@ CREATE TABLE `CrawlerException` (
   PRIMARY KEY (`id`),
   KEY `CrawlerException_runId_idx` (`runId`),
   CONSTRAINT `CrawlerException_runId_fkey` FOREIGN KEY (`runId`) REFERENCES `CrawlerRun`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- EMD insurance surety bonds and performance bonds, imported from the bond register workbook.
+CREATE TABLE IF NOT EXISTS `SuretyBond` (
+  `id` VARCHAR(191) NOT NULL,
+  `kind` VARCHAR(32) NOT NULL,
+  `serialNo` INT NULL,
+  `state` VARCHAR(191) NOT NULL DEFAULT '',
+  `line` VARCHAR(32) NOT NULL DEFAULT '',
+  `tenderRef` TEXT NOT NULL DEFAULT (''),
+  `tenderDetails` TEXT NOT NULL DEFAULT (''),
+  `plant` VARCHAR(191) NOT NULL DEFAULT '',
+  `customer` VARCHAR(191) NOT NULL DEFAULT '',
+  `amount` DOUBLE NULL,
+  `onlineAmount` DOUBLE NULL,
+  `isbAmount` DOUBLE NULL,
+  `broker` VARCHAR(191) NOT NULL DEFAULT '',
+  `insurer` VARCHAR(191) NOT NULL DEFAULT '',
+  `bondNumber` VARCHAR(191) NOT NULL DEFAULT '',
+  `issueDate` DATETIME(3) NULL,
+  `startDate` DATETIME(3) NULL,
+  `expiryDate` DATETIME(3) NULL,
+  `claimExpiryDate` DATETIME(3) NULL,
+  `ext1IssueDate` DATETIME(3) NULL,
+  `ext1StartDate` DATETIME(3) NULL,
+  `ext1ExpiryDate` DATETIME(3) NULL,
+  `ext1ClaimDate` DATETIME(3) NULL,
+  `ext2Date` DATETIME(3) NULL,
+  `ext2ClaimDate` DATETIME(3) NULL,
+  `premium` DOUBLE NULL,
+  `premiumPercent` DOUBLE NULL,
+  `stampDuty` DOUBLE NULL,
+  `mode` VARCHAR(191) NOT NULL DEFAULT '',
+  `transferType` VARCHAR(191) NOT NULL DEFAULT '',
+  `status` VARCHAR(191) NOT NULL DEFAULT '',
+  `usedFor` VARCHAR(191) NOT NULL DEFAULT '',
+  `sourceFile` VARCHAR(255) NOT NULL DEFAULT '',
+  `importedById` VARCHAR(191) NOT NULL DEFAULT '',
+  `importedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  KEY `SuretyBond_kind_idx` (`kind`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

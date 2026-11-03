@@ -98,6 +98,13 @@ export async function updateFieldsAction(actor: User, formData: FormData): Promi
   }
 }
 
+/** BG letter details and supporting files that ride along with an EMD task's own submit. */
+async function saveEmdExtras(actor: User, tenderId: string, formData: FormData) {
+  const bg = Object.fromEntries(domain.BG_REQUEST_KEYS.filter((key) => formData.has(`bg_${key}`)).map((key) => [key, String(formData.get(`bg_${key}`) || "")]));
+  if (domain.hasBgRequest(bg)) await domain.saveBgRequest(actor, tenderId, bg);
+  await domain.attachEmdDocuments(actor, tenderId, await filesFrom(formData, "emdDocs"));
+}
+
 export async function taskAction(actor: User, formData: FormData): Promise<ActionState> {
   try {
     const intent = String(formData.get("intent") || "");
@@ -119,6 +126,7 @@ export async function taskAction(actor: User, formData: FormData): Promise<Actio
       const decision = intent === "dept-approve" ? "APPROVED" : intent === "dept-reject" ? "REJECTED" : "RETURNED";
       await domain.decideDepartment(actor, taskId, decision, notes, String(formData.get("returnStage") || "FINAL_COSTING"));
     } else if (intent === "emd-save" || intent === "emd-complete") {
+      await saveEmdExtras(actor, tenderId, formData);
       await domain.saveEmdProgress(actor, taskId, {
         intent: intent === "emd-save" ? "save" : "complete",
         amount: String(formData.get("amount") || ""),
@@ -131,7 +139,12 @@ export async function taskAction(actor: User, formData: FormData): Promise<Actio
         preparationStatus: intent === "emd-complete" ? "Verified" : String(formData.get("preparationStatus") || ""),
         file,
       });
+    } else if (intent === "bg-request") {
+      await domain.saveBgRequest(actor, tenderId, Object.fromEntries(domain.BG_REQUEST_KEYS.map((key) => [key, String(formData.get(`bg_${key}`) || "")])));
     } else if (intent === "emd-clarify") {
+      if (!String(formData.get("choice") || "")) throw new WorkflowError("Choose an EMD type. The system will not assume one.");
+      if (notes.trim().length < 3) throw new WorkflowError("Record why this EMD type was selected.");
+      await saveEmdExtras(actor, tenderId, formData);
       await domain.resolveEmdClarification(actor, taskId, String(formData.get("choice") || ""), notes);
     } else if (intent === "bid") {
       await domain.recordBid(actor, tenderId, {
@@ -403,6 +416,19 @@ export async function logExceptionAction(actor: User, formData: FormData): Promi
   await db.crawlerException.create({ data: { portalId, kind, detail, tenderHint: String(formData.get("tenderHint") || "") } });
   await db.portal.update({ where: { id: portalId }, data: { lastStatus: "EXCEPTION", lastError: detail, lastScanAt: new Date() } }).catch(() => null);
   return { ok: "Exception recorded" };
+}
+
+/** Replaces the bond register from the uploaded "Performance Bond & EMD ISB" workbook. */
+export async function importBondsAction(actor: User, formData: FormData): Promise<ActionState> {
+  try {
+    const file = (await filesFrom(formData, "file"))[0];
+    if (!file) return { error: "Choose the Excel workbook to import." };
+    const { importBonds } = await import("./bonds");
+    const result = await importBonds(actor, file);
+    return { ok: `Imported ${result.emd} EMD bonds and ${result.performance} performance bonds from ${file.name}.` };
+  } catch (error) {
+    return failure(error);
+  }
 }
 
 export async function ingestDiscoveredAction(actor: User, formData: FormData): Promise<ActionState> {

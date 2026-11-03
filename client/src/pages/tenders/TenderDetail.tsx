@@ -171,6 +171,7 @@ export default function TenderPage() {
     estimatedText: inr(tender.estimatedValue),
     estimatedValue: tender.estimatedValue,
     emdFee: inr(parseInr(fieldText("emd_fee")) ?? tender.emdExposure),
+    emdFeeValue: parseInr(fieldText("emd_fee")) ?? tender.emdExposure,
     emdTypeText: EMD_TYPE[tender.emdType] ?? tender.emdType,
     workDescription: fieldText("work_description"),
     scope: fieldText("scope"),
@@ -318,6 +319,7 @@ export default function TenderPage() {
                       notes: tender.emd.notes,
                       authorityNote: tender.emd.authorityNote,
                       submitted: tender.emd.submittedToAuthority,
+                      bgRequest: tender.emd.bgRequest ?? "",
                     }
                   : null
               }
@@ -513,6 +515,8 @@ export default function TenderPage() {
                       <dd>{tender.emd.exemptionBasis}</dd>
                     </>
                   ) : null}
+                  <dt>BG request letter</dt>
+                  <dd>{tender.emd.bgRequest ? <Link to={`/tenders/${tender.id}/bg-letter`} target="_blank">Open letter ↗</Link> : "Not filled yet"}</dd>
                   <dt>To authority</dt>
                   <dd>{tender.emd.submittedToAuthority ? `Submitted. ${tender.emd.authorityNote}` : "Not recorded"}</dd>
                   {tender.emd.documentId ? (

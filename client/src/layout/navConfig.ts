@@ -6,6 +6,7 @@ export const NAV: { href: string; label: string; icon: string; roles?: string[] 
   { href: "/worklist", label: "My worklist", icon: "check" },
   { href: "/register", label: "Tender register", icon: "list" },
   { href: "/tenders/new", label: "New tender", icon: "plus", roles: CREATOR_ROLES },
+  { href: "/bonds", label: "EMD & bonds", icon: "shield" },
   { href: "/reports", label: "Reports", icon: "chart" },
   { href: "/notifications", label: "Notifications", icon: "bell" },
   { href: "/email-logs", label: "Email log", icon: "mail", roles: ["ADMIN"] },

@@ -13,6 +13,8 @@ export type TaskContext = {
   estimatedText: string;
   estimatedValue: number | null;
   emdFee: string;
+  /** Raw rupees behind emdFee, for amount inputs. */
+  emdFeeValue: number | null;
   emdTypeText: string;
   workDescription: string;
   scope: string;
@@ -38,7 +40,8 @@ const SUCCESS: Record<string, { message: string; celebrate?: boolean }> = {
   "dept-reject": { message: "Final costing rejected. A business decision task was created." },
   "emd-save": { message: "EMD progress saved." },
   "emd-complete": { message: "EMD marked prepared and verified.", celebrate: true },
-  "emd-clarify": { message: "EMD type chosen. The right EMD task was created." },
+  "bg-request": { message: "BG letter details saved. Open the letter to print or download it." },
+  "emd-clarify": { message: "Letter details and documents saved. The EMD task was created." },
   bid: { message: "Bid submission recorded.", celebrate: true },
   exception: { message: "Exception closed." },
   "assign-submitter": { message: "Bid submitter assigned." },
@@ -76,6 +79,7 @@ export function FilePick({
   hint,
   required = false,
   multiple = false,
+  accept = ".pdf,.txt,.png,.jpg,.jpeg,.webp,.tif,.tiff",
   onPicked,
 }: {
   name: string;
@@ -83,6 +87,8 @@ export function FilePick({
   hint?: string;
   required?: boolean;
   multiple?: boolean;
+  /** File types offered by the picker; pass "" for any file. */
+  accept?: string;
   onPicked?: (names: string[]) => void;
 }) {
   const [names, setNames] = useState<string[]>([]);
@@ -106,7 +112,7 @@ export function FilePick({
         type="file"
         multiple={multiple}
         required={required}
-        accept=".pdf,.txt,.png,.jpg,.jpeg,.webp,.tif,.tiff"
+        accept={accept || undefined}
         onChange={(event) => {
           const picked = [...(event.target.files ?? [])].map((file) => file.name);
           setNames(picked);
@@ -193,14 +199,30 @@ function inWords(amount: number) {
 }
 
 /** Rupee amount box with a live formatted preview underneath. */
-export function AmountInput({ name, label, required = false, defaultValue = "" }: { name: string; label: string; required?: boolean; defaultValue?: string }) {
+export function AmountInput({
+  name,
+  label,
+  required = false,
+  defaultValue = "",
+  onValue,
+}: {
+  name: string;
+  label: string;
+  required?: boolean;
+  defaultValue?: string;
+  onValue?: (raw: string) => void;
+}) {
   const [raw, setRaw] = useState(defaultValue);
   const amount = Number(raw.replace(/,/g, ""));
   const valid = raw.trim() !== "" && Number.isFinite(amount);
   return (
     <label>
       {label}
-      <input name={name} inputMode="decimal" value={raw} onChange={(event) => setRaw(event.target.value)} placeholder="Digits only, e.g. 97200000" required={required} />
+      <input name={name} inputMode="decimal" value={raw} onChange={(event) => {
+          setRaw(event.target.value);
+          onValue?.(event.target.value);
+        }}
+        placeholder="Digits only, e.g. 97200000" required={required} />
       {raw.trim() ? (
         valid ? (
           <small className="amount-preview">

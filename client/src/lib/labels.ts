@@ -135,6 +135,7 @@ export const DOC_TYPE: Record<string, string> = {
   COSTING_SALES: "Sales input sheet",
   COSTING_FINAL: "Final costing sheet",
   EMD_EVIDENCE: "EMD evidence",
+  EMD_DOCUMENT: "EMD document",
   SUBMISSION_EVIDENCE: "Submission acknowledgement",
 };
 

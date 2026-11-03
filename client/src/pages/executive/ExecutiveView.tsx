@@ -121,7 +121,7 @@ const ICONS: Record<string, ReactNode> = {
   reset: <path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5" />,
 };
 
-function Icon({ name, className }: { name: string; className?: string }) {
+export function Icon({ name, className }: { name: string; className?: string }) {
   return (
     <svg className={className ?? "dk-ico"} viewBox="0 0 24 24" aria-hidden>
       {ICONS[name]}
@@ -859,7 +859,7 @@ function TenderSummary({ tender, names, tz, now }: { tender: Row; names: Map<str
 }
 
 /** Hero illustration: plant skyline with stacks, cooling tower, conveyor and coal heaps; smoke drifts. */
-function PlantArt() {
+export function PlantArt() {
   return (
     <svg className="dk-art" viewBox="0 0 900 300" preserveAspectRatio="xMaxYMax meet" aria-hidden>
       <defs>
