@@ -12,16 +12,36 @@ import { FxLink } from "@client/components/feature/fx-link";
 import type { CardFx } from "@client/components/feature/fx";
 import { PeriodPicker, inPeriod, resolvePeriod } from "@client/components/feature/period-picker";
 
-/** Status groups for the Status filter, the stage bar and the cards. */
-const GROUPS = [
+const EMD_DONE = ["COMPLETED", "SUBMITTED_EVIDENCE"];
+
+/**
+ * Status groups for the Status filter, the stage bar and the cards.
+ * Costing and EMD run side by side after approval, so each has its own rule and a tender can sit in both.
+ */
+const GROUPS: { key: string; label: string; color: string; statuses: string[]; match?: (tender: { overallStatus: string; costingStatus: string; emdStatus: string }) => boolean }[] = [
   { key: "intake", label: "Intake & review", color: "#6f9bff", statuses: ["UPLOADED", "OCR_PROCESSING", "DATA_VALIDATION_REQUIRED", "PENDING_RELEVANCE"] },
-  { key: "progress", label: "Costing & EMD", color: "#a78bfa", statuses: ["APPROVED_IN_PROGRESS"] },
+  {
+    key: "costing",
+    label: "Costing",
+    color: "#a78bfa",
+    statuses: ["APPROVED_IN_PROGRESS"],
+    match: (tender) => tender.overallStatus === "APPROVED_IN_PROGRESS" && tender.costingStatus !== "APPROVED",
+  },
+  {
+    key: "emd",
+    label: "EMD",
+    color: "#14b8a6",
+    statuses: ["APPROVED_IN_PROGRESS"],
+    match: (tender) => tender.overallStatus === "APPROVED_IN_PROGRESS" && !EMD_DONE.includes(tender.emdStatus),
+  },
   { key: "ready", label: "Ready to bid", color: "#f59e0b", statuses: ["READY_TO_BID"] },
   { key: "submitted", label: "Bid submitted", color: "#38bdf8", statuses: ["BID_EVIDENCE_PENDING", "BID_EVIDENCE_RECORDED"] },
   { key: "won", label: "Awarded", color: "#10b981", statuses: ["WON"] },
   { key: "lost", label: "Lost", color: "#ef4444", statuses: ["LOST"] },
   { key: "closed", label: "Closed / not bid", color: "#a8a29e", statuses: ["REJECTED_CLOSED", "NOT_BID_DEADLINE_MISSED", "CLOSED_BUSINESS", "CANCELLED"] },
 ];
+const inGroup = (item: (typeof GROUPS)[number], tender: { overallStatus: string; costingStatus: string; emdStatus: string }) =>
+  item.match ? item.match(tender) : item.statuses.includes(tender.overallStatus);
 const CLOSED = ["WON", "LOST", "REJECTED_CLOSED", "NOT_BID_DEADLINE_MISSED", "CLOSED_BUSINESS", "CANCELLED"];
 const SUBMITTED = ["BID_EVIDENCE_PENDING", "BID_EVIDENCE_RECORDED"];
 
@@ -262,9 +282,10 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
     return null;
   };
   const focused = cardRows(filter.card);
-  const selected = focused ? undefined : GROUPS.find((item) => item.key === group);
+  // Old links used one "progress" group for both branches; they now open the costing view.
+  const selected = focused ? undefined : GROUPS.find((item) => item.key === (group === "progress" ? "costing" : group));
   const focusLabel = CARD_LABEL[filter.card] ?? "";
-  const rows = (focused ?? (selected ? tenders.filter((tender) => selected.statuses.includes(tender.overallStatus)) : tenders))
+  const rows = (focused ?? (selected ? tenders.filter((tender) => inGroup(selected, tender)) : tenders))
     .slice()
     .sort((a, b) =>
       filter.card === "due" && a.bidSubmissionEnd && b.bidSubmissionEnd
@@ -367,9 +388,9 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
         </header>
         <div className="stage-legend dk-legend">
           {GROUPS.map((item) => {
-            const list = tenders.filter((tender) => item.statuses.includes(tender.overallStatus));
+            const list = tenders.filter((tender) => inGroup(item, tender));
             return (
-              <FxLink key={item.key} fx="pulse" href={stageHref(item.key)} className={`stage-key ${group === item.key ? "on" : ""}`}>
+              <FxLink key={item.key} fx="pulse" href={stageHref(item.key, item.key === "costing" || item.key === "emd" ? "branch-detail" : undefined)} className={`stage-key ${selected?.key === item.key ? "on" : ""}`}>
                 <i style={{ background: item.color }} />
                 <span>{item.label}</span>
                 <b>{list.length}</b>
@@ -501,6 +522,10 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
           </button>
         </div>
       </form>
+
+      {selected && (selected.key === "costing" || selected.key === "emd") ? (
+        <BranchPanel branch={selected.key} rows={rows} names={names} tz={tz} now={now} back={stageHref()} />
+      ) : null}
 
       <div className="dk-main">
         <section className="dk-panel" id="recent-tenders">
@@ -732,6 +757,95 @@ export function ExecutiveView({ user, group, data }: { user: { name: string; rol
 }
 
 /** Expanded row: workflow, commercials, decisions and all 44 fields of one tender. */
+const COSTING_STEPS = [
+  ["DRAFT_COSTING", "Draft costing"],
+  ["SALES_INPUT", "Sales input"],
+  ["FINAL_COSTING", "Final costing"],
+  ["DEPT_APPROVAL", "Dept. approval"],
+] as const;
+const EMD_STEPS = [
+  ["EMD_CLARIFICATION", "Requirement check"],
+  ["EMD_BG", "Bank guarantee"],
+  ["EMD_ISB", "ISB / surety bond"],
+  ["EMD_EXEMPTION", "Exemption"],
+  ["EMD_OTHER", "Other instrument"],
+] as const;
+
+/** Details for the Costing or EMD stage card: where each tender's branch stands, who has it and what is at stake. */
+function BranchPanel({ branch, rows, names, tz, now, back }: { branch: "costing" | "emd"; rows: Row[]; names: Map<string, string>; tz: string; now: number; back: string }) {
+  const steps = branch === "costing" ? COSTING_STEPS : EMD_STEPS;
+  const stageSet = new Set<string>(steps.map(([stage]) => stage));
+  const items = rows.map((tender) => {
+    const task = tender.tasks.find((item) => stageSet.has(item.stage));
+    const late = Boolean(task?.dueAt && task.dueAt.getTime() < now);
+    const owners = task ? (JSON.parse(task.assigneeIds) as string[]).map((id) => names.get(id) ?? "Unknown").join(", ") : "";
+    return { tender, task, late, owners };
+  });
+  const counts = steps.map(([stage, label]) => ({ stage, label, count: items.filter((item) => item.task?.stage === stage).length })).filter((step) => step.count || branch === "costing");
+  const lateCount = items.filter((item) => item.late).length;
+  const value = branch === "costing" ? rows.reduce((total, t) => total + (t.estimatedValue ?? 0), 0) : rows.reduce((total, t) => total + (t.emdType === "EXEMPTION" ? 0 : t.emdExposure ?? 0), 0);
+  return (
+    <section className={`dk-panel branch-panel ${branch}`} id="branch-detail">
+      <header className="dk-panel-head">
+        <span className="dk-panel-icon">
+          <Icon name={branch === "costing" ? "rupee" : "shield"} />
+        </span>
+        <div>
+          <h2>{branch === "costing" ? "Costing in progress" : "EMD in progress"}</h2>
+          <p>
+            {rows.length} tender{rows.length === 1 ? "" : "s"} · {branch === "costing" ? "estimated value" : "EMD exposure"} {inr(value)}
+            {lateCount ? ` · ${lateCount} overdue` : ""}
+          </p>
+        </div>
+        <Link className="dk-ghost" to={back} preventScrollReset>
+          All stages
+        </Link>
+      </header>
+      <div className="branch-steps">
+        {counts.map((step) => (
+          <span key={step.stage} className={step.count ? "has" : ""}>
+            <b>{step.count}</b>
+            {step.label}
+          </span>
+        ))}
+      </div>
+      {items.length === 0 ? <p className="dk-empty">No tenders at this stage.</p> : null}
+      <ul className="branch-list">
+        {items.map(({ tender, task, late, owners }) => (
+          <li key={tender.id} className={late ? "late" : ""}>
+            <Link to={`/tenders/${tender.id}`}>
+              <span className="branch-main">
+                <span className="dk-ref">{tender.recordId}</span>
+                <strong>{tender.projectName || "Untitled"}</strong>
+                <small>{tender.clientName || "—"}</small>
+              </span>
+              <span className="branch-step">
+                <span className={`dk-pill ${late ? "red" : branch === "costing" ? "violet" : "green"}`}>{task ? steps.find(([stage]) => stage === task.stage)?.[1] ?? STAGE[task.stage] ?? task.title : branch === "costing" ? labelText(COSTING, tender.costingStatus) : labelText(EMD, tender.emdStatus)}</span>
+                <small>{task ? `${owners || "Unassigned"} · due ${formatWhen(task.dueAt, tz)}` : "No open task"}</small>
+              </span>
+              <span className="branch-figures">
+                {branch === "costing" ? (
+                  <>
+                    <b>{inr(tender.estimatedValue)}</b>
+                    <small>{tender.finalCostingValue ? `Final ${inr(tender.finalCostingValue)}` : labelText(COSTING, tender.costingStatus)}</small>
+                  </>
+                ) : (
+                  <>
+                    <b>{tender.emdType === "EXEMPTION" ? "Exempt" : inr(tender.emdExposure)}</b>
+                    <small>{EMD_TYPE[tender.emdType] ?? tender.emdType}</small>
+                  </>
+                )}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+const labelText = (map: Record<string, { label: string }>, value: string) => map[value]?.label ?? value;
+
 function TenderSummary({ tender, names, tz, now }: { tender: Row; names: Map<string, string>; tz: string; now: number }) {
   const fieldText = (key: string) => {
     const row = tender.fields.find((field) => field.fieldKey === key);

@@ -240,11 +240,6 @@ export default function BondsPage() {
             EMD &amp; bond register <span className="wave">🛡️</span>
           </div>
           <h1>Surety &amp; performance bonds</h1>
-          <p>
-            {everyBond.length
-              ? `${emd.length} EMD bonds · ${pb.length} performance bonds${period.from ? ` ${byExpiry ? "expiring" : "issued"} ${period.detail}` : ""}${data.importedAt ? ` · updated ${day(data.importedAt)} from ${everyBond[0].sourceFile || "the bond workbook"}` : ""}`
-              : "No bonds yet. Import the bond workbook to fill the register."}
-          </p>
         </div>
         <div className="dk-hero-tools">
           <PeriodPicker key={byExpiry ? "expiry" : "issued"} value={filter.period || "all"} onChange={(key) => setFilter("period", key)} earliest={earliest} compact align="right" future={byExpiry} />
