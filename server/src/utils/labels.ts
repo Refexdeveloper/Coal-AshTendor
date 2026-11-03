@@ -114,7 +114,7 @@ export const STAGE_HELP: Record<string, string> = {
   DATA_VALIDATION: "Check the extracted fields in the Tender details tab and save any corrections. Then tick the box below and submit for relevance review.",
   OCR_EXCEPTION: "Text could not be read from the upload. Enter the fields by hand or upload a readable copy, then close the exception.",
   RELEVANCE: "Decide whether the business should pursue this tender. Either reviewer's decision is final. Rejection needs a reason.",
-  DRAFT_COSTING: "Review scope and quantities, prepare the draft costing and attach the sheet with your assumptions.",
+  DRAFT_COSTING: "Review scope and quantities and prepare the draft costing with your assumptions. Attaching the sheet is optional.",
   SALES_INPUT: "Review the draft costing, add commercial and pricing inputs, and attach the completed input sheet.",
   FINAL_COSTING: "Validate the draft and sales inputs, prepare the final costing and enter the final amount for approval.",
   DEPT_APPROVAL: "Approve the final costing, return it for revision with comments, or reject it.",

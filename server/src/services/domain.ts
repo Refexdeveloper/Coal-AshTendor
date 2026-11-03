@@ -919,11 +919,13 @@ export async function completeCosting(
     await audit(db, { tenderId: task.tenderId, actor, action: "Returned costing for revision", entity: "WorkflowTask", detail: input.notes.trim() });
     return;
   }
-  if (!input.file) throw new WorkflowError("Attach the costing sheet before completing this task.");
-  if (!allowedUpload(input.file.name, input.file.type)) throw new WorkflowError("The costing sheet must be a PDF, text file, or image.");
+  // The draft can be handed on with its assumptions alone; sales input and final costing need their sheet.
+  if (!input.file && task.stage !== "DRAFT_COSTING") throw new WorkflowError("Attach the costing sheet before completing this task.");
+  if (input.file && !allowedUpload(input.file.name, input.file.type)) throw new WorkflowError("The costing sheet must be a PDF, text file, or image.");
   const amount = parseInr(input.amount);
   if (task.stage === "FINAL_COSTING" && amount == null) throw new WorkflowError("Enter the final costing amount as a number, without crore or lakh wording.");
-  const storedPath = await storeFile(task.tenderId, input.file.name, input.file.buffer);
+  const sheet = input.file;
+  const storedPath = sheet ? await storeFile(task.tenderId, sheet.name, sheet.buffer) : "";
   const version = (await db.costingRecord.count({ where: { tenderId: task.tenderId } })) + 1;
   const routing = await db.tender.findUnique({ where: { id: task.tenderId } });
   const nextStage =
@@ -935,18 +937,20 @@ export async function completeCosting(
   if (!nextStage.owners.length) throw new WorkflowError(`Nobody for ${nextStage.title.toLowerCase()} can sign in. Add them in Administration.`);
   const plan = await plannedDue(nextStage.stage, calendar);
   const created = await db.$transaction(async (tx) => {
-    const document = await tx.tenderDocument.create({
-      data: {
-        tenderId: task.tenderId,
-        fileName: input.file!.name,
-        storedPath,
-        mimeType: input.file!.type || "application/octet-stream",
-        sizeBytes: input.file!.buffer.length,
-        sha256: sha256(input.file!.buffer),
-        docType: COSTING_DOC[task.stage],
-        uploadedById: actor.id,
-      },
-    });
+    const document = sheet
+      ? await tx.tenderDocument.create({
+          data: {
+            tenderId: task.tenderId,
+            fileName: sheet.name,
+            storedPath,
+            mimeType: sheet.type || "application/octet-stream",
+            sizeBytes: sheet.buffer.length,
+            sha256: sha256(sheet.buffer),
+            docType: COSTING_DOC[task.stage],
+            uploadedById: actor.id,
+          },
+        })
+      : null;
     await tx.costingRecord.create({
       data: {
         tenderId: task.tenderId,
@@ -954,7 +958,7 @@ export async function completeCosting(
         stage: task.stage,
         assumptions: input.notes.trim(),
         amount,
-        documentId: document.id,
+        documentId: document?.id ?? "",
         createdById: actor.id,
       },
     });

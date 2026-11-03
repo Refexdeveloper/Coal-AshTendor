@@ -166,7 +166,11 @@ function TaskForm({
           <textarea name="notes" rows={3} required placeholder="Rates, quantities, margins, anything the next person should know" />
         </label>
         <AmountInput name="amount" label={`Amount in rupees ${task.stage === "FINAL_COSTING" ? "(required)" : "(optional)"}`} required={task.stage === "FINAL_COSTING"} />
-        <FilePick name="file" label="Costing sheet (required to complete)" hint="Excel exported to PDF, a scan or a text file" />
+        <FilePick
+          name="file"
+          label={task.stage === "DRAFT_COSTING" ? "Costing sheet (optional)" : "Costing sheet (required to complete)"}
+          hint="Excel exported to PDF, a scan or a text file"
+        />
         <div className="actions wide">
           <Submit name="intent" value="cost-complete">
             ✓ Complete and hand over
