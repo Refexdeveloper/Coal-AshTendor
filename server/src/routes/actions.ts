@@ -31,6 +31,7 @@ const ACTIONS: Record<string, Action> = {
   "import-bonds": actions.importBondsAction,
   "import-guarantees": actions.importGuaranteesAction,
   "add-guarantee": actions.addGuaranteeAction,
+  "update-emd": actions.updateEmdRegisterAction,
   "update-guarantee": actions.updateGuaranteeAction,
   "upload-bg-documents": actions.uploadBgDocumentsAction,
   gem: actions.gemAction,

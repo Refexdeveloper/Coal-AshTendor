@@ -13,8 +13,9 @@ import { KpiCard } from "@client/components/feature/kpi-card";
 import { ExecutiveView, type ExecutiveData } from "@client/pages/executive/ExecutiveView";
 import GuaranteesPage from "@client/pages/guarantees/Guarantees";
 import BondsPage from "@client/pages/bonds/Bonds";
+import EmdBoard from "@client/pages/emd/EmdBoard";
 
-/** Tender | BG | ISB switch on the Group CEO dashboard banner. The other boards show those registers in place. */
+/** Tender | EMD | BG | ISB switch on the Group CEO dashboard banner. The other boards show those registers in place. */
 function BoardToggle({ board }: { board: "tender" | "emd" | "bg" | "isb" }) {
   return (
     <nav className="board-toggle" aria-label="Dashboard">
@@ -23,6 +24,12 @@ function BoardToggle({ board }: { board: "tender" | "emd" | "bg" | "isb" }) {
           <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6" />
         </svg>
         Tender
+      </Link>
+      <Link to="/?board=emd" className={board === "emd" ? "is-on" : ""} aria-current={board === "emd" ? "page" : undefined}>
+        <svg viewBox="0 0 24 24" aria-hidden>
+          <path d="M12 3 5 6v6c0 4.2 2.8 7.2 7 9 4.2-1.8 7-4.8 7-9V6zM9 12l2 2 4-4" />
+        </svg>
+        EMD
       </Link>
       <Link to="/?board=bg" className={board === "bg" ? "is-on" : ""} aria-current={board === "bg" ? "page" : undefined}>
         <svg viewBox="0 0 24 24" aria-hidden>
@@ -112,7 +119,7 @@ export default function DashboardPage() {
     const asked = search.get("board");
     const board = asked === "emd" || asked === "bg" || asked === "isb" ? asked : "tender";
     if (board === "isb") return <BondsPage embedded toggle={<BoardToggle board="isb" />} />;
-    if (board === "emd") return <GuaranteesPage embedded onlyType="EMD" toggle={<BoardToggle board="emd" />} />;
+    if (board === "emd") return <EmdBoard toggle={<BoardToggle board="emd" />} />;
     if (board === "bg") return <GuaranteesPage embedded toggle={<BoardToggle board="bg" />} />;
     return <ExecutiveView user={user} group={params.group} data={data} toggle={<BoardToggle board="tender" />} />;
   }

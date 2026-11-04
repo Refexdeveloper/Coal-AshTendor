@@ -458,7 +458,7 @@ async function factsFor(tender: TenderFacts): Promise<EmailFacts> {
 }
 
 /** Audit actions that are not a step moving: edits and housekeeping get no step email. */
-const NOT_A_STEP = new Set(["Corrected tender fields", "Uploaded documents", "Extracted tender fields", "Escalation recipient missing", "Synced Refex One users"]);
+const NOT_A_STEP = new Set(["Corrected tender fields", "Uploaded documents", "Extracted tender fields", "Escalation recipient missing", "Synced Refex One users", "Updated EMD register"]);
 
 export function isStepAction(action: string) {
   return !NOT_A_STEP.has(action);

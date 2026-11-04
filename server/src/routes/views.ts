@@ -10,6 +10,7 @@ import { publicUser } from "../middleware/auth";
 import { plannedOwners } from "../services/team";
 import { BOND_MANAGERS, listBonds } from "../services/bonds";
 import { listGuarantees } from "../services/guarantees";
+import { listEmdBoard } from "../services/emd-board";
 import { documentCounts, documentsFor } from "../services/bg-documents";
 import { bondDocumentCounts, documentsForBond } from "../services/bond-documents";
 
@@ -253,6 +254,13 @@ views.get("/admin", async (req, res) => {
     refexone: { configured: directoryConfigured(), lastSync: await lastSync(), schedule: await syncSchedule() },
     sso: ssoStatus(req),
   });
+});
+
+/** EMD submissions while tenders are open: instrument, result, refund and security-deposit conversion. */
+views.get("/emd-board", async (req, res) => {
+  const board = await listEmdBoard();
+  const canEdit = [...BOND_MANAGERS, "GROUP_CEO", "REVIEWER"].includes(req.actor!.role);
+  res.json({ ...board, canEdit });
 });
 
 /** The EMD / performance bond register for the dashboard. */

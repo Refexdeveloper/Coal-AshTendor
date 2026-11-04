@@ -226,6 +226,13 @@ CREATE TABLE `EmdRecord` (
   `authorityNote` TEXT NOT NULL DEFAULT (''),
   `notes` TEXT NOT NULL DEFAULT (''),
   `bgRequest` LONGTEXT NULL,
+  `bankDetails` VARCHAR(255) NOT NULL DEFAULT '',
+  `issueDate` DATETIME(3) NULL,
+  `expiryDate` DATETIME(3) NULL,
+  `refundRequested` DOUBLE NULL,
+  `refundReceived` DOUBLE NULL,
+  `sdAmount` DOUBLE NULL,
+  `convertedToSd` BOOLEAN NOT NULL DEFAULT false,
   PRIMARY KEY (`id`),
   UNIQUE KEY `EmdRecord_tenderId_key` (`tenderId`),
   CONSTRAINT `EmdRecord_tenderId_fkey` FOREIGN KEY (`tenderId`) REFERENCES `Tender`(`id`) ON DELETE CASCADE ON UPDATE CASCADE

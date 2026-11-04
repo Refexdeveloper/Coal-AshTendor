@@ -465,6 +465,17 @@ async function amendmentFilesFrom(formData: FormData) {
   return amendmentFiles;
 }
 
+/** Saves one tender's EMD instrument, and its refund or security-deposit conversion. */
+export async function updateEmdRegisterAction(actor: User, formData: FormData): Promise<ActionState> {
+  try {
+    const { updateEmdRegister } = await import("./emd-board");
+    const result = await updateEmdRegister(actor, formData);
+    return { ok: `${result.recordId} EMD details saved.`, tenderId: result.tenderId };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 /** Adds one bank guarantee, with its scans and any amendment rows entered on the form. */
 export async function addGuaranteeAction(actor: User, formData: FormData): Promise<ActionState> {
   try {

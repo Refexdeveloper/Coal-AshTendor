@@ -6,7 +6,16 @@ const run = (sql: string) => db.$queryRaw(Object.assign([sql], { raw: [sql] }) a
 /** Columns added after the first release. New databases get them from schema.sql; existing ones here. */
 const ADDED_COLUMNS: Record<string, [string, string][]> = {
   Tender: [["businessLine", "VARCHAR(191) NOT NULL DEFAULT 'ASH'"]],
-  EmdRecord: [["bgRequest", "LONGTEXT NULL"]],
+  EmdRecord: [
+    ["bgRequest", "LONGTEXT NULL"],
+    ["bankDetails", "VARCHAR(255) NOT NULL DEFAULT ''"],
+    ["issueDate", "DATETIME(3) NULL"],
+    ["expiryDate", "DATETIME(3) NULL"],
+    ["refundRequested", "DOUBLE NULL"],
+    ["refundReceived", "DOUBLE NULL"],
+    ["sdAmount", "DOUBLE NULL"],
+    ["convertedToSd", "BOOLEAN NOT NULL DEFAULT false"],
+  ],
   Portal: [
     ["excludeWords", "TEXT NULL"],
     ["autoImport", "BOOLEAN NOT NULL DEFAULT true"],

@@ -120,6 +120,7 @@ const BOOLEAN_COLUMNS = new Set([
   "bgRequiresBoth",
   "revisionResetsSla",
   "autoImport",
+  "convertedToSd",
 ]);
 
 const TOUCHED = new Set(["Tender", "BidSubmission"]);

@@ -2401,6 +2401,23 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 @media (max-width: 520px) { .dk .dk-legend { grid-template-columns: 1fr; } }
 
 /* Group CEO dashboard: Tender | EMD switch */
+.emd-board .dk-cards { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.emd-board button.dk-card { width: 100%; font: inherit; text-align: left; cursor: pointer; }
+.emd-row { display: grid; gap: 12px; padding: 14px 0; border-top: 1px solid #e5eaf1; }
+.emd-row header { display: flex; align-items: flex-start; gap: 12px; }
+.emd-row header > div { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.emd-row header strong { color: #0f172a; }
+.emd-row header small, .emd-row { color: #64748b; }
+.emd-row dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.emd-row dl div { display: grid; gap: 2px; }
+.emd-row dt { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #64748b; }
+.emd-row dd { margin: 0; color: #0f172a; font-weight: 600; display: grid; gap: 2px; }
+.emd-row dd a { font-weight: 600; }
+.emd-board .dk-panel-head .dk-search-box { flex: 0 1 260px; }
+@media (max-width: 1100px) {
+  .emd-board .dk-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .emd-row dl { grid-template-columns: 1fr 1fr; }
+}
 .board-toggle { display: inline-flex; gap: 4px; padding: 4px; border-radius: 14px; background: rgba(255, 255, 255, 0.92); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 10px 24px -14px rgba(41, 37, 36, 0.4); backdrop-filter: blur(8px); }
 .board-toggle a { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 16px; border-radius: 10px; color: var(--ink-2); font-size: 0.86rem; font-weight: 700; text-decoration: none; transition: background 0.25s, color 0.25s, box-shadow 0.25s, transform 0.2s; }
 .board-toggle a:hover:not(.is-on) { background: var(--ember-soft); color: var(--ember); }

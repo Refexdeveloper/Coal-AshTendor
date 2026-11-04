@@ -11,6 +11,7 @@ export const taskAction = bound("task");
 export const importBondsAction = bound("import-bonds");
 export const importGuaranteesAction = bound("import-guarantees");
 export const addGuaranteeAction = bound("add-guarantee");
+export const updateEmdRegisterAction = bound("update-emd");
 export const updateGuaranteeAction = bound("update-guarantee");
 export const ingestDiscoveredAction = bound("ingest-discovered");
 
