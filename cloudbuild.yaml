@@ -35,7 +35,20 @@ steps:
       - --all-tags
       - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/coal-ash-tender
 
-  # 3) Deploy Cloud Run (client already baked into image; server starts on PORT)
+  # 3) Let the live service read BG and ISB scans already stored under Tender Documents.
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: tender-docs-read
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        gcloud storage buckets add-iam-policy-binding gs://p2p-app-storage-master-diorama-489103-u2 \
+          --member="serviceAccount:${_RUNTIME_SA}" \
+          --role="roles/storage.objectViewer" \
+          --condition='expression=resource.name.startsWith("projects/_/buckets/p2p-app-storage-master-diorama-489103-u2/objects/Tender Documents/"),title=coal-ash-tender-documents,description=Coal and Ash bank guarantee and surety bond scans'
+
+  # 4) Deploy Cloud Run (client already baked into image; server starts on PORT)
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     id: deploy
     entrypoint: gcloud
@@ -57,7 +70,7 @@ steps:
       - --set-secrets=DB_PASSWORD=coal-ash-db-password:latest,SESSION_SECRET=coal-ash-session-secret:latest
       - --set-env-vars=NODE_ENV=production,HOST=0.0.0.0,DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},INSTANCE_CONNECTION_NAME=${_SQL_INSTANCE},STORAGE_BACKEND=gcs,GCS_BUCKET=${_DOCS_BUCKET},GCS_PREFIX=coal-ash-docs/,AUTO_DB_SETUP=true,AUTO_DB_SEED=true,DEMO_LOGIN_HINT=true
 
-  # 4) Point public URLs at the live service (OCR + email links)
+  # 5) Point public URLs at the live service (OCR + email links)
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     id: set-public-urls
     entrypoint: bash

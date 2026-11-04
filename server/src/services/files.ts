@@ -1,14 +1,8 @@
 import { createHash } from "crypto";
-import { existsSync } from "fs";
 import { mkdir, readFile, unlink, writeFile } from "fs/promises";
 import path from "path";
-import { pathToFileURL } from "url";
+import { deleteObject, docsBucketName, downloadObject, tenderBucketName, tenderObjectName, uploadObject } from "./gcs";
 import { repoRoot } from "../utils/root";
-
-/** Bond scans are stored in this folder of the P2P bucket, same layout as the existing ISB copies. */
-const TENDER_DOCUMENTS = "Tender Documents";
-const TENDER_BUCKET = "p2p-app-storage-master-diorama-489103-u2";
-const TENDER_PROJECT = "master-diorama-489103-u2";
 
 export type StorageBackend = "local" | "gcs";
 
@@ -28,16 +22,10 @@ function objectPath(key: string) {
   return `${gcsPrefix()}${key.replace(/^\/+/, "")}`;
 }
 
-let gcsBucket: import("@google-cloud/storage").Bucket | null = null;
-
-async function getGcsBucket() {
-  if (gcsBucket) return gcsBucket;
-  const bucketName = process.env.GCS_BUCKET;
-  if (!bucketName) throw new Error("STORAGE_BACKEND=gcs requires GCS_BUCKET");
-  const { Storage } = await import("@google-cloud/storage");
-  const storage = new Storage();
-  gcsBucket = storage.bucket(bucketName);
-  return gcsBucket;
+function requireDocsBucket() {
+  const name = docsBucketName();
+  if (!name) throw new Error("STORAGE_BACKEND=gcs requires GCS_BUCKET");
+  return name;
 }
 
 export function sha256(buffer: Buffer) {
@@ -82,9 +70,9 @@ const MIME: Record<string, string> = {
   txt: "text/plain",
 };
 
-/** Bond document keys are `isb/<bond number>/<file>`, matching the folder already in the bucket. */
-function isBondDocument(key: string) {
-  return key.startsWith("isb/");
+/** Bank guarantee and surety-bond scans live under Tender Documents. */
+function isRegisterScan(key: string) {
+  return key.startsWith("bg/") || key.startsWith("isb/");
 }
 
 function contentType(fileName: string) {
@@ -92,101 +80,32 @@ function contentType(fileName: string) {
   return MIME[ext] ?? "application/octet-stream";
 }
 
-function tenderObject(key: string) {
-  return `${TENDER_DOCUMENTS}/${key.replace(/^\/+/, "")}`;
+async function saveRegisterScan(key: string, buffer: Buffer, fileName: string) {
+  await uploadObject(tenderBucketName(), tenderObjectName(key), buffer, contentType(fileName));
 }
 
-/** The P2P storage helper, when this machine has that project beside Coal & Ash. */
-async function tenderDocuments() {
-  const file = path.resolve(repoRoot(), "../../P2P/server/src/services/gcsStorage.js");
-  if (!existsSync(file)) return null;
-  return import(pathToFileURL(file).href) as Promise<{
-    uploadToGcs: (gcsPath: string, buffer: Buffer, contentType?: string) => Promise<string | null>;
-    downloadFromGcs: (gcsPath: string) => Promise<Buffer | null>;
-    deleteFromGcs: (gcsPath: string) => Promise<void>;
-  }>;
-}
-
-let tenderBucket: import("@google-cloud/storage").Bucket | null = null;
-
-/** Cloud Run has no P2P checkout, so it uses the runtime service account on the same bucket. */
-async function getTenderBucket() {
-  if (tenderBucket) return tenderBucket;
-  const { Storage } = await import("@google-cloud/storage");
-  const storage = new Storage({ projectId: TENDER_PROJECT });
-  tenderBucket = storage.bucket(TENDER_BUCKET);
-  return tenderBucket;
-}
-
-/** Puts one bond scan at `Tender Documents/isb/...` in the P2P bucket. */
-async function saveBondDocument(key: string, buffer: Buffer, fileName: string) {
-  const objectName = tenderObject(key);
-  const storage = await tenderDocuments();
-  if (storage) {
-    const saved = await storage.uploadToGcs(objectName, buffer, contentType(fileName));
-    if (!saved) throw new Error("The document could not be stored in Tender Documents.");
-    return;
-  }
-  const bucket = await getTenderBucket();
-  await bucket.file(objectName).save(buffer, {
-    resumable: false,
-    metadata: { contentType: contentType(fileName), cacheControl: "private, max-age=0" },
-  });
-}
-
-async function readBondDocument(key: string) {
-  const objectName = tenderObject(key);
-  const storage = await tenderDocuments();
-  if (storage) return storage.downloadFromGcs(objectName);
+async function readRegisterScan(key: string) {
   try {
-    const bucket = await getTenderBucket();
-    const [bytes] = await bucket.file(objectName).download();
-    return bytes;
+    return await downloadObject(tenderBucketName(), tenderObjectName(key));
   } catch {
     return null;
   }
 }
 
-async function deleteBondDocument(key: string) {
-  const storage = await tenderDocuments();
-  if (storage) {
-    await storage.deleteFromGcs(tenderObject(key)).catch(() => undefined);
-    return;
-  }
-  try {
-    const bucket = await getTenderBucket();
-    await bucket.file(tenderObject(key)).delete({ ignoreNotFound: true });
-  } catch {
-    /* The local copy is still removed. */
-  }
-}
-
 /**
- * Persist an upload. Returns a portable storage key (relative path), suitable for DB `storedPath`
- * on both local disk and GCS. Bond documents (`isb/...`) are saved in the P2P Tender Documents folder.
+ * Persist an upload. Bond and bank-guarantee scans are also stored at
+ * `Tender Documents/bg/...` or `Tender Documents/isb/...` in the P2P bucket.
  */
 export async function storeFile(tenderId: string, fileName: string, buffer: Buffer) {
   const key = `${tenderId}/${Date.now()}-${safeName(fileName)}`;
-  if (isBondDocument(key)) {
-    if (storageBackend() !== "gcs") {
-      const stored = path.join(UPLOAD_ROOT, key);
-      await mkdir(path.dirname(stored), { recursive: true });
-      await writeFile(stored, buffer);
-    }
-    await saveBondDocument(key, buffer, fileName);
-    return key;
-  }
   if (storageBackend() === "gcs") {
-    const bucket = await getGcsBucket();
-    await bucket.file(objectPath(key)).save(buffer, {
-      resumable: false,
-      metadata: { cacheControl: "private, max-age=0" },
-    });
-    return key;
+    await uploadObject(requireDocsBucket(), objectPath(key), buffer, contentType(fileName));
+  } else {
+    const stored = path.join(UPLOAD_ROOT, key);
+    await mkdir(path.dirname(stored), { recursive: true });
+    await writeFile(stored, buffer);
   }
-  const stored = path.join(UPLOAD_ROOT, key);
-  await mkdir(path.dirname(stored), { recursive: true });
-  await writeFile(stored, buffer);
+  if (isRegisterScan(key)) await saveRegisterScan(key, buffer, fileName).catch(() => undefined);
   return key;
 }
 
@@ -201,28 +120,27 @@ export async function readStored(storedPath: string) {
     try {
       return await readFile(resolved);
     } catch (error) {
-      if (!isBondDocument(key)) throw error;
-      const cloud = await readBondDocument(key);
+      if (!isRegisterScan(key)) throw error;
+      const cloud = await readRegisterScan(key);
       if (cloud) return cloud;
       throw error;
     }
   }
-  if (isBondDocument(key)) {
-    const cloud = await readBondDocument(key);
+  if (isRegisterScan(key)) {
+    const cloud = await readRegisterScan(key);
     if (cloud) return cloud;
   }
-  const bucket = await getGcsBucket();
-  const [bytes] = await bucket.file(objectPath(key)).download();
+  const bytes = await downloadObject(requireDocsBucket(), objectPath(key));
+  if (!bytes) throw new Error("File missing");
   return bytes;
 }
 
 export async function deleteStored(storedPath: string) {
   if (!storedPath) return;
   const key = storageKey(storedPath);
-  if (isBondDocument(key)) await deleteBondDocument(key);
+  if (isRegisterScan(key)) await deleteObject(tenderBucketName(), tenderObjectName(key)).catch(() => undefined);
   if (storageBackend() === "gcs") {
-    const bucket = await getGcsBucket();
-    await bucket.file(objectPath(key)).delete({ ignoreNotFound: true });
+    await deleteObject(requireDocsBucket(), objectPath(key));
     return;
   }
   const resolved = path.resolve(UPLOAD_ROOT, key);

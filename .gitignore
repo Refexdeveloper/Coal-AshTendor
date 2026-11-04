@@ -1,6 +1,7 @@
 node_modules
 dist
 server/data
+server/gcs-key.json
 # Secrets and local env (never commit real .env — use *.example)
 .env
 .env.*
