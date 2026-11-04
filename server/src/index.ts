@@ -5,6 +5,7 @@ import { createApp } from "./app";
 import { ensureDatabaseReady } from "./bootstrap";
 import { migrate } from "./db/migrations";
 import { ensureDefaultUsers } from "./services/accounts";
+import { restoreLiveRegisters } from "./services/live-register";
 import { storageBackend, storageLabel } from "./services/files";
 import { maybeScheduledSync, syncEveryHours } from "./services/refexone-directory";
 import { repoRoot } from "./utils/root";
@@ -16,6 +17,9 @@ async function main() {
   });
   await ensureDefaultUsers().catch((error) => {
     console.error("[db] Default login was not added:", error instanceof Error ? error.message : error);
+  });
+  await restoreLiveRegisters().catch((error) => {
+    console.error("[db] Live register was not loaded:", error instanceof Error ? error.message : error);
   });
 
   const port = Number(process.env.PORT) || 4000;
