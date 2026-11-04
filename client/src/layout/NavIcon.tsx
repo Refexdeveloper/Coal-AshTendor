@@ -64,6 +64,14 @@ export function NavIcon({ name }: { name: string }) {
       </svg>
     );
   }
+  if (name === "bank") {
+    return (
+      <svg {...common}>
+        <path d="M3.5 9.5 12 4l8.5 5.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M5.5 10v7M10 10v7M14 10v7M18.5 10v7M4 19.5h16" strokeLinecap="round" />
+      </svg>
+    );
+  }
   if (name === "shield") {
     return (
       <svg {...common}>

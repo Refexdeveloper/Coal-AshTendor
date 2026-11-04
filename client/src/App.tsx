@@ -13,6 +13,9 @@ import TenderPage from "@client/pages/tenders/TenderDetail";
 import BgLetterPage from "@client/pages/tenders/BgLetter";
 import WorklistPage from "@client/pages/Worklist";
 import BondsPage from "@client/pages/bonds/Bonds";
+import BondDetailPage from "@client/pages/bonds/BondDetail";
+import GuaranteesPage from "@client/pages/guarantees/Guarantees";
+import GuaranteeDetailPage from "@client/pages/guarantees/GuaranteeDetail";
 
 export default function App() {
   return (
@@ -27,6 +30,9 @@ export default function App() {
         <Route path="tenders/new" element={<NewTenderPage />} />
         <Route path="tenders/:id" element={<TenderPage />} />
         <Route path="bonds" element={<BondsPage />} />
+        <Route path="bonds/:id" element={<BondDetailPage />} />
+        <Route path="guarantees" element={<GuaranteesPage />} />
+        <Route path="guarantees/:id" element={<GuaranteeDetailPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="email-logs" element={<EmailLogsPage />} />

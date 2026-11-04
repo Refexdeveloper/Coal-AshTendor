@@ -99,6 +99,17 @@ function fill(template: string, vars: Record<string, string>) {
 /** Local mail goes only to this inbox. The subject starts with "[for Name]" so you can see who it was for. Real people are not emailed. */
 const TEST_INBOX = "sathishkumar.r@refex.co.in";
 
+/** Copied on every live message. Local mail does not send these, so testing stays in the one inbox above. */
+const LIVE_BCC = ["srivaths.varadharajan@refex.co.in", "gowtham.s@refex.co.in"];
+
+/** Cloud Run, or any production host whose public URL is not this machine. */
+function liveMail() {
+  if (process.env.K_SERVICE) return true;
+  if (process.env.NODE_ENV !== "production") return false;
+  const app = (process.env.APP_URL || process.env.PUBLIC_APP_URL || "").toLowerCase();
+  return Boolean(app) && !/localhost|127\.0\.0\.1/.test(app);
+}
+
 const SMTP_DEFAULTS = {
   host: "smtp.gmail.com",
   port: 587,
@@ -109,11 +120,12 @@ const SMTP_DEFAULTS = {
   fromName: "Coal & Ash Tenders",
 };
 
-/** Mail settings. Every message is delivered to redirectTo, not to the real person. */
+/** Mail settings. Locally every message goes to the test inbox. On the live server each person gets their own, with the BCC list. */
 export function mailConfig() {
   const port = Number(process.env.SMTP_PORT || SMTP_DEFAULTS.port);
   const pass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || SMTP_DEFAULTS.pass).replace(/\s+/g, "");
   const secureEnv = (process.env.SMTP_SECURE || "").trim();
+  const live = liveMail();
   return {
     host: (process.env.SMTP_HOST || SMTP_DEFAULTS.host).trim(),
     port,
@@ -124,8 +136,9 @@ export function mailConfig() {
     from:
       (process.env.SMTP_FROM || "").trim() ||
       `"${(process.env.SMTP_FROM_NAME || SMTP_DEFAULTS.fromName).trim()}" <${(process.env.SMTP_FROM_EMAIL || SMTP_DEFAULTS.fromEmail).trim()}>`,
-    redirectTo: (process.env.MAIL_REDIRECT_TO ?? TEST_INBOX).trim() || TEST_INBOX,
+    redirectTo: live ? "" : (process.env.MAIL_REDIRECT_TO ?? TEST_INBOX).trim() || TEST_INBOX,
     cc: (process.env.MAIL_CC ?? "").trim(),
+    bcc: live ? (process.env.MAIL_BCC ?? LIVE_BCC.join(",")).trim() : "",
   };
 }
 
@@ -188,7 +201,7 @@ function plainContent(subject: string, text: string, link: string): EmailContent
   return { headline: subject, intro, body: blocks.join("\n\n"), cta: { label: "Open Coal & Ash →", url: link } };
 }
 
-/** Who actually receives the message. Local mail always goes to the test inbox, not the real person. */
+/** Who actually receives the message. Local mail always goes to the test inbox. Live mail goes to the person it was written for. */
 export function deliveredTo(to: string, toName: string) {
   const inbox = mailConfig().redirectTo;
   if (inbox && inbox.toLowerCase() !== to.toLowerCase()) {
@@ -202,6 +215,16 @@ function copyOf(to: string) {
   const cc = mailConfig().cc;
   if (!cc || cc.toLowerCase() === to.toLowerCase()) return "";
   return cc;
+}
+
+/** Live BCC list, without anyone already named as To or CC. */
+function blindCopy(to: string, cc: string) {
+  const skip = new Set([to, cc].join(",").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean));
+  return mailConfig()
+    .bcc.split(",")
+    .map((email) => email.trim())
+    .filter((email) => email && !skip.has(email.toLowerCase()))
+    .join(", ");
 }
 
 export type MailAttachment = { filename: string; content: string | Buffer; contentType: string; documentId?: string };
@@ -258,6 +281,7 @@ export async function deliver(message: {
   const config = mailConfig();
   const target = deliveredTo(message.to, message.toName);
   const cc = copyOf(target.email);
+  const bcc = blindCopy(target.email, cc);
   const intendedFor = target.forWhom || null;
   const subject = intendedFor ? `[for ${message.toName}] ${message.subject}` : message.subject;
   const content: EmailContent = {
@@ -309,6 +333,7 @@ export async function deliver(message: {
     from: config.from,
     to: target.email,
     cc: cc || undefined,
+    bcc: bcc || undefined,
     subject,
     text,
     html: logo ? logo.html : html,

@@ -29,7 +29,7 @@ type Data = {
   size: number;
   counts: Record<string, number>;
   types: string[];
-  mail: { ready: boolean; from: string; testInbox: string; cc?: string };
+  mail: { ready: boolean; from: string; testInbox: string; cc?: string; bcc?: string };
 };
 
 const STATUS: Record<string, { label: string; tone: string }> = {
@@ -143,7 +143,7 @@ export default function EmailLogsPage() {
 
       <section className={`banner ${data.mail.ready ? (data.mail.testInbox ? "warn" : "good") : "bad"}`}>
         {data.mail.ready ? `Sending from ${data.mail.from}.` : "Mail is not set up (no SMTP password), so emails are logged but not sent."}
-        {data.mail.testInbox ? ` Test mode: every email goes only to ${data.mail.testInbox}.` : ""}
+        {data.mail.testInbox ? ` Test mode: every email goes only to ${data.mail.testInbox}.` : data.mail.bcc ? ` Each person gets their own email. BCC: ${data.mail.bcc}.` : ""}
       </section>
 
       <div className="mail-counts">

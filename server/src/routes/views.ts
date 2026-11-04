@@ -9,6 +9,9 @@ import { db } from "../db";
 import { publicUser } from "../middleware/auth";
 import { plannedOwners } from "../services/team";
 import { BOND_MANAGERS, listBonds } from "../services/bonds";
+import { listGuarantees } from "../services/guarantees";
+import { documentCounts, documentsFor } from "../services/bg-documents";
+import { bondDocumentCounts, documentsForBond } from "../services/bond-documents";
 
 /** Calendar sets do not survive JSON; the client rebuilds them. */
 export function calendarJson(calendar: Calendar) {
@@ -155,7 +158,7 @@ views.get("/email-logs", async (req, res) => {
     size,
     counts,
     types: [...new Set(rows.map((row) => row.eventType))].sort(),
-    mail: { ready: mailReady(), from: config.from, testInbox: config.redirectTo, cc: config.cc },
+    mail: { ready: mailReady(), from: config.from, testInbox: config.redirectTo, cc: config.cc, bcc: config.bcc },
   });
 });
 
@@ -201,12 +204,25 @@ views.get("/email-logs/:id", async (req, res) => {
 });
 
 views.get("/portals", async (_req, res) => {
-  const [portals, exceptions, calendar] = await Promise.all([
+  const { clearStaleRuns, gemPortal, gemProgress, gemRunning } = await import("../services/gem");
+  await clearStaleRuns().catch(() => undefined);
+  const gem = await gemPortal();
+  const [portals, exceptions, calendar, gemRuns, gemBids] = await Promise.all([
     db.portal.findMany({ orderBy: { name: "asc" }, include: { runs: { orderBy: { startedAt: "desc" }, take: 1 } } }),
     db.crawlerException.findMany({ orderBy: { createdAt: "desc" }, take: 30 }),
     getCalendar(),
+    db.crawlerRun.findMany({ where: { portalId: gem.id }, orderBy: { startedAt: "desc" }, take: 10 }),
+    db.gemBid.findMany({ orderBy: { firstSeenAt: "desc" }, take: 300 }),
   ]);
-  res.json({ portals, exceptions, calendar: calendarJson(calendar) });
+  const tenderIds = gemBids.map((bid: { tenderId: string }) => bid.tenderId).filter(Boolean);
+  const tenders = tenderIds.length ? await db.tender.findMany({ where: { id: { in: tenderIds } }, select: { id: true, recordId: true, overallStatus: true } }) : [];
+  res.json({
+    portals: portals.filter((portal: { id: string }) => portal.id !== gem.id),
+    exceptions,
+    calendar: calendarJson(calendar),
+    // The raw GeM record is only needed to download the document, so it stays on the server.
+    gem: { portal: gem, runs: gemRuns, bids: gemBids.map(({ raw: _raw, ...bid }: Record<string, unknown>) => bid), tenders, running: gemRunning(), progress: gemProgress() },
+  });
 });
 
 views.get("/admin", async (req, res) => {
@@ -241,8 +257,35 @@ views.get("/admin", async (req, res) => {
 
 /** The EMD / performance bond register for the dashboard. */
 views.get("/bonds", async (req, res) => {
-  const bonds = await listBonds();
-  res.json({ bonds, canImport: BOND_MANAGERS.includes(req.actor!.role), importedAt: bonds.reduce((latest: Date | null, bond: { importedAt: Date }) => (!latest || bond.importedAt > latest ? bond.importedAt : latest), null) });
+  const [bonds, docCounts] = await Promise.all([listBonds(), bondDocumentCounts()]);
+  res.json({ bonds, docCounts, canImport: BOND_MANAGERS.includes(req.actor!.role), importedAt: bonds.reduce((latest: Date | null, bond: { importedAt: Date }) => (!latest || bond.importedAt > latest ? bond.importedAt : latest), null) });
+});
+
+/** One surety bond (EMD or PBG ISB), for its detail page. */
+views.get("/bonds/:id", async (req, res) => {
+  const bond = await db.suretyBond.findUnique({ where: { id: req.params.id } });
+  if (!bond) {
+    res.status(404).json({ error: "Bond not found" });
+    return;
+  }
+  res.json({ bond, documents: await documentsForBond(bond.bondNumber), canUpload: BOND_MANAGERS.includes(req.actor!.role) });
+});
+
+/** The bank guarantee register for the BG dashboard. */
+views.get("/guarantees", async (req, res) => {
+  const [guarantees, docCounts] = await Promise.all([listGuarantees(), documentCounts()]);
+  res.json({ guarantees, docCounts, canImport: BOND_MANAGERS.includes(req.actor!.role), canAdd: BOND_MANAGERS.includes(req.actor!.role) || req.actor!.role === "GROUP_CEO", importedAt: guarantees.reduce((latest: Date | null, row: { importedAt: Date }) => (!latest || row.importedAt > latest ? row.importedAt : latest), null) });
+});
+
+/** One bank guarantee, for its detail page. */
+views.get("/guarantees/:id", async (req, res) => {
+  const guarantee = await db.bankGuarantee.findUnique({ where: { id: req.params.id } });
+  if (!guarantee) {
+    res.status(404).json({ error: "Bank guarantee not found" });
+    return;
+  }
+  const canEdit = BOND_MANAGERS.includes(req.actor!.role) || req.actor!.role === "GROUP_CEO";
+  res.json({ guarantee, documents: await documentsFor(guarantee.bgNumber), canUpload: canEdit, canEdit });
 });
 
 views.get("/tenders/:id", async (req, res) => {

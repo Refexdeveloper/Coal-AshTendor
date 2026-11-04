@@ -6,7 +6,8 @@ export const NAV: { href: string; label: string; icon: string; roles?: string[] 
   { href: "/worklist", label: "My worklist", icon: "check" },
   { href: "/register", label: "Tender register", icon: "list" },
   { href: "/tenders/new", label: "New tender", icon: "plus", roles: CREATOR_ROLES },
-  { href: "/bonds", label: "EMD & bonds", icon: "shield" },
+  { href: "/bonds", label: "ISB bonds", icon: "shield" },
+  { href: "/guarantees", label: "Bank guarantees", icon: "bank" },
   { href: "/reports", label: "Reports", icon: "chart" },
   { href: "/notifications", label: "Notifications", icon: "bell" },
   { href: "/email-logs", label: "Email log", icon: "mail", roles: ["ADMIN"] },
@@ -20,6 +21,8 @@ export function navFor(role: string) {
 
 export function navTitle(pathname: string) {
   if (pathname.startsWith("/tenders/") && pathname !== "/tenders/new") return "Tender record";
+  if (pathname.startsWith("/guarantees/")) return "Bank guarantee";
+  if (pathname.startsWith("/bonds/")) return "Surety bond";
   const match = NAV.find((item) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)));
   return match?.label ?? "Coal & Ash";
 }

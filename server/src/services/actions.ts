@@ -431,6 +431,169 @@ export async function importBondsAction(actor: User, formData: FormData): Promis
   }
 }
 
+/** Replaces the BG register from the uploaded BG workbook. */
+export async function importGuaranteesAction(actor: User, formData: FormData): Promise<ActionState> {
+  try {
+    const file = (await filesFrom(formData, "file"))[0];
+    if (!file) return { error: "Choose the Excel workbook to import." };
+    const { importGuarantees } = await import("./guarantees");
+    const result = await importGuarantees(actor, file);
+    return { ok: `Imported ${result.count} bank guarantees (${result.amended} with amendments) from ${file.name}.` };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** One slot per amendment row, including rows left without a file, so file indexes match the text fields. */
+async function amendmentFilesFrom(formData: FormData) {
+  const rowCount = Math.max(
+    formData.getAll("amendmentNo").length,
+    formData.getAll("amendmentAmount").length,
+    formData.getAll("amendmentCharges").length,
+    formData.getAll("amendmentChargesPercent").length,
+    formData.getAll("amendmentDate").length,
+    formData.getAll("amendmentExpiry").length,
+    formData.getAll("amendmentClaim").length,
+    formData.getAll("amendmentStamp").length,
+  );
+  const amendmentFiles = [];
+  for (let index = 0; index < rowCount; index += 1) {
+    const item = formData.get(`amendmentFile_${index}`);
+    if (!(item instanceof File) || item.size <= 0) amendmentFiles.push({ name: "", type: "", buffer: Buffer.alloc(0) });
+    else amendmentFiles.push({ name: item.name, type: item.type, buffer: Buffer.from(await item.arrayBuffer()) });
+  }
+  return amendmentFiles;
+}
+
+/** Adds one bank guarantee, with its scans and any amendment rows entered on the form. */
+export async function addGuaranteeAction(actor: User, formData: FormData): Promise<ActionState> {
+  try {
+    const { createGuarantee } = await import("./guarantees");
+    const result = await createGuarantee(actor, formData, await filesFrom(formData, "files"), await amendmentFilesFrom(formData));
+    const notes = [`${result.bgNumber} added`, result.amendments ? `${result.amendments} amendment${result.amendments === 1 ? "" : "s"}` : "", result.documents ? `${result.documents} document${result.documents === 1 ? "" : "s"} stored` : ""].filter(Boolean);
+    return { ok: `${notes.join(" · ")}.`, tenderId: result.id };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Saves changes to a bank guarantee already in the register, including new scans. */
+export async function updateGuaranteeAction(actor: User, formData: FormData): Promise<ActionState> {
+  try {
+    const { updateGuarantee } = await import("./guarantees");
+    const result = await updateGuarantee(actor, formData, await filesFrom(formData, "files"), await amendmentFilesFrom(formData));
+    const notes = [`${result.bgNumber} updated`, `${result.amendments} amendment${result.amendments === 1 ? "" : "s"}`, result.documents ? `${result.documents} new document${result.documents === 1 ? "" : "s"} stored` : ""].filter(Boolean);
+    return { ok: `${notes.join(" · ")}.`, tenderId: result.id };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Stores scanned BG documents; each file is linked to its guarantee by the BG number in its name. */
+export async function uploadBgDocumentsAction(actor: User, formData: FormData): Promise<ActionState> {
+  try {
+    const files = await filesFrom(formData, "files");
+    if (!files.length) return { error: "Choose the BG documents to upload." };
+    const { storeBgDocuments } = await import("./bg-documents");
+    const result = await storeBgDocuments(actor, files, String(formData.get("bgNumber") || ""));
+    const notes = [
+      `${result.stored} stored`,
+      result.duplicate ? `${result.duplicate} already there` : "",
+      result.unmatched.length ? `${result.unmatched.length} for BG numbers not in the register yet` : "",
+      result.unnamed.length ? `${result.unnamed.length} without a BG number in the name (${result.unnamed.slice(0, 3).join(", ")})` : "",
+      result.tooLarge.length ? `${result.tooLarge.length} over 25 MB` : "",
+    ].filter(Boolean);
+    return { ok: notes.join(" · ") };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Stores ISB copies; each file is linked to its bond by the bond number in its name, or to `bondId` when given. */
+export async function uploadBondDocumentsAction(actor: User, formData: FormData): Promise<ActionState> {
+  try {
+    const files = await filesFrom(formData, "files");
+    if (!files.length) return { error: "Choose the ISB copies to upload." };
+    const { storeBondDocuments } = await import("./bond-documents");
+    const result = await storeBondDocuments(actor, files, String(formData.get("bondId") || ""));
+    const notes = [
+      `${result.stored} stored`,
+      result.duplicate ? `${result.duplicate} already there` : "",
+      result.close.length ? `${result.close.length} linked by a close bond number (${result.close.slice(0, 3).join(", ")})` : "",
+      result.unmatched.length ? `${result.unmatched.length} not linked to a bond (${result.unmatched.slice(0, 3).join(", ")})` : "",
+      result.unnamed.length ? `${result.unnamed.length} without a bond number in the name (${result.unnamed.slice(0, 3).join(", ")})` : "",
+      result.tooLarge.length ? `${result.tooLarge.length} over 25 MB` : "",
+    ].filter(Boolean);
+    return { ok: notes.join(" · ") };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** GeM bid watch: settings (admin), a manual run, and importing or ignoring a found bid (admin or coordinator). */
+export async function gemAction(actor: User, formData: FormData): Promise<ActionState> {
+  const gem = await import("./gem");
+  const intent = String(formData.get("intent") || "");
+  try {
+    if (actor.role !== "ADMIN" && actor.role !== "COORDINATOR") throw new WorkflowError("Only an administrator or coordinator can manage the GeM watch.");
+    const portal = await gem.gemPortal();
+    if (intent === "settings") {
+      if (actor.role !== "ADMIN") throw new WorkflowError("Only an administrator can change the GeM watch settings.");
+      const keywords = String(formData.get("keywords") || "").trim();
+      if (!keywords) throw new WorkflowError("Add at least one keyword.");
+      await db.portal.update({
+        where: { id: portal.id },
+        data: {
+          keywords,
+          excludeWords: String(formData.get("excludeWords") || "").trim(),
+          frequencyHours: Math.min(168, Math.max(1, Number(formData.get("frequencyHours")) || 6)),
+          maxPages: Math.min(100, Math.max(1, Number(formData.get("maxPages")) || 30)),
+          maxImports: Math.min(200, Math.max(0, Number(formData.get("maxImports")) || 0)),
+          enabled: formData.get("enabled") === "yes",
+          autoImport: formData.get("autoImport") === "yes",
+        },
+      });
+      return { ok: "GeM watch settings saved." };
+    }
+    if (intent === "add-keyword" || intent === "remove-keyword") {
+      if (actor.role !== "ADMIN") throw new WorkflowError("Only an administrator can change the GeM keywords.");
+      const word = String(formData.get("keyword") || "").trim();
+      if (!word) throw new WorkflowError("Type a keyword.");
+      const current: string[] = String(portal.keywords)
+        .split(/[,\n;]+/)
+        .map((item: string) => item.trim())
+        .filter(Boolean);
+      const next =
+        intent === "add-keyword"
+          ? current.some((item: string) => item.toLowerCase() === word.toLowerCase())
+            ? current
+            : [...current, word]
+          : current.filter((item: string) => item.toLowerCase() !== word.toLowerCase());
+      if (!next.length) throw new WorkflowError("Keep at least one keyword.");
+      await db.portal.update({ where: { id: portal.id }, data: { keywords: next.join(", ") } });
+      return { ok: intent === "add-keyword" ? `Keyword “${word}” added. Press Run now to search it.` : `Keyword “${word}” removed.` };
+    }
+    if (intent === "run") {
+      if (gem.gemRunning()) return { ok: "A GeM pass is already running. Its results appear here when it finishes." };
+      // A pass takes a few minutes, so it runs in the background and the page refreshes as results arrive.
+      void gem.runGemWatch(actor).catch((error) => console.error("GeM watch failed", error));
+      return { ok: "GeM pass started. New matching bids appear below as they are found." };
+    }
+    const bidId = String(formData.get("bidId") || "");
+    if (intent === "import") {
+      const result = await gem.importGemBid(actor, bidId);
+      return { ok: result.already ? "This bid was already on a tender." : `${result.recordId} created from the GeM bid and sent for data validation.`, tenderId: result.tenderId };
+    }
+    if (intent === "ignore" || intent === "restore") {
+      await db.gemBid.update({ where: { id: bidId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "" } });
+      return { ok: intent === "ignore" ? "Bid ignored." : "Bid moved back to the review list." };
+    }
+    throw new WorkflowError("Unknown GeM action.");
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 export async function ingestDiscoveredAction(actor: User, formData: FormData): Promise<ActionState> {
   try {
     if (actor.role !== "ADMIN" && actor.role !== "COORDINATOR") {

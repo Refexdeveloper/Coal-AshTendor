@@ -11,10 +11,11 @@ import { Status } from "@client/components/base/pill";
 import { CountUp } from "@client/components/feature/count-up";
 import { KpiCard } from "@client/components/feature/kpi-card";
 import { ExecutiveView, type ExecutiveData } from "@client/pages/executive/ExecutiveView";
+import GuaranteesPage from "@client/pages/guarantees/Guarantees";
 import BondsPage from "@client/pages/bonds/Bonds";
 
-/** Tender | EMD switch on the Group CEO dashboard banner. EMD shows the bond register in place. */
-function BoardToggle({ board }: { board: "tender" | "emd" }) {
+/** Tender | BG | ISB switch on the Group CEO dashboard banner. The other boards show those registers in place. */
+function BoardToggle({ board }: { board: "tender" | "emd" | "bg" | "isb" }) {
   return (
     <nav className="board-toggle" aria-label="Dashboard">
       <Link to="/" className={board === "tender" ? "is-on" : ""} aria-current={board === "tender" ? "page" : undefined}>
@@ -23,12 +24,17 @@ function BoardToggle({ board }: { board: "tender" | "emd" }) {
         </svg>
         Tender
       </Link>
-      <Link to="/?board=emd" className={board === "emd" ? "is-on" : ""} aria-current={board === "emd" ? "page" : undefined}>
+      <Link to="/?board=bg" className={board === "bg" ? "is-on" : ""} aria-current={board === "bg" ? "page" : undefined}>
         <svg viewBox="0 0 24 24" aria-hidden>
-          <path d="M12 3.5 5 6v5.5c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6l-7-2.5z" />
-          <path d="m9 12 2.2 2.2L15.5 10" />
+          <path d="M3.5 9.5 12 4l8.5 5.5M5.5 10v7M10 10v7M14 10v7M18.5 10v7M4 19.5h16" />
         </svg>
-        EMD
+        BG
+      </Link>
+      <Link to="/?board=isb" className={board === "isb" ? "is-on" : ""} aria-current={board === "isb" ? "page" : undefined}>
+        <svg viewBox="0 0 24 24" aria-hidden>
+          <path d="M7 3h8l4 4v14H7zM15 3v4h4M10 12h6M10 16h6" />
+        </svg>
+        ISB
       </Link>
     </nav>
   );
@@ -103,8 +109,12 @@ export default function DashboardPage() {
   const { data, error, reload } = useApi<PipelineData | ExecutiveData>("/dashboard");
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
   if (data.kind === "executive") {
-    const board = search.get("board") === "emd" ? "emd" : "tender";
-    return board === "emd" ? <BondsPage embedded toggle={<BoardToggle board="emd" />} /> : <ExecutiveView user={user} group={params.group} data={data} toggle={<BoardToggle board="tender" />} />;
+    const asked = search.get("board");
+    const board = asked === "emd" || asked === "bg" || asked === "isb" ? asked : "tender";
+    if (board === "isb") return <BondsPage embedded toggle={<BoardToggle board="isb" />} />;
+    if (board === "emd") return <GuaranteesPage embedded onlyType="EMD" toggle={<BoardToggle board="emd" />} />;
+    if (board === "bg") return <GuaranteesPage embedded toggle={<BoardToggle board="bg" />} />;
+    return <ExecutiveView user={user} group={params.group} data={data} toggle={<BoardToggle board="tender" />} />;
   }
   const mine = data.mine;
   const tz = data.calendar.timeZone;

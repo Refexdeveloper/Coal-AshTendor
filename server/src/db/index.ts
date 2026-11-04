@@ -72,6 +72,10 @@ const MODELS: Record<string, string> = {
   crawlerRun: "CrawlerRun",
   crawlerException: "CrawlerException",
   suretyBond: "SuretyBond",
+  bankGuarantee: "BankGuarantee",
+  bgDocument: "BgDocument",
+  gemBid: "GemBid",
+  bondDocument: "BondDocument",
 };
 
 const RELATIONS: Record<string, Record<string, Relation>> = {
@@ -115,6 +119,7 @@ const BOOLEAN_COLUMNS = new Set([
   "resolved",
   "bgRequiresBoth",
   "revisionResetsSla",
+  "autoImport",
 ]);
 
 const TOUCHED = new Set(["Tender", "BidSubmission"]);
@@ -176,6 +181,10 @@ export interface Db {
   crawlerRun: Model;
   crawlerException: Model;
   suretyBond: Model;
+  bankGuarantee: Model;
+  bgDocument: Model;
+  gemBid: Model;
+  bondDocument: Model;
   $transaction<T>(work: (tx: Db) => Promise<T>): Promise<T>;
   $transaction<T>(work: Lazy<T>[]): Promise<T[]>;
   $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Lazy<unknown>;

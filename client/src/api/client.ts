@@ -19,6 +19,11 @@ export function documentUrl(id: string) {
   return apiUrl(`/documents/${encodeURIComponent(id)}`);
 }
 
+/** A scanned BG document; `download` asks the browser to save it instead of showing it. */
+export function bgDocumentUrl(id: string, download = false) {
+  return apiUrl(`/bg-documents/${encodeURIComponent(id)}${download ? "?download=1" : ""}`);
+}
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 
 /** JSON reviver that turns the API's ISO timestamps back into Date objects. */

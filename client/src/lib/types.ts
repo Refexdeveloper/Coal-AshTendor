@@ -239,3 +239,54 @@ export type SuretyBond = {
   sourceFile: string;
   importedAt: Date;
 };
+
+/** One amendment block of a bank guarantee; dates are ISO strings. */
+export type BgAmendment = {
+  no: number;
+  amount: number | null;
+  charges: number | null;
+  chargesPercent: number | null;
+  date: string | null;
+  expiry: string | null;
+  claim: string | null;
+  stampDuty: number | null;
+};
+
+/** A bank guarantee from the BG register workbook. `amendments` and `extra` are JSON text. */
+export type BankGuarantee = {
+  id: string;
+  serialNo: number | null;
+  bgType: string;
+  bank: string;
+  marginMoney: string;
+  beneficiary: string;
+  site: string;
+  loiLoa: string;
+  bgNumber: string;
+  amount: number | null;
+  issueDate: Date | null;
+  charges: number | null;
+  chargesPercent: number | null;
+  details: string;
+  amendmentNumber: string;
+  amendmentDate: Date | null;
+  expiryDate: Date | null;
+  claimDate: Date | null;
+  stampDuty: number | null;
+  amendments: string | null;
+  extra: string | null;
+  sourceFile: string;
+  importedAt: Date;
+};
+
+/** A scanned BG or amendment document, linked to its guarantee by BG number. */
+export type BgDocument = {
+  id: string;
+  bgNumber: string;
+  kind: "ISSUANCE" | "AMENDMENT";
+  amendmentNo: number | null;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: Date;
+};

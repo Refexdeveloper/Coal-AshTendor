@@ -3,7 +3,7 @@ import multer from "multer";
 import * as actions from "../services/actions";
 import type { Action } from "../services/actions";
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 20 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 40 } });
 
 /** Endpoint name → action. The client posts its form to /api/actions/<name>. */
 const ACTIONS: Record<string, Action> = {
@@ -29,6 +29,12 @@ const ACTIONS: Record<string, Action> = {
   "log-exception": actions.logExceptionAction,
   "ingest-discovered": actions.ingestDiscoveredAction,
   "import-bonds": actions.importBondsAction,
+  "import-guarantees": actions.importGuaranteesAction,
+  "add-guarantee": actions.addGuaranteeAction,
+  "update-guarantee": actions.updateGuaranteeAction,
+  "upload-bg-documents": actions.uploadBgDocumentsAction,
+  gem: actions.gemAction,
+  "upload-bond-documents": actions.uploadBondDocumentsAction,
 };
 
 /** Rebuilds the browser's FormData so the actions read fields and files exactly as they did before. */

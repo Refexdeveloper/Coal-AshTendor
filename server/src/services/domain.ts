@@ -356,6 +356,8 @@ export async function createTender(
     externalTenderId: string;
     source: "MANUAL" | "CRAWLER";
     files: { name: string; type: string; buffer: Buffer }[];
+    /** Field values already known from the source (e.g. the GeM listing); they are kept over what OCR reads. */
+    known?: Record<string, string>;
   },
 ) {
   if (input.source === "MANUAL" && !CREATOR_ROLES.includes(actor.role)) {
@@ -461,6 +463,9 @@ export async function createTender(
   await rememberManual(tender.id, "client_name", input.clientName, actor);
   await rememberManual(tender.id, "tender_ref", input.tenderRef, actor);
   await rememberManual(tender.id, "tender_id", input.externalTenderId, actor);
+  for (const [key, value] of Object.entries(input.known ?? {})) {
+    if (TENDER_FIELDS.some((field) => field.key === key)) await rememberManual(tender.id, key, value, actor);
+  }
 
   const stored: { id: string; fileName: string; storedPath: string; pages: string[]; failed: boolean }[] = [];
   for (const item of prepared) {
@@ -1826,16 +1831,17 @@ let lastAutomation = 0;
 let automation: Promise<void> | null = null;
 
 export function kickAutomation() {
-  // The Refex One directory sync runs in the background on its own daily schedule; pages never wait for it.
+  // Pages must not wait for this. The first check walks every open task and can send mail, which held the first screen on "Loading…".
   void maybeScheduledSync();
-  if (automation || Date.now() - lastAutomation < 15000) return automation ?? Promise.resolve();
+  // The GeM bid watch runs on its own schedule; loaded lazily because it builds on this module.
+  void import("./gem").then((gem) => gem.maybeScheduledGemScan()).catch((error) => console.error("GeM watch check failed", error));
+  if (automation || Date.now() - lastAutomation < 15000) return;
   lastAutomation = Date.now();
   automation = processAutomation()
     .catch((error) => console.error("SLA automation failed", error))
     .finally(() => {
       automation = null;
     });
-  return automation;
 }
 
 export async function processAutomation() {

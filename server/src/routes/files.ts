@@ -37,6 +37,48 @@ files.get("/documents/:id", requireActor, async (req, res) => {
   }
 });
 
+/** ISB copies (surety bonds), for signed-in users. */
+files.get("/bond-documents/:id", requireActor, async (req, res) => {
+  const document = await db.bondDocument.findUnique({ where: { id: req.params.id as string } });
+  if (!document) {
+    res.status(404).send("Not found");
+    return;
+  }
+  try {
+    const bytes = await readStored(document.storedPath);
+    res.set({
+      "Content-Type": document.mimeType || "application/octet-stream",
+      "Content-Disposition": `${req.query.download ? "attachment" : "inline"}; filename="${document.fileName.replace(/[^\x20-\x7e]|"/g, "")}"`,
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, max-age=300",
+    });
+    res.send(bytes);
+  } catch {
+    res.status(404).send("File missing");
+  }
+});
+
+/** Scanned BG and amendment documents, for signed-in users. */
+files.get("/bg-documents/:id", requireActor, async (req, res) => {
+  const document = await db.bgDocument.findUnique({ where: { id: req.params.id as string } });
+  if (!document) {
+    res.status(404).send("Not found");
+    return;
+  }
+  try {
+    const bytes = await readStored(document.storedPath);
+    res.set({
+      "Content-Type": document.mimeType || "application/octet-stream",
+      "Content-Disposition": `${req.query.download ? "attachment" : "inline"}; filename="${document.fileName.replace(/[^\x20-\x7e]|"/g, "")}"`,
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, max-age=300",
+    });
+    res.send(bytes);
+  } catch {
+    res.status(404).send("File missing");
+  }
+});
+
 /** Short-lived signed links the OCR service downloads. Public on purpose: the signature is the access check. */
 files.get("/ocr-files/:token/:fileName", async (req, res) => {
   const storedPath = pathFromOcrToken(req.params.token);

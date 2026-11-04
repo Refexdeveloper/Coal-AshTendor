@@ -1,5 +1,5 @@
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { lazy, Suspense, useEffect, type CSSProperties } from "react";
+import { lazy, Suspense, Fragment, useEffect, type CSSProperties } from "react";
 import { documentUrl, toCalendar, useApi } from "@client/api/client";
 import { useActor } from "@client/api/session";
 import type {
@@ -42,6 +42,7 @@ import {
 import { inr, parseInr } from "@client/utils/money";
 import { Status } from "@client/components/base/pill";
 import { FieldEditor } from "@client/components/feature/field-editor";
+import { parseBgRequest } from "@client/components/feature/bg-request";
 import { Countdown } from "@client/components/feature/countdown";
 import { StageTrack, type StagePlan } from "@client/components/feature/stage-track";
 import type { TaskContext } from "@client/components/feature/task-kit";
@@ -54,7 +55,8 @@ const TABS = [
   ["overview", "Overview"],
   ["details", "Tender details"],
   ["documents", "Documents"],
-  ["costing", "Costing, EMD & bid"],
+  ["costing", "Costing & bid"],
+  ["emd", "EMD"],
   ["history", "History"],
 ] as const;
 
@@ -193,7 +195,13 @@ export default function TenderPage() {
       when: formatWhen(record.createdAt, tz),
     })),
   };
-  const tabBadge: Record<string, number> = { overview: mineCount, details: attention, documents: tender.documents.length, stages: tender.approvals.length };
+  const tabBadge: Record<string, number> = {
+    overview: openTasks.filter((task) => !task.stage.startsWith("EMD_")).length,
+    details: attention,
+    documents: tender.documents.length,
+    stages: tender.approvals.length,
+    emd: openTasks.filter((task) => task.stage.startsWith("EMD_")).length,
+  };
 
   return (
     <>
@@ -301,11 +309,11 @@ export default function TenderPage() {
         <div className="overview">
           <div className="stack">
             <h2 className="section-title">
-              Open tasks {mineCount ? <span className="count-badge">{mineCount} for you</span> : null}
+              Open tasks {openTasks.some((task) => task.mine && !task.stage.startsWith("EMD_")) ? <span className="count-badge">{openTasks.filter((task) => task.mine && !task.stage.startsWith("EMD_")).length} for you</span> : null}
             </h2>
             <TaskCards
               tenderId={tender.id}
-              tasks={openTasks}
+              tasks={openTasks.filter((task) => !task.stage.startsWith("EMD_"))}
               bgRequiresBoth={data.bgRequiresBoth}
               canAuthorize={actor.role === "ADMIN" || actor.role === "DEPT_HEAD"}
               ctx={ctx}
@@ -496,45 +504,6 @@ export default function TenderPage() {
           </section>
           <div className="stack">
             <section className="panel">
-              <h2>EMD</h2>
-              {tender.emd ? (
-                <dl className="kv">
-                  <dt>Instrument</dt>
-                  <dd>{EMD_TYPE[tender.emd.instrumentType] ?? tender.emd.instrumentType}</dd>
-                  <dt>Preparation</dt>
-                  <dd>{EMD_PREP[tender.emd.preparationStatus] ?? tender.emd.preparationStatus}</dd>
-                  <dt>Amount</dt>
-                  <dd>{tender.emd.amount || "—"}</dd>
-                  <dt>Reference</dt>
-                  <dd>{tender.emd.referenceNumber || "—"}</dd>
-                  <dt>Beneficiary</dt>
-                  <dd>{tender.emd.beneficiary || "—"}</dd>
-                  {tender.emd.exemptionBasis ? (
-                    <>
-                      <dt>Exemption basis</dt>
-                      <dd>{tender.emd.exemptionBasis}</dd>
-                    </>
-                  ) : null}
-                  <dt>BG request letter</dt>
-                  <dd>{tender.emd.bgRequest ? <Link to={`/tenders/${tender.id}/bg-letter`} target="_blank">Open letter ↗</Link> : "Not filled yet"}</dd>
-                  <dt>To authority</dt>
-                  <dd>{tender.emd.submittedToAuthority ? `Submitted. ${tender.emd.authorityNote}` : "Not recorded"}</dd>
-                  {tender.emd.documentId ? (
-                    <>
-                      <dt>Evidence</dt>
-                      <dd>
-                        <a href={documentUrl(tender.emd.documentId)} target="_blank" rel="noreferrer">
-                          Open
-                        </a>
-                      </dd>
-                    </>
-                  ) : null}
-                </dl>
-              ) : (
-                <p className="empty">EMD starts when relevance is approved.</p>
-              )}
-            </section>
-            <section className="panel">
               <h2>Bid submission</h2>
               {tender.bid && tender.bid.status !== "NOT_YET_SUBMITTED" ? (
                 <dl className="kv">
@@ -567,35 +536,145 @@ export default function TenderPage() {
         </div>
       ) : null}
 
+      {tab === "emd" ? (
+        <div className="stack">
+          <TaskCards
+            tenderId={tender.id}
+            tasks={openTasks.filter((task) => task.stage.startsWith("EMD_"))}
+            bgRequiresBoth={data.bgRequiresBoth}
+            canAuthorize={actor.role === "ADMIN" || actor.role === "DEPT_HEAD"}
+            ctx={ctx}
+            emd={
+              tender.emd
+                ? {
+                    amount: tender.emd.amount,
+                    beneficiary: tender.emd.beneficiary,
+                    referenceNumber: tender.emd.referenceNumber,
+                    exemptionBasis: tender.emd.exemptionBasis,
+                    notes: tender.emd.notes,
+                    authorityNote: tender.emd.authorityNote,
+                    submitted: tender.emd.submittedToAuthority,
+                    bgRequest: tender.emd.bgRequest ?? "",
+                  }
+                : null
+            }
+          />
+          <section className="panel">
+            <h2>EMD</h2>
+            {tender.emd ? (
+              <dl className="kv">
+                <dt>Instrument</dt>
+                <dd>{EMD_TYPE[tender.emd.instrumentType] ?? tender.emd.instrumentType}</dd>
+                <dt>Preparation</dt>
+                <dd>{EMD_PREP[tender.emd.preparationStatus] ?? tender.emd.preparationStatus}</dd>
+                <dt>Amount</dt>
+                <dd>{tender.emd.amount || "—"}</dd>
+                <dt>Reference</dt>
+                <dd>{tender.emd.referenceNumber || "—"}</dd>
+                <dt>Beneficiary</dt>
+                <dd>{tender.emd.beneficiary || "—"}</dd>
+                {tender.emd.exemptionBasis ? (
+                  <>
+                    <dt>Exemption basis</dt>
+                    <dd>{tender.emd.exemptionBasis}</dd>
+                  </>
+                ) : null}
+                <dt>To authority</dt>
+                <dd>{tender.emd.submittedToAuthority ? `Submitted. ${tender.emd.authorityNote}` : "Not recorded"}</dd>
+                {tender.emd.documentId ? (
+                  <>
+                    <dt>Evidence</dt>
+                    <dd>
+                      <a href={documentUrl(tender.emd.documentId)} target="_blank" rel="noreferrer">
+                        Open
+                      </a>
+                    </dd>
+                  </>
+                ) : null}
+              </dl>
+            ) : (
+              <p className="empty">EMD starts when relevance is approved.</p>
+            )}
+          </section>
+          {(() => {
+            const request = parseBgRequest(tender.emd?.bgRequest);
+            if (!request) return null;
+            const rows: [string, string][] = [
+              ["Letter date", request.letterDate],
+              ["Beneficiary", request.beneficiaryName],
+              ["CIN", request.beneficiaryCin],
+              ["Address", request.beneficiaryAddress],
+              ["Contract", request.contractSummary],
+              ["Bank", [request.bankName, request.bankBranch].filter(Boolean).join(", ")],
+              ["Account", [request.accountName, request.accountNumber].filter(Boolean).join(" · ")],
+              ["IFSC", request.ifsc],
+              ["Percent", request.percent],
+              ["Amount", request.amount],
+              ["Margin", request.marginPercent],
+              ["Expiry", request.expiryDate],
+              ["Claim expiry", request.claimExpiryDate],
+            ];
+            return (
+              <section className="panel">
+                <header className="panel-head">
+                  <h2>Bank guarantee</h2>
+                  <Link className="btn ghost" to={`/tenders/${tender.id}/bg-letter`} target="_blank">
+                    Open letters
+                  </Link>
+                </header>
+                <dl className="kv">
+                  {rows
+                    .filter(([, value]) => value.trim())
+                    .map(([label, value]) => (
+                      <Fragment key={label}>
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                      </Fragment>
+                    ))}
+                </dl>
+              </section>
+            );
+          })()}
+        </div>
+      ) : null}
+
       {tab === "history" ? (
         <div className="stack">
           <section className="panel">
             <h2>Where it is now</h2>
-            {openTasks.length ? (
-              <>
-                <p>
-                  Pending at <b>{[...new Set(openTasks.map((task) => STAGE[task.stage] ?? task.title))].join(", ")}</b>
-                  {" with "}
-                  <b>{[...new Set(openTasks.flatMap((task) => task.assignees.split(", ").map((name) => name.trim()).filter((name) => name && name !== "Unknown")))].join(", ") || "no owner assigned"}</b>.
-                </p>
-                <ul className="timeline">
-                  {openTasks.map((task, index) => (
-                    <li key={task.id} style={{ "--r": index } as CSSProperties} className={task.late ? "bad" : "warn"}>
-                      <strong>{STAGE[task.stage] ?? task.title}</strong>
-                      <small>
-                        Pending with {task.assignees || "no owner"} · <Status map={TASK} value={task.status} />
-                        {task.due ? ` · due ${task.due}` : ""} {task.remaining}
-                      </small>
-                      <p>{task.title}</p>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : (
-              <p className="empty">
-                Nothing is pending. This tender is {OVERALL[tender.overallStatus]?.label ?? tender.overallStatus}.
-              </p>
-            )}
+            {(() => {
+              const emdStage = (stage: string) => stage.startsWith("EMD_");
+              const current = openTasks.filter((task) => !emdStage(task.stage));
+              const owners = [...new Set(current.flatMap((task) => task.assignees.split(", ").map((name) => name.trim()).filter((name) => name && name !== "Unknown")))];
+              if (!current.length) {
+                return (
+                  <p className="empty">
+                    Nothing is pending. This tender is {OVERALL[tender.overallStatus]?.label ?? tender.overallStatus}.
+                  </p>
+                );
+              }
+              return (
+                <>
+                  <p>
+                    Pending at <b>{[...new Set(current.map((task) => STAGE[task.stage] ?? task.title))].join(", ")}</b>
+                    {" with "}
+                    <b>{owners.join(", ") || "no owner assigned"}</b>.
+                  </p>
+                  <ul className="timeline">
+                    {current.map((task, index) => (
+                      <li key={task.id} style={{ "--r": index } as CSSProperties} className={task.late ? "bad" : "warn"}>
+                        <strong>{STAGE[task.stage] ?? task.title}</strong>
+                        <small>
+                          Pending with {task.assignees || "no owner"} · <Status map={TASK} value={task.status} />
+                          {task.due ? ` · due ${task.due}` : ""} {task.remaining}
+                        </small>
+                        <p>{task.title}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              );
+            })()}
           </section>
           <div className="split-2">
           <div className="stack">
@@ -603,7 +682,9 @@ export default function TenderPage() {
               <h2>Decisions</h2>
               {tender.approvals.length === 0 ? <p className="empty">No decisions yet.</p> : null}
               <ul className="timeline">
-                {tender.approvals.map((approval, index) => (
+                {tender.approvals
+                  .filter((approval) => !approval.stage.startsWith("EMD_"))
+                  .map((approval, index) => (
                   <li key={approval.id} style={{ "--r": index } as CSSProperties} className={approval.decision === "APPROVED" ? "good" : approval.decision === "REJECTED" ? "bad" : "warn"}>
                     <strong>
                       {STAGE[approval.stage] ?? approval.stage}: {DECISION[approval.decision] ?? approval.decision}
@@ -628,7 +709,9 @@ export default function TenderPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tender.tasks.map((task) => (
+                    {tender.tasks
+                      .filter((task) => task.branch !== "EMD" && !task.stage.startsWith("EMD_"))
+                      .map((task) => (
                       <tr key={task.id}>
                         <td>
                           {task.title}

@@ -9,6 +9,9 @@ export const createSampleAction = bound("create-sample");
 export const updateFieldsAction = bound("update-fields");
 export const taskAction = bound("task");
 export const importBondsAction = bound("import-bonds");
+export const importGuaranteesAction = bound("import-guarantees");
+export const addGuaranteeAction = bound("add-guarantee");
+export const updateGuaranteeAction = bound("update-guarantee");
 export const ingestDiscoveredAction = bound("ingest-discovered");
 
 export async function loginAction(_state: ActionState, formData: FormData): Promise<ActionState> {

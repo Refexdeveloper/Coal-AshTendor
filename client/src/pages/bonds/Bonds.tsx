@@ -1,5 +1,6 @@
-import { Fragment, useActionState, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useActionState, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { BondDocUploader } from "./BondDocuments";
 import { useApi } from "@client/api/client";
 import { importBondsAction } from "@client/api/actions";
 import type { ActionState } from "@client/api/action-state";
@@ -14,13 +15,13 @@ import { Icon, PlantArt } from "@client/pages/executive/ExecutiveView";
 import { inr, inrFull } from "@client/utils/money";
 import { PeriodPicker, inPeriod, resolvePeriod } from "@client/components/feature/period-picker";
 
-type Data = { bonds: SuretyBond[]; canImport: boolean; importedAt: Date | null };
+type Data = { bonds: SuretyBond[]; docCounts: Record<string, number>; canImport: boolean; importedAt: Date | null };
 
 const DAY = 864e5;
 
 /** Health of a bond today, from its latest expiry and claim dates (extensions included). */
-type Health = "expired" | "claim" | "soon" | "watch" | "active" | "unknown";
-const HEALTH: Record<Health, { label: string; tone: string }> = {
+export type Health = "expired" | "claim" | "soon" | "watch" | "active" | "unknown";
+export const HEALTH: Record<Health, { label: string; tone: string }> = {
   expired: { label: "Claim period over", tone: "" },
   claim: { label: "Expired · claim open", tone: "red" },
   soon: { label: "Expires ≤ 30 days", tone: "amber" },
@@ -31,7 +32,7 @@ const HEALTH: Record<Health, { label: string; tone: string }> = {
 
 const latest = (...dates: (Date | null)[]) => dates.reduce<Date | null>((best, date) => (date && (!best || date > best) ? date : best), null);
 
-function enrich(bond: SuretyBond, today: Date) {
+export function enrich(bond: SuretyBond, today: Date) {
   const expiry = latest(bond.expiryDate, bond.ext1ExpiryDate, bond.ext2Date);
   const claim = latest(bond.claimExpiryDate, bond.ext1ClaimDate, bond.ext2ClaimDate) ?? expiry;
   const days = expiry ? Math.ceil((expiry.getTime() - today.getTime()) / DAY) : null;
@@ -42,15 +43,10 @@ function enrich(bond: SuretyBond, today: Date) {
   const name = bond.kind === "EMD" ? bond.plant || bond.customer : bond.customer;
   return { ...bond, expiry, claim, days, health, extended, dateCheck, name };
 }
-type Row = ReturnType<typeof enrich>;
+export type Row = ReturnType<typeof enrich>;
 
-const day = (date: Date | null) =>
+export const day = (date: Date | null) =>
   date ? new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }).format(date) : "—";
-const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-const monthLabel = (key: string) => {
-  const [year, month] = key.split("-").map(Number);
-  return new Intl.DateTimeFormat("en-IN", { month: "short", year: "2-digit" }).format(new Date(year, month - 1, 1));
-};
 const sum = (rows: Row[], pick: (row: Row) => number | null) => rows.reduce((total, row) => total + (pick(row) ?? 0), 0);
 
 /** Filters that can be added to the bar with "+ Add filter". Each matches one bond field exactly. */
@@ -63,9 +59,9 @@ const EXTRA_FILTERS: { key: string; label: string; pick: (row: Row) => string; s
   { key: "mode", label: "Mode", pick: (row) => row.mode },
 ];
 
-const KIND_LABEL: Record<string, string> = { EMD: "EMD", PERFORMANCE: "Performance" };
+const KIND_LABEL: Record<string, string> = { EMD: "EMD", PERFORMANCE: "PBG" };
 
-function Glyph({ name }: { name: "plus" | "x" }) {
+export function Glyph({ name }: { name: "plus" | "x" }) {
   return (
     <svg className="bonds-glyph" viewBox="0 0 24 24" aria-hidden>
       {name === "plus" ? <path d="M12 5v14M5 12h14" /> : <path d="M6 6l12 12M18 6 6 18" />}
@@ -74,7 +70,7 @@ function Glyph({ name }: { name: "plus" | "x" }) {
 }
 
 /** A filter select with a remove button once it has a value (or always, for an added filter). */
-function SelectFilter({
+export function SelectFilter({
   label,
   value,
   allLabel,
@@ -116,7 +112,7 @@ function SelectFilter({
 /** What each card narrows the table to. */
 const CARD_ROWS: Record<string, { label: string; match: (row: Row) => boolean; sort?: "premium" | "amount" }> = {
   emd: { label: "EMD surety bonds", match: (row) => row.kind === "EMD" },
-  pb: { label: "Performance bonds", match: (row) => row.kind === "PERFORMANCE" },
+  pb: { label: "PBG (performance) bonds", match: (row) => row.kind === "PERFORMANCE" },
   active: { label: "Active bonds", match: (row) => row.health === "active" || row.health === "watch" || row.health === "soon" },
   soon: { label: "Expiring in 30 days", match: (row) => row.health === "soon" },
   watch: { label: "Expiring in 31–90 days", match: (row) => row.health === "watch" },
@@ -126,16 +122,18 @@ const CARD_ROWS: Record<string, { label: string; match: (row: Row) => boolean; s
 };
 
 /**
- * The bond register. `embedded` shows it inside the Group CEO dashboard (at /?board=emd),
+ * The bond register. `embedded` shows it inside the Group CEO dashboard (at /?board=isb),
  * so its links stay on that page; `toggle` is the Tender | EMD switch for the banner.
  */
 export default function BondsPage({ embedded = false, toggle }: { embedded?: boolean; toggle?: ReactNode } = {}) {
   const path = embedded ? "/" : "/bonds";
-  const fixed = embedded ? ["board=emd"] : [];
+  const fixed = embedded ? ["board=isb"] : [];
   const { data, error, reload } = useApi<Data>("/bonds");
   const [params, setParams] = useSearchParams();
   const [importing, setImporting] = useState(false);
-  const [openRow, setOpenRow] = useState<string | null>(null);
+  const [uploadingDocs, setUploadingDocs] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
   const [allRows, setAllRows] = useState(false);
   const [draft, setDraft] = useState(params.get("q") ?? "");
   const [added, setAdded] = useState<string[]>([]);
@@ -154,13 +152,14 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
   const resetFilters = () => {
     setDraft("");
     setAdded([]);
-    setParams(embedded ? { board: "emd" } : {}, { preventScrollReset: true });
+    setParams(embedded ? { board: "isb" } : {}, { preventScrollReset: true });
   };
   // The period scopes the whole page (cards, charts and table), by issue date or by expiry date.
   const byExpiry = filter.basis === "expiry";
   // Expiries lie ahead, so the expiry view offers future ranges and does not stop at today.
   const period = resolvePeriod(filter.period || "all", undefined, { future: byExpiry });
-  const rows = everyBond.filter((row) => inPeriod(period, byExpiry ? row.expiry : row.issueDate));
+  // The period and the PBG / EMD switch scope the whole board: cards, charts and table.
+  const rows = everyBond.filter((row) => inPeriod(period, byExpiry ? row.expiry : row.issueDate) && (!filter.kind || row.kind === filter.kind));
   const earliest = everyBond.reduce<Date | null>((min, row) => (row.issueDate && (!min || row.issueDate < min) ? row.issueDate : min), null);
   const keep = [...fixed, ...["period", "basis"].filter((key) => params.get(key)).map((key) => `${key}=${encodeURIComponent(params.get(key)!)}`)];
   const cardHref = (key: string) => `${path}?${[...keep, `card=${key}`].join("&")}#bond-list`;
@@ -176,7 +175,7 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
 
   const cards = [
     { key: "emd", label: "EMD exposure", fx: "shield" as CardFx, value: sum(emd, (row) => row.amount), money: true, note: `${emd.length} insurance surety bonds`, icon: "shield", tone: "orange" },
-    { key: "pb", label: "Performance bonds", fx: "award" as CardFx, value: sum(pb, (row) => row.amount), money: true, note: `${pb.length} bonds · ${pb.filter((row) => row.usedFor === "APS").length} APS`, icon: "trophy", tone: "violet" },
+    { key: "pb", label: "PBG bonds", fx: "award" as CardFx, value: sum(pb, (row) => row.amount), money: true, note: `${pb.length} bonds · ${pb.filter((row) => row.usedFor === "APS").length} APS`, icon: "trophy", tone: "violet" },
     { key: "active", label: "Active bonds", fx: "ready" as CardFx, value: live.length, note: inr(sum(live, (row) => row.amount)), icon: "check", tone: "green" },
     { key: "soon", label: "Expiring in 30 days", fx: "hourglass" as CardFx, value: soon.length, note: soon.length ? inr(sum(soon, (row) => row.amount)) : "Nothing due", icon: "hourglass", tone: "red", hot: soon.length > 0 },
     { key: "watch", label: "Expiring in 90 days", fx: "pending" as CardFx, value: watch.length, note: watch.length ? inr(sum(watch, (row) => row.amount)) : "None", icon: "calendar", tone: "sky" },
@@ -236,28 +235,86 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
   };
   const activeFilters = chips.length;
 
+  if (everyBond.length === 0) {
+    return (
+      <div className="dk bonds">
+        <section className="dk-hero">
+          <PlantArt />
+          <div className="dk-hero-text">
+            <div className="dk-hi">
+              ISB register <span className="wave">🛡️</span>
+            </div>
+            <h1>Insurance surety bonds</h1>
+          </div>
+          <div className="dk-hero-tools">
+            {toggle}
+            {data.canImport ? (
+              <button type="button" className={`dk-btn${importing ? " is-on" : ""}`} onClick={() => setImporting((value) => !value)}>
+                {importing ? "Close import" : "Import Excel"}
+              </button>
+            ) : null}
+          </div>
+        </section>
+        {importing ? <ImportPanel onDone={() => void reload()} /> : null}
+        <p className="panel muted">No bonds in the register.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="dk bonds">
       <section className="dk-hero">
         <PlantArt />
         <div className="dk-hero-text">
           <div className="dk-hi">
-            EMD &amp; bond register <span className="wave">🛡️</span>
+            ISB register <span className="wave">🛡️</span>
           </div>
-          <h1>Surety &amp; performance bonds</h1>
+          <h1>Insurance surety bonds</h1>
+          <nav className="isb-switch" aria-label="Bond type">
+            {(
+              [
+                ["", "All", everyBond.length],
+                ["PERFORMANCE", "PBG", everyBond.filter((row) => row.kind === "PERFORMANCE").length],
+              ] as const
+            ).map(([value, label, count]) => (
+              <button key={label} type="button" className={filter.kind === value ? "is-on" : ""} onClick={() => setFilter("kind", value)}>
+                {label}
+                <small>{count}</small>
+              </button>
+            ))}
+          </nav>
         </div>
         <div className="dk-hero-tools">
           {toggle}
           <PeriodPicker key={byExpiry ? "expiry" : "issued"} value={filter.period || "all"} onChange={(key) => setFilter("period", key)} earliest={earliest} compact align="right" future={byExpiry} />
           {data.canImport ? (
-            <button type="button" className={`dk-btn${importing ? " is-on" : ""}`} onClick={() => setImporting((value) => !value)}>
-              {importing ? "Close import" : "Import Excel"}
-            </button>
+            <>
+              <button type="button" className={`dk-btn${uploadingDocs ? " is-on" : ""}`} onClick={() => setUploadingDocs((value) => !value)}>
+                {uploadingDocs ? "Close documents" : "Upload documents"}
+              </button>
+              <button type="button" className={`dk-btn${importing ? " is-on" : ""}`} onClick={() => setImporting((value) => !value)}>
+                {importing ? "Close import" : "Import Excel"}
+              </button>
+            </>
           ) : null}
         </div>
       </section>
 
       {importing ? <ImportPanel onDone={() => void reload()} /> : null}
+      {uploadingDocs ? (
+        <section className="dk-panel">
+          <header className="dk-panel-head">
+            <span className="dk-panel-icon">
+              <Icon name="doc" />
+            </span>
+            <div>
+              <h2>Upload ISB copies</h2>
+              <p>Choose the scans or a whole folder (like “ISB Copies”). Each file goes to the bond whose number is in its name; files already stored are skipped.</p>
+            </div>
+          </header>
+          <BondDocUploader onDone={() => void reload()} />
+        </section>
+      ) : null}
 
       <section className="dk-cards" aria-label="Bond figures">
         {cards.map((item, index) => (
@@ -284,9 +341,6 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
           </FxLink>
         ))}
       </section>
-
-
-      <Timeline rows={rows} today={today} />
 
       <form
         className="dk-filters"
@@ -322,8 +376,7 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
           <div className="seg">
             {[
               ["", "All"],
-              ["EMD", "EMD"],
-              ["PERFORMANCE", "Performance"],
+              ["PERFORMANCE", "PBG"],
             ].map(([value, label]) => (
               <button key={label} type="button" className={filter.kind === value ? "is-on" : ""} onClick={() => setFilter("kind", value)}>
                 {label}
@@ -431,7 +484,7 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
             <div>
               <h2>{card?.label ?? "All bonds"}</h2>
               <p>
-                {listed.length} bond{listed.length === 1 ? "" : "s"} · {card?.sort === "premium" ? "highest premium first" : "soonest expiry first"} · click a row for every date and charge
+                {listed.length} bond{listed.length === 1 ? "" : "s"} · {card?.sort === "premium" ? "highest premium first" : "soonest expiry first"} · click a row to open the bond and its ISB copies
               </p>
             </div>
             {card ? (
@@ -457,7 +510,7 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
                   <th>Bond number</th>
                   <th>Expiry</th>
                   <th>Status</th>
-                  <th className="act">Details</th>
+                  <th className="act">Open</th>
                 </tr>
               </thead>
               <tbody>
@@ -469,13 +522,23 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
                   </tr>
                 ) : null}
                 {shown.map((row, index) => {
-                  const open = openRow === row.id;
+                  // The bond page gets this board's address so Back returns to the same filters.
+                  const open = () => navigate(`/bonds/${row.id}`, { state: { from: `${location.pathname}${location.search}` } });
+                  const docs = data.docCounts[row.bondNumber.replace(/\D+/g, "")] ?? 0;
                   return (
-                    <Fragment key={row.id}>
-                      <tr className={`dk-row${open ? " is-open" : ""}${row.health === "soon" || row.health === "claim" ? " is-late" : ""}`} onClick={() => setOpenRow(open ? null : row.id)} style={{ "--r": Math.min(index, 12) } as CSSProperties}>
+                      <tr
+                        key={row.id}
+                        className={`dk-row bg-row${row.health === "soon" || row.health === "claim" ? " is-late" : ""}`}
+                        onClick={open}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") open();
+                        }}
+                        tabIndex={0}
+                        style={{ "--r": Math.min(index, 12) } as CSSProperties}
+                      >
                         <td className="muted">{row.serialNo ?? index + 1}</td>
                         <td>
-                          <span className={`dk-pill ${row.kind === "EMD" ? "amber" : "violet"}`}>{row.kind === "EMD" ? "EMD" : row.usedFor ? `PB · ${row.usedFor}` : "PB"}</span>
+                          <span className={`dk-pill ${row.kind === "EMD" ? "amber" : "violet"}`}>{row.kind === "EMD" ? "EMD" : row.usedFor ? `PBG · ${row.usedFor}` : "PBG"}</span>
                         </td>
                         <td className="dk-title">
                           {row.name || "—"}
@@ -487,6 +550,11 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
                         </td>
                         <td>
                           <span className="bonds-number">{row.bondNumber || "—"}</span>
+                          {docs ? (
+                            <small className="bgdoc-count" title="ISB copies for this bond">
+                              ▤ {docs} cop{docs === 1 ? "y" : "ies"}
+                            </small>
+                          ) : null}
                         </td>
                         <td>
                           {day(row.expiry)}
@@ -496,20 +564,12 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
                         <td>
                           <span className={`dk-pill ${HEALTH[row.health].tone}`}>{HEALTH[row.health].label}</span>
                         </td>
-                        <td className="act" onClick={(event) => event.stopPropagation()}>
-                          <button type="button" className={`dk-icon-btn${open ? " is-on" : ""}`} onClick={() => setOpenRow(open ? null : row.id)} title={open ? "Hide details" : "Show every date and charge"} aria-expanded={open}>
-                            <Icon name="chevron" />
-                          </button>
+                        <td className="act">
+                          <span className="dk-icon-btn" title="Open the bond page" aria-hidden>
+                            <Icon name="eye" />
+                          </span>
                         </td>
                       </tr>
-                      {open ? (
-                        <tr className="dk-detail-row">
-                          <td colSpan={9}>
-                            <BondDetail row={row} />
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
                   );
                 })}
               </tbody>
@@ -556,9 +616,22 @@ function group(list: Row[], pick: (row: Row) => string) {
   return [...map.entries()].map(([label, value]) => ({ label, ...value })).sort((a, b) => b.value - a.value);
 }
 
-function ImportPanel({ onDone }: { onDone: () => void }) {
+/** Upload panel for a register workbook; the bond import is the default. */
+export function ImportPanel({
+  onDone,
+  run = importBondsAction,
+  title = "Import the bond workbook",
+  note = "Upload the “Performance Bond & EMD ISB Data” .xlsx. Each sheet in the file replaces that part of the register.",
+  hint = ".xlsx with an “EMD” and/or “Performance Bond” sheet",
+}: {
+  onDone: () => void;
+  run?: (previous: ActionState, formData: FormData) => Promise<ActionState>;
+  title?: string;
+  note?: string;
+  hint?: string;
+}) {
   const [state, action] = useActionState(async (previous: ActionState, formData: FormData) => {
-    const result = await importBondsAction(previous, formData);
+    const result = await run(previous, formData);
     if (result?.ok) onDone();
     return result;
   }, null as ActionState);
@@ -569,12 +642,12 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
           <Icon name="doc" />
         </span>
         <div>
-          <h2>Import the bond workbook</h2>
-          <p>Upload the “Performance Bond &amp; EMD ISB Data” .xlsx. Each sheet in the file replaces that part of the register.</p>
+          <h2>{title}</h2>
+          <p>{note}</p>
         </div>
       </header>
       <form action={action} className="bonds-import">
-        <FilePick name="file" label="Choose the Excel workbook" hint=".xlsx with an “EMD” and/or “Performance Bond” sheet" accept=".xlsx" />
+        <FilePick name="file" label="Choose the Excel workbook" hint={hint} accept=".xlsx" />
         <Submit>Import Excel</Submit>
         {state?.error ? <p className="banner bad">{state.error}</p> : null}
         {state?.ok ? <p className="banner good">{state.ok}</p> : null}
@@ -583,116 +656,6 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
   );
 }
 
-function BondDetail({ row }: { row: Row }) {
-  const facts: [string, string][] = [
-    ["Customer", row.customer || "—"],
-    ["Tender", row.tenderRef || "—"],
-    ["Insurer", row.insurer || "—"],
-    ["Broker", row.broker || "—"],
-    ["Bond number", row.bondNumber || "—"],
-    ["Amount", inrFull(row.amount)],
-    ["Issued", day(row.issueDate)],
-    ["Start", day(row.startDate)],
-    ["Expiry", day(row.expiryDate)],
-    ["Claim expiry", day(row.claimExpiryDate)],
-    ...(row.ext1IssueDate || row.ext1ExpiryDate
-      ? ([
-          ["Extension 1 issued", day(row.ext1IssueDate)],
-          ["Extension 1 expiry", day(row.ext1ExpiryDate)],
-          ["Extension 1 claim", day(row.ext1ClaimDate)],
-        ] as [string, string][])
-      : []),
-    ...(row.ext2Date ? ([["Extension 2", day(row.ext2Date)], ["Extension 2 claim", day(row.ext2ClaimDate)]] as [string, string][]) : []),
-    ["Premium", `${inrFull(row.premium)}${row.premiumPercent != null ? ` (${row.premiumPercent}%)` : ""}`],
-    ["Stamp duty", inrFull(row.stampDuty)],
-    ...(row.kind === "EMD"
-      ? ([
-          ["Mode", row.mode || "—"],
-          ["Transfer", row.transferType || "—"],
-          ["Tender status", row.status || "—"],
-          ["Line", row.line === "COAL" ? "Coal" : row.line === "ASH" ? "Ash" : "—"],
-          ...(row.onlineAmount ? ([["Online part", inrFull(row.onlineAmount)]] as [string, string][]) : []),
-        ] as [string, string][])
-      : ([["Used for", row.usedFor === "APS" ? "APS (additional performance security)" : row.usedFor === "PS" ? "PS (performance security)" : row.usedFor || "—"]] as [string, string][])),
-  ];
-  return (
-    <div className="bonds-detail-box">
-      {row.tenderDetails ? <p className="bonds-detail-text">{row.tenderDetails}</p> : null}
-      <dl>
-        {facts.map(([label, value]) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
-function Timeline({ rows, today }: { rows: Row[]; today: Date }) {
-  if (!rows.length) return null;
-  // Value expiring per month for the next 12 months, split by kind; earlier ones fold into "Expired".
-  const horizon = Array.from({ length: 12 }, (_, index) => monthKey(new Date(today.getFullYear(), today.getMonth() + index, 1)));
-  const buckets = new Map<string, { emd: number; pb: number; count: number }>([["expired", { emd: 0, pb: 0, count: 0 }], ...horizon.map((key) => [key, { emd: 0, pb: 0, count: 0 }] as const), ["later", { emd: 0, pb: 0, count: 0 }]]);
-  for (const row of rows) {
-    if (!row.expiry) continue;
-    const key = row.expiry < today ? "expired" : horizon.includes(monthKey(row.expiry)) ? monthKey(row.expiry) : "later";
-    const bucket = buckets.get(key)!;
-    bucket[row.kind === "EMD" ? "emd" : "pb"] += row.amount ?? 0;
-    bucket.count += 1;
-  }
-  const timeline = [...buckets.entries()].map(([key, value]) => ({ key, label: key === "expired" ? "Expired" : key === "later" ? "Later" : monthLabel(key), ...value }));
-  const peak = Math.max(1, ...timeline.map((bucket) => bucket.emd + bucket.pb));
-  return (
-    <section className="dk-panel">
-      <header className="dk-panel-head">
-        <span className="dk-panel-icon">
-          <Icon name="calendar" />
-        </span>
-        <div>
-          <h2>Expiry timeline</h2>
-          <p>Bond value by the month it expires, using the latest extension · hover a bar for the figures</p>
-        </div>
-        <span className="bonds-legend">
-          <span>
-            <i className="sw emd" /> EMD
-          </span>
-          <span>
-            <i className="sw pb" /> Performance
-          </span>
-        </span>
-      </header>
-      <div className="bonds-timeline" role="table" aria-label="Bond value by expiry month">
-        {timeline.map((bucket, index) => {
-          const total = bucket.emd + bucket.pb;
-          return (
-            <div key={bucket.key} className={`bonds-col ${bucket.key === "expired" ? "past" : ""}`} role="row" tabIndex={0} style={{ "--r": index } as CSSProperties} aria-label={`${bucket.label}: EMD ${inrFull(bucket.emd)}, performance ${inrFull(bucket.pb)}`}>
-              <span className="bonds-tip" role="tooltip">
-                <b>{bucket.label}</b>
-                <span>
-                  <i className="sw emd" /> EMD {inr(bucket.emd)}
-                </span>
-                <span>
-                  <i className="sw pb" /> Performance {inr(bucket.pb)}
-                </span>
-                <span>
-                  {bucket.count} bond{bucket.count === 1 ? "" : "s"}
-                </span>
-              </span>
-              <span className="bonds-value">{total ? inr(total) : ""}</span>
-              <span className="bonds-stack" style={{ "--h": total / peak } as CSSProperties}>
-                {bucket.pb ? <i className="pb" style={{ flexGrow: bucket.pb }} /> : null}
-                {bucket.emd ? <i className="emd" style={{ flexGrow: bucket.emd }} /> : null}
-              </span>
-              <span className="bonds-month">{bucket.label}</span>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
 
 function NextToExpire({ rows, today, search }: { rows: Row[]; today: Date; search: (query: string) => string }) {
   const upcoming = rows.filter((row) => row.expiry && row.expiry >= today).sort((a, b) => a.expiry!.getTime() - b.expiry!.getTime()).slice(0, 6);
@@ -719,7 +682,7 @@ function NextToExpire({ rows, today, search }: { rows: Row[]; today: Date; searc
               <span className="dk-deadline-main">
                 <strong>{row.name}</strong>
                 <small>
-                  {row.kind === "EMD" ? "EMD" : `Performance · ${row.usedFor || "—"}`} · {inr(row.amount)}
+                  {row.kind === "EMD" ? "EMD" : `PBG · ${row.usedFor || "—"}`} · {inr(row.amount)}
                 </small>
               </span>
               <span className="dk-deadline-end">{day(row.expiry)}</span>
@@ -731,7 +694,7 @@ function NextToExpire({ rows, today, search }: { rows: Row[]; today: Date; searc
   );
 }
 
-function BarList({
+export function BarList({
   title,
   note,
   icon,
@@ -785,7 +748,7 @@ function BarList({
 }
 
 const SPLIT_TONES = ["emd", "violet", "pb", "green"];
-function SplitBar({ rows }: { rows: { label: string; value: number; count: number }[] }) {
+export function SplitBar({ rows }: { rows: { label: string; value: number; count: number }[] }) {
   const total = rows.reduce((all, row) => all + row.value, 0) || 1;
   return (
     <div className="bonds-split">

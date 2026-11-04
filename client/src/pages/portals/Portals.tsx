@@ -5,6 +5,7 @@ import type { CalendarJson, CrawlerException, Portal } from "@client/lib/types";
 import { LoadFailed, Loading } from "@client/components/base/loading";
 import { useNoticeAction } from "@client/components/feature/notice-action";
 import { IngestForm } from "@client/components/feature/ingest-form";
+import { GemWatch, type GemData } from "./GemWatch";
 
 const KINDS = [
   "Portal unavailable",
@@ -19,14 +20,14 @@ const KINDS = [
   "Changed bid submission deadline",
 ];
 
-type Data = { portals: Portal[]; exceptions: CrawlerException[]; calendar: CalendarJson };
+type Data = { portals: Portal[]; exceptions: CrawlerException[]; calendar: CalendarJson; gem: GemData };
 
 export default function PortalsPage() {
   const actor = useActor();
   const { query, run } = useNoticeAction("/portals");
   const { data, error, reload } = useApi<Data>("/portals");
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
-  const { portals, exceptions, calendar } = data;
+  const { portals, exceptions, calendar, gem } = data;
   const admin = actor.role === "ADMIN" || actor.role === "COORDINATOR";
   return (
     <>
@@ -34,12 +35,14 @@ export default function PortalsPage() {
         <div>
           <h1>Portals</h1>
           <p>
-            Phase 2 keeps the same tender record and the same workflow. Automatic scanning is not run from here: each portal’s access, permissions and document download still have to be confirmed. Failures stay in the exception queue instead of disappearing.
+            GeM bids are fetched automatically below and become tenders in the same workflow. Other portals are listed for reference until their access and document download are confirmed. Failures stay in the exception queue instead of disappearing.
           </p>
         </div>
       </header>
       {query.notice ? <p className="banner good">{query.notice}</p> : null}
       {query.error ? <p className="banner bad">{query.error}</p> : null}
+      <GemWatch gem={gem} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit={actor.role === "ADMIN"} canRun={admin} />
+      <h2 className="section-title">Other portals</h2>
       <div className="table-wrap">
         <table>
           <thead>

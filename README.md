@@ -90,7 +90,7 @@ It opens a Cloudflare quick tunnel to port 8080 (pass another port as `npm run t
 
 Set `SMTP_HOST`, `SMTP_USER` and `SMTP_PASS` in `server/.env` (for Google Workspace, `SMTP_PASS` is an App Password). Until all three are set, every notice is only stored in Notifications.
 
-`MAIL_STEP_COPY_TO` (comma separated) gets an email for every workflow step: upload, extraction, field validation, relevance, costing, approval, EMD, submitter, bid, outcome. `MAIL_REDIRECT_TO` sends all other notices to one inbox for testing.
+`MAIL_STEP_COPY_TO` (comma separated) gets an email for every workflow step: upload, extraction, field validation, relevance, costing, approval, EMD, submitter, bid, outcome. Locally, `MAIL_REDIRECT_TO` sends every notice to one inbox. On the live server each person gets their own email, with the BCC list set in the server.
 
 ## Build and run on one port (4000)
 
