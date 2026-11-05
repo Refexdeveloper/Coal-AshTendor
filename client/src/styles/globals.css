@@ -2418,6 +2418,7 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
   .emd-board .dk-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .emd-row dl { grid-template-columns: 1fr 1fr; }
 }
+.board-stack { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .board-toggle { display: inline-flex; gap: 4px; padding: 4px; border-radius: 14px; background: rgba(255, 255, 255, 0.92); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 10px 24px -14px rgba(41, 37, 36, 0.4); backdrop-filter: blur(8px); }
 .board-toggle a { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 16px; border-radius: 10px; color: var(--ink-2); font-size: 0.86rem; font-weight: 700; text-decoration: none; transition: background 0.25s, color 0.25s, box-shadow 0.25s, transform 0.2s; }
 .board-toggle a:hover:not(.is-on) { background: var(--ember-soft); color: var(--ember); }

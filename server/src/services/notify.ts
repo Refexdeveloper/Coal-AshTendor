@@ -93,7 +93,7 @@ function fill(template: string, vars: Record<string, string>) {
 
 /**
  * Outgoing mail, set up like the P2P app: Google Workspace SMTP on 587 with STARTTLS, sent from
- * support@refexone.com, one pooled connection with a rate limit so Gmail is not flooded.
+ * itdev@refex.co.in, one pooled connection with a rate limit so Gmail is not flooded.
  * Everything is set here, as in P2P; server/.env (SMTP_HOST, SMTP_USER, SMTP_PASS, ...) can still override it.
  */
 /** Local mail goes only to this inbox. The subject starts with "[for Name]" so you can see who it was for. Real people are not emailed. */
@@ -113,10 +113,10 @@ export function liveMail() {
 const SMTP_DEFAULTS = {
   host: "smtp.gmail.com",
   port: 587,
-  user: "support@refexone.com",
-  // Google app password for support@refexone.com, the same one the P2P app uses. Keep this repository private.
-  pass: "skrmayqcqwvjanne",
-  fromEmail: "support@refexone.com",
+  user: "itdev@refex.co.in",
+  // Google app password for itdev@refex.co.in. Keep this repository private.
+  pass: "lxhedxiuezcyrlbh",
+  fromEmail: "itdev@refex.co.in",
   fromName: "Coal & Ash Tenders",
 };
 

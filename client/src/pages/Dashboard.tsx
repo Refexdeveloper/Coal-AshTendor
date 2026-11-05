@@ -15,35 +15,48 @@ import GuaranteesPage from "@client/pages/guarantees/Guarantees";
 import BondsPage from "@client/pages/bonds/Bonds";
 import EmdBoard from "@client/pages/emd/EmdBoard";
 
-/** Tender | EMD | BG | ISB switch on the Group CEO dashboard banner. The other boards show those registers in place. */
+/** Tender | EMD | Security Deposits on the Group CEO dashboard. Security Deposits opens the BG and ISB registers. */
 function BoardToggle({ board }: { board: "tender" | "emd" | "bg" | "isb" }) {
+  const deposits = board === "bg" || board === "isb";
   return (
-    <nav className="board-toggle" aria-label="Dashboard">
-      <Link to="/" className={board === "tender" ? "is-on" : ""} aria-current={board === "tender" ? "page" : undefined}>
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6" />
-        </svg>
-        Tender
-      </Link>
-      <Link to="/?board=emd" className={board === "emd" ? "is-on" : ""} aria-current={board === "emd" ? "page" : undefined}>
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <path d="M12 3 5 6v6c0 4.2 2.8 7.2 7 9 4.2-1.8 7-4.8 7-9V6zM9 12l2 2 4-4" />
-        </svg>
-        EMD
-      </Link>
-      <Link to="/?board=bg" className={board === "bg" ? "is-on" : ""} aria-current={board === "bg" ? "page" : undefined}>
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <path d="M3.5 9.5 12 4l8.5 5.5M5.5 10v7M10 10v7M14 10v7M18.5 10v7M4 19.5h16" />
-        </svg>
-        BG
-      </Link>
-      <Link to="/?board=isb" className={board === "isb" ? "is-on" : ""} aria-current={board === "isb" ? "page" : undefined}>
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <path d="M7 3h8l4 4v14H7zM15 3v4h4M10 12h6M10 16h6" />
-        </svg>
-        ISB
-      </Link>
-    </nav>
+    <div className="board-stack">
+      <nav className="board-toggle" aria-label="Dashboard">
+        <Link to="/" className={board === "tender" ? "is-on" : ""} aria-current={board === "tender" ? "page" : undefined}>
+          <svg viewBox="0 0 24 24" aria-hidden>
+            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6" />
+          </svg>
+          Tender
+        </Link>
+        <Link to="/?board=emd" className={board === "emd" ? "is-on" : ""} aria-current={board === "emd" ? "page" : undefined}>
+          <svg viewBox="0 0 24 24" aria-hidden>
+            <path d="M12 3 5 6v6c0 4.2 2.8 7.2 7 9 4.2-1.8 7-4.8 7-9V6zM9 12l2 2 4-4" />
+          </svg>
+          EMD
+        </Link>
+        <Link to="/?board=bg" className={deposits ? "is-on" : ""} aria-current={deposits ? "page" : undefined}>
+          <svg viewBox="0 0 24 24" aria-hidden>
+            <path d="M4 10h16v10H4zM8 10V7a4 4 0 0 1 8 0v3M12 14v3" />
+          </svg>
+          Security Deposits
+        </Link>
+      </nav>
+      {deposits ? (
+        <nav className="board-toggle" aria-label="Security deposits">
+          <Link to="/?board=bg" className={board === "bg" ? "is-on" : ""} aria-current={board === "bg" ? "page" : undefined}>
+            <svg viewBox="0 0 24 24" aria-hidden>
+              <path d="M3.5 9.5 12 4l8.5 5.5M5.5 10v7M10 10v7M14 10v7M18.5 10v7M4 19.5h16" />
+            </svg>
+            BG
+          </Link>
+          <Link to="/?board=isb" className={board === "isb" ? "is-on" : ""} aria-current={board === "isb" ? "page" : undefined}>
+            <svg viewBox="0 0 24 24" aria-hidden>
+              <path d="M7 3h8l4 4v14H7zM15 3v4h4M10 12h6M10 16h6" />
+            </svg>
+            ISB
+          </Link>
+        </nav>
+      ) : null}
+    </div>
   );
 }
 

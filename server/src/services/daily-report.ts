@@ -561,7 +561,7 @@ function kolkataNow(now = new Date()) {
   return { date: `${value("year")}-${value("month")}-${value("day")}`, minutes: Number(value("hour")) * 60 + Number(value("minute")) };
 }
 
-/** Sends the report at 9:00 and 16:00 India time. A missed slot is sent once when the server is next up that day. */
+/** Sends the report at 9:00 and 16:00 India time. If the server was down at that minute, it still sends that slot once later the same day. */
 export function startDailyReportSchedule() {
   let busy = false;
   const tried = new Map<string, number>();
@@ -571,13 +571,12 @@ export function startDailyReportSchedule() {
     if (!liveMail() || !process.env.K_SERVICE) return;
     const now = kolkataNow();
     for (const slot of REPORT_SLOTS) {
-      const start = slot.hour * 60;
-      if (now.minutes < start || now.minutes >= start + 10) continue;
+      if (now.minutes < slot.hour * 60) continue;
       const id = `${now.date} ${slot.label}`;
       const lastTry = tried.get(id) ?? 0;
       if (Date.now() - lastTry < 15 * 60 * 1000) continue;
-      const recent = await db.notificationLog.findMany({ where: { eventType: "DAILY_REPORT" }, orderBy: { createdAt: "desc" }, take: 30 });
-      if (recent.some((row: { note?: string | null; status?: string }) => row.note === `scheduled ${id}` && row.status === "SENT")) {
+      const recent = await db.notificationLog.findMany({ where: { eventType: "DAILY_REPORT" }, orderBy: { createdAt: "desc" }, take: 40 });
+      if (recent.some((row: { note?: string | null; status?: string }) => String(row.note ?? "").includes(id) && (row.status === "SENT" || row.status === "QUEUED"))) {
         tried.set(id, Date.now());
         continue;
       }

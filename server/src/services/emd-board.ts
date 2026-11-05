@@ -34,13 +34,71 @@ function resultOf(tender: { outcome: string; overallStatus: string }) {
   return "EVALUATION";
 }
 
+function latestAmount(amount: number | null, amendments: string | null) {
+  let latest = amount;
+  try {
+    const list = JSON.parse(amendments || "[]") as { no?: number; amount?: number | null }[];
+    for (const item of [...list].sort((a, b) => (a.no ?? 0) - (b.no ?? 0))) {
+      if (typeof item.amount === "number" && Number.isFinite(item.amount)) latest = item.amount;
+    }
+  } catch {
+    /* keep the issuance amount */
+  }
+  return latest;
+}
+
+export type EmdInstrument = {
+  id: string;
+  kind: "BG" | "ISB";
+  number: string;
+  title: string;
+  party: string;
+  bank: string;
+  amount: number | null;
+  issueDate: Date | null;
+  expiryDate: Date | null;
+};
+
+/** EMD bank guarantees and EMD surety bonds from the registers. Performance bonds stay on the BG and ISB boards. */
+async function emdInstruments(): Promise<EmdInstrument[]> {
+  const [guarantees, bonds] = await Promise.all([db.bankGuarantee.findMany({}), db.suretyBond.findMany({})]);
+  const fromBg = (guarantees as Record<string, unknown>[])
+    .filter((row) => String(row.bgType ?? "").toUpperCase() === "EMD")
+    .map((row) => ({
+      id: String(row.id),
+      kind: "BG" as const,
+      number: String(row.bgNumber ?? ""),
+      title: String(row.site || row.beneficiary || "EMD bank guarantee"),
+      party: String(row.beneficiary ?? ""),
+      bank: String(row.bank ?? ""),
+      amount: latestAmount((row.amount as number | null) ?? null, (row.amendments as string | null) ?? null),
+      issueDate: (row.issueDate as Date | null) ?? null,
+      expiryDate: (row.expiryDate as Date | null) ?? null,
+    }));
+  const fromBond = (bonds as Record<string, unknown>[])
+    .filter((row) => String(row.kind ?? "").toUpperCase() === "EMD")
+    .map((row) => ({
+      id: String(row.id),
+      kind: "ISB" as const,
+      number: String(row.bondNumber ?? ""),
+      title: String(row.plant || row.tenderDetails || row.customer || "EMD surety bond"),
+      party: String(row.customer ?? ""),
+      bank: String(row.insurer ?? ""),
+      amount: (row.isbAmount as number | null) ?? (row.amount as number | null) ?? null,
+      issueDate: (row.issueDate as Date | null) ?? null,
+      expiryDate: (row.ext1ExpiryDate as Date | null) ?? (row.expiryDate as Date | null) ?? null,
+    }));
+  return [...fromBg, ...fromBond].sort((a, b) => a.number.localeCompare(b.number));
+}
+
 /** Tenders whose EMD is being managed: an instrument, a fee, or a tender the business is pursuing. */
 export async function listEmdBoard() {
-  const [tenders, records, fields, documents] = await Promise.all([
+  const [tenders, records, fields, documents, instruments] = await Promise.all([
     db.tender.findMany({}),
     db.emdRecord.findMany({}),
     db.tenderField.findMany({ where: { fieldKey: { in: ["emd_fee"] } } }),
     db.tenderDocument.findMany({ where: { docType: { in: ["EMD_EVIDENCE", "EMD_DOCUMENT"] } }, select: { id: true, tenderId: true, fileName: true } }),
+    emdInstruments(),
   ]);
   const recordByTender = new Map(records.map((row: { tenderId: string }) => [row.tenderId, row]));
   const feeByTender = new Map(fields.map((row: { tenderId: string; correctedAt: Date | null; correctedValue: string; extractedValue: string }) => [row.tenderId, row.correctedAt ? row.correctedValue : row.extractedValue]));
@@ -98,7 +156,7 @@ export async function listEmdBoard() {
     })
     .sort((a, b) => a.recordId.localeCompare(b.recordId));
 
-  return { rows, canEdit: false };
+  return { rows, instruments, canEdit: false };
 }
 
 /** Saves the instrument and, where the result calls for it, the refund or the security-deposit conversion. */

@@ -84,7 +84,8 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
   const today = useMemo(() => new Date(), []);
   const everyBg = useMemo(() => {
     const rows = (data?.guarantees ?? []).map((bg) => enrich(bg, today));
-    return onlyType ? rows.filter((row) => row.bgType === onlyType) : rows;
+    if (onlyType) return rows.filter((row) => row.bgType === onlyType);
+    return rows.filter((row) => row.bgType !== "EMD");
   }, [data, today, onlyType]);
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
 
@@ -111,7 +112,6 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
 
   const pbg = rows.filter((row) => CARD_ROWS.pbg.match(row));
   const abg = rows.filter((row) => CARD_ROWS.abg.match(row));
-  const emd = rows.filter((row) => CARD_ROWS.emd.match(row));
   const live = rows.filter((row) => CARD_ROWS.active.match(row));
   const soon = rows.filter((row) => row.health === "soon");
   const watch = rows.filter((row) => row.health === "watch");
@@ -121,7 +121,6 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
     { key: "total", label: "Total", fx: "docs" as CardFx, value: sum(rows, (row) => row.current.amount), money: true, note: `${rows.length} guarantees`, icon: "doc", tone: "teal" },
     { key: "pbg", label: "PBG", fx: "award" as CardFx, value: sum(pbg, (row) => row.amount), money: true, note: `${pbg.length} performance guarantees`, icon: "trophy", tone: "violet" },
     { key: "abg", label: "APBG", fx: "trophy" as CardFx, value: sum(abg, (row) => row.current.amount), money: true, note: `${abg.length} advance guarantees`, icon: "target", tone: "blue" },
-    { key: "emd", label: "EMD BGs", fx: "shield" as CardFx, value: sum(emd, (row) => row.current.amount), money: true, note: `${emd.length} guarantees`, icon: "shield", tone: "orange" },
     { key: "active", label: "Active guarantees", fx: "ready" as CardFx, value: live.length, note: inr(sum(live, (row) => row.current.amount)), icon: "check", tone: "green" },
     { key: "soon", label: "Expiring in 30 days", fx: "hourglass" as CardFx, value: soon.length, note: soon.length ? inr(sum(soon, (row) => row.current.amount)) : "Nothing due", icon: "hourglass", tone: "red", hot: soon.length > 0 },
     { key: "watch", label: "Expiring in 90 days", fx: "pending" as CardFx, value: watch.length, note: watch.length ? inr(sum(watch, (row) => row.current.amount)) : "None", icon: "calendar", tone: "sky" },
@@ -131,7 +130,7 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
     { key: "stamp", label: "Stamp duty", fx: "docs" as CardFx, value: sum(rows, (row) => row.stampDuty), money: true, note: "Issuance stamp duty", icon: "doc", tone: "sky" },
   ];
 
-  const card = CARD_ROWS[filter.card];
+  const card = filter.card === "emd" ? undefined : CARD_ROWS[filter.card];
   const needle = filter.q.trim().toLowerCase();
   const distinct = (pick: (row: Row) => string) => [...new Set(everyBg.map(pick).filter(Boolean))].sort().map((value) => ({ value, label: value }));
   const listed = rows
@@ -290,7 +289,7 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
         <div className="dk-filter">
           <span>BG type</span>
           <div className="seg">
-            {["", "PBG", "APBG", "EMD"].map((value) => (
+            {["", "PBG", "APBG"].map((value) => (
               <button key={value || "all"} type="button" className={filter.type === value ? "is-on" : ""} onClick={() => setFilter("type", value)}>
                 {value || "All"}
               </button>

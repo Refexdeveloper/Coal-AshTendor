@@ -34,7 +34,18 @@ type Row = {
   sdAmount: number | null;
   documents: Doc[];
 };
-type Data = { rows: Row[]; canEdit: boolean };
+type Instrument = {
+  id: string;
+  kind: "BG" | "ISB";
+  number: string;
+  title: string;
+  party: string;
+  bank: string;
+  amount: number | null;
+  issueDate: Date | null;
+  expiryDate: Date | null;
+};
+type Data = { rows: Row[]; instruments: Instrument[]; canEdit: boolean };
 
 const METHOD: Record<string, string> = {
   BG: "Bank Guarantee",
@@ -146,10 +157,12 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const rows = data?.rows ?? [];
+  const instruments = data?.instruments ?? [];
   const needle = query.trim().toLowerCase();
+  const instrumentView = card === "BG" || card === "ISB";
   const listed = useMemo(() => {
     return rows.filter((row) => {
-      if (card === "BG" || card === "ISB" || card === "ONLINE" || card === "DD" || card === "EXEMPTION") {
+      if (card === "ONLINE" || card === "DD" || card === "EXEMPTION") {
         if (row.method !== card) return false;
       } else if (card === "WON" || card === "LOST" || card === "CANCELLED" || card === "EVALUATION") {
         if (row.result !== card) return false;
@@ -158,16 +171,25 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
       return [row.recordId, row.project, row.customer, row.bank, row.instrument, row.tenderRef, row.portal].join(" ").toLowerCase().includes(needle);
     });
   }, [rows, card, needle]);
+  const listedInstruments = useMemo(() => {
+    return instruments.filter((row) => {
+      if (row.kind !== card) return false;
+      if (!needle) return true;
+      return [row.number, row.title, row.party, row.bank].join(" ").toLowerCase().includes(needle);
+    });
+  }, [instruments, card, needle]);
 
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
 
   const sum = (match: (row: Row) => boolean, pick: (row: Row) => number = (row) => row.amount ?? 0) =>
     rows.filter(match).reduce((total, row) => total + pick(row), 0);
   const count = (match: (row: Row) => boolean) => rows.filter(match).length;
+  const instrumentSum = (kind: Instrument["kind"]) => instruments.filter((row) => row.kind === kind).reduce((total, row) => total + (row.amount ?? 0), 0);
+  const instrumentCount = (kind: Instrument["kind"]) => instruments.filter((row) => row.kind === kind).length;
   const cards: { key: string; label: string; value: number; money?: boolean; note: string; tone: string; icon: string }[] = [
     { key: "", label: "EMD exposure", value: sum((row) => row.method !== "EXEMPTION"), money: true, note: `${rows.length} tenders`, tone: "", icon: "shield" },
-    { key: "BG", label: "Bank Guarantee", value: count((row) => row.method === "BG"), note: inr(sum((row) => row.method === "BG")), tone: "violet", icon: "doc" },
-    { key: "ISB", label: "Insurance Surety Bond", value: count((row) => row.method === "ISB"), note: inr(sum((row) => row.method === "ISB")), tone: "sky", icon: "shield" },
+    { key: "BG", label: "Bank Guarantee", value: instrumentCount("BG"), note: `${inr(instrumentSum("BG"))} · EMD only`, tone: "violet", icon: "doc" },
+    { key: "ISB", label: "Insurance Surety Bond", value: instrumentCount("ISB"), note: `${inr(instrumentSum("ISB"))} · EMD only`, tone: "sky", icon: "shield" },
     { key: "ONLINE", label: "NEFT/RTGS", value: count((row) => row.method === "ONLINE"), note: inr(sum((row) => row.method === "ONLINE")), tone: "teal", icon: "doc" },
     { key: "DD", label: "Demand Draft", value: count((row) => row.method === "DD"), note: inr(sum((row) => row.method === "DD")), tone: "orange", icon: "doc" },
     { key: "EXEMPTION", label: "Exemption", value: count((row) => row.method === "EXEMPTION"), note: "No deposit", tone: "green", icon: "check" },
@@ -219,7 +241,9 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
           <div>
             <h2>Tender EMD register</h2>
             <p>
-              {listed.length} of {rows.length} · tender, customer, instrument and what happens to the money
+              {instrumentView
+                ? `${listedInstruments.length} ${card === "BG" ? "EMD bank guarantees" : "EMD surety bonds"}`
+                : `${listed.length} of ${rows.length} · tender, customer, instrument and what happens to the money`}
             </p>
           </div>
           <label className="dk-search-box">
@@ -227,8 +251,45 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
             <input type="search" placeholder="Tender, customer, instrument…" value={query} onChange={(event) => setQuery(event.target.value)} />
           </label>
         </header>
-        {listed.length === 0 ? <p className="dk-empty">No EMD submissions match this view.</p> : null}
-        {listed.map((row) => (
+        {instrumentView ? (
+          listedInstruments.length === 0 ? (
+            <p className="dk-empty">No EMD {card === "BG" ? "bank guarantees" : "surety bonds"} match this view.</p>
+          ) : (
+            listedInstruments.map((row) => (
+              <article key={row.id} className="emd-row">
+                <header>
+                  <div>
+                    <Link to={row.kind === "BG" ? `/guarantees/${row.id}` : `/bonds/${row.id}`}>{row.number || "No number"}</Link>
+                    <strong>{row.title}</strong>
+                    <small>{row.party || "No customer"}</small>
+                  </div>
+                  <span className={`dk-pill ${row.kind === "BG" ? "violet" : "blue"}`}>{row.kind === "BG" ? "EMD BG" : "EMD ISB"}</span>
+                </header>
+                <dl>
+                  <div>
+                    <dt>Amount</dt>
+                    <dd>{inr(row.amount)}</dd>
+                  </div>
+                  <div>
+                    <dt>{row.kind === "BG" ? "Bank" : "Insurer"}</dt>
+                    <dd>{row.bank || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Issue</dt>
+                    <dd>{day(row.issueDate)}</dd>
+                  </div>
+                  <div>
+                    <dt>Expiry</dt>
+                    <dd>{day(row.expiryDate)}</dd>
+                  </div>
+                </dl>
+              </article>
+            ))
+          )
+        ) : null}
+        {!instrumentView && listed.length === 0 ? <p className="dk-empty">No EMD submissions match this view.</p> : null}
+        {!instrumentView
+          ? listed.map((row) => (
           <article key={row.tenderId} className="emd-row">
             <header>
               <div>
@@ -307,7 +368,8 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
               />
             ) : null}
           </article>
-        ))}
+        ))
+          : null}
       </section>
     </div>
   );

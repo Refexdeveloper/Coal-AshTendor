@@ -139,7 +139,7 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
   const [added, setAdded] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
   const today = useMemo(() => new Date(), []);
-  const everyBond = useMemo(() => (data?.bonds ?? []).map((bond) => enrich(bond, today)), [data, today]);
+  const everyBond = useMemo(() => (data?.bonds ?? []).map((bond) => enrich(bond, today)).filter((bond) => bond.kind !== "EMD"), [data, today]);
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
 
   const filter = { period: params.get("period") ?? "", basis: params.get("basis") ?? "", card: params.get("card") ?? "", kind: params.get("kind") ?? "", state: params.get("state") ?? "", insurer: params.get("insurer") ?? "", health: params.get("health") ?? "", q: params.get("q") ?? "" };
@@ -165,28 +165,24 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
   const cardHref = (key: string) => `${path}?${[...keep, `card=${key}`].join("&")}#bond-list`;
   const allHref = `${path}${keep.length ? `?${keep.join("&")}` : ""}#bond-list`;
 
-  const emd = rows.filter((row) => row.kind === "EMD");
   const pb = rows.filter((row) => row.kind === "PERFORMANCE");
   const soon = rows.filter((row) => row.health === "soon");
   const watch = rows.filter((row) => row.health === "watch");
   const claim = rows.filter((row) => row.health === "claim");
   const live = rows.filter((row) => CARD_ROWS.active.match(row));
-  const tech = emd.filter((row) => CARD_ROWS.tech.match(row));
 
   const cards = [
-    { key: "emd", label: "EMD exposure", fx: "shield" as CardFx, value: sum(emd, (row) => row.amount), money: true, note: `${emd.length} insurance surety bonds`, icon: "shield", tone: "orange" },
     { key: "pb", label: "PBG bonds", fx: "award" as CardFx, value: sum(pb, (row) => row.amount), money: true, note: `${pb.length} bonds · ${pb.filter((row) => row.usedFor === "APS").length} APS`, icon: "trophy", tone: "violet" },
     { key: "active", label: "Active bonds", fx: "ready" as CardFx, value: live.length, note: inr(sum(live, (row) => row.amount)), icon: "check", tone: "green" },
     { key: "soon", label: "Expiring in 30 days", fx: "hourglass" as CardFx, value: soon.length, note: soon.length ? inr(sum(soon, (row) => row.amount)) : "Nothing due", icon: "hourglass", tone: "red", hot: soon.length > 0 },
     { key: "watch", label: "Expiring in 90 days", fx: "pending" as CardFx, value: watch.length, note: watch.length ? inr(sum(watch, (row) => row.amount)) : "None", icon: "calendar", tone: "sky" },
     { key: "claim", label: "Claim window open", fx: "overdue" as CardFx, value: claim.length, note: claim.length ? "Expired, still claimable" : "None open", icon: "clock", tone: "rose", hot: claim.length > 0 },
-    { key: "tech", label: "Technical evaluation", fx: "target" as CardFx, value: tech.length, note: `${emd.length - tech.length} other EMD bonds`, icon: "target", tone: "teal" },
     { key: "premium", label: "Premium + stamp duty", fx: "coins" as CardFx, value: sum(rows, (row) => row.premium) + sum(rows, (row) => row.stampDuty), money: true, note: "Paid across all bonds", icon: "rupee", tone: "blue" },
   ];
 
-  const card = CARD_ROWS[filter.card];
+  const card = filter.card === "emd" || filter.card === "tech" ? undefined : CARD_ROWS[filter.card];
   const needle = filter.q.trim().toLowerCase();
-  const states = [...new Set(emd.map((row) => row.state).filter(Boolean))].sort();
+  const states = [...new Set(rows.map((row) => row.state).filter(Boolean))].sort();
   const insurers = [...new Set(rows.map((row) => row.insurer).filter(Boolean))].sort();
   const listed = rows
     .filter((row) => !card || card.match(row))
@@ -579,26 +575,11 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
 
         <aside className="dk-side">
           <NextToExpire rows={rows} today={today} search={(query) => `${path}?${[...fixed, `q=${encodeURIComponent(query)}`].join("&")}#bond-list`} />
-          <section className="dk-panel">
-            <header className="dk-panel-head">
-              <span className="dk-panel-icon">
-                <Icon name="target" />
-              </span>
-              <div>
-                <h2>EMD by status</h2>
-                <p>Where each tender's EMD bond stands</p>
-              </div>
-            </header>
-            <SplitBar rows={group(emd, (row) => row.status)} />
-            <h3 className="bonds-sub">By business line</h3>
-            <SplitBar rows={group(emd, (row) => (row.line === "COAL" ? "Coal" : row.line === "ASH" ? "Ash" : ""))} />
-          </section>
         </aside>
       </div>
 
       <div className="bonds-grid">
-        <BarList title="EMD exposure by state" note="Value of EMD bonds in each state" icon="shield" rows={group(emd, (row) => row.state)} tone="emd" onPick={(value) => setFilter("state", value)} />
-        <BarList title="Exposure by insurer" note="EMD and performance bonds together" icon="rupee" rows={group(rows, (row) => row.insurer)} tone="pb" onPick={(value) => setFilter("insurer", value)} />
+        <BarList title="Exposure by insurer" note="Performance bonds" icon="rupee" rows={group(rows, (row) => row.insurer)} tone="pb" onPick={(value) => setFilter("insurer", value)} />
       </div>
     </div>
   );
