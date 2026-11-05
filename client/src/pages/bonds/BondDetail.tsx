@@ -13,6 +13,7 @@ export default function BondDetailPage() {
   const { id = "" } = useParams();
   const location = useLocation();
   const back = (location.state as { from?: string } | null)?.from ?? "/bonds";
+  const backLabel = back.includes("board=emd") ? "Back to EMD" : "Back to ISB register";
   const { data, error, reload } = useApi<{ bond: SuretyBond; documents: BondDocument[]; canUpload: boolean }>(`/bonds/${encodeURIComponent(id)}`);
   const today = useMemo(() => new Date(), []);
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
@@ -95,7 +96,7 @@ export default function BondDetailPage() {
         <PlantArt />
         <div className="dk-hero-text">
           <Link className="bg-back" to={back}>
-            ← Back to ISB register
+            ← {backLabel}
           </Link>
           <div className="bg-chips">
             <span className={`dk-pill ${isEmd ? "amber" : "violet"}`}>{isEmd ? "EMD" : row.usedFor ? `PBG · ${row.usedFor}` : "PBG"}</span>

@@ -259,7 +259,9 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
               <article key={row.id} className="emd-row">
                 <header>
                   <div>
-                    <Link to={row.kind === "BG" ? `/guarantees/${row.id}` : `/bonds/${row.id}`}>{row.number || "No number"}</Link>
+                    <Link to={row.kind === "BG" ? `/guarantees/${row.id}` : `/bonds/${row.id}`} state={{ from: "/?board=emd" }}>
+                      {row.number || "No number"}
+                    </Link>
                     <strong>{row.title}</strong>
                     <small>{row.party || "No customer"}</small>
                   </div>

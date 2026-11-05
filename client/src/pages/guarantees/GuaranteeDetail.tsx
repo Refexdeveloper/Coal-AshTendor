@@ -15,6 +15,7 @@ export default function GuaranteeDetailPage() {
   const { id = "" } = useParams();
   const location = useLocation();
   const back = (location.state as { from?: string } | null)?.from ?? "/guarantees";
+  const backLabel = back.includes("board=emd") ? "Back to EMD" : "Back to bank guarantees";
   const { data, error, reload } = useApi<{ guarantee: BankGuarantee; documents: BgDocument[]; canUpload: boolean; canEdit?: boolean }>(`/guarantees/${encodeURIComponent(id)}`);
   const today = useMemo(() => new Date(), []);
   const [activeDoc, setActiveDoc] = useState<string | null>(null);
@@ -95,7 +96,7 @@ export default function GuaranteeDetailPage() {
         <PlantArt />
         <div className="dk-hero-text">
           <Link className="bg-back" to={back}>
-            ← Back to bank guarantees
+            ← {backLabel}
           </Link>
           <div className="bg-chips">
             <span className={`dk-pill ${TYPE_TONE[row.bgType] ?? ""}`}>{row.bgType || "BG"}</span>
