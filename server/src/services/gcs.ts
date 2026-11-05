@@ -16,6 +16,7 @@ const GCS_SERVICE_ACCOUNT = {
 };
 
 let client: Storage | null = null;
+let appClient: Storage | null = null;
 const buckets = new Map<string, Bucket>();
 
 function credentials() {
@@ -35,12 +36,19 @@ function storage() {
   return client;
 }
 
-function bucket(name: string) {
-  const cached = buckets.get(name);
+function bucket(name: string, source: Storage) {
+  const cacheKey = `${source === client ? "account" : "app"}:${name}`;
+  const cached = buckets.get(cacheKey);
   if (cached) return cached;
-  const next = storage().bucket(name);
-  buckets.set(name, next);
+  const next = source.bucket(name);
+  buckets.set(cacheKey, next);
   return next;
+}
+
+/** The Coal & Ash Cloud Run account, used for files already stored in the app bucket. */
+function appStorage() {
+  if (!appClient) appClient = new Storage({ projectId: PROJECT });
+  return appClient;
 }
 
 export function docsBucketName() {
@@ -60,7 +68,7 @@ export function tenderObjectName(key: string) {
 
 export async function uploadObject(bucketName: string, objectName: string, buffer: Buffer, contentType: string) {
   if (!bucketName || !objectName) throw new Error("GCS upload needs a bucket and an object name.");
-  await bucket(bucketName).file(objectName).save(buffer, {
+  await bucket(bucketName, storage()).file(objectName).save(buffer, {
     resumable: false,
     metadata: { contentType, cacheControl: "private, max-age=0" },
   });
@@ -69,7 +77,7 @@ export async function uploadObject(bucketName: string, objectName: string, buffe
 export async function downloadObject(bucketName: string, objectName: string) {
   if (!bucketName || !objectName) return null;
   try {
-    const [bytes] = await bucket(bucketName).file(objectName).download();
+    const [bytes] = await bucket(bucketName, storage()).file(objectName).download();
     return bytes;
   } catch (error) {
     const code = (error as { code?: number }).code;
@@ -78,7 +86,26 @@ export async function downloadObject(bucketName: string, objectName: string) {
   }
 }
 
+/** Read or write the Coal & Ash bucket with the Cloud Run account, not the P2P account. */
+export async function uploadAppObject(bucketName: string, objectName: string, buffer: Buffer, contentType: string) {
+  if (!bucketName || !objectName) return;
+  await bucket(bucketName, appStorage()).file(objectName).save(buffer, {
+    resumable: false,
+    metadata: { contentType, cacheControl: "private, max-age=0" },
+  });
+}
+
+export async function downloadAppObject(bucketName: string, objectName: string) {
+  if (!bucketName || !objectName) return null;
+  try {
+    const [bytes] = await bucket(bucketName, appStorage()).file(objectName).download();
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
 export async function deleteObject(bucketName: string, objectName: string) {
   if (!bucketName || !objectName) return;
-  await bucket(bucketName).file(objectName).delete({ ignoreNotFound: true });
+  await bucket(bucketName, storage()).file(objectName).delete({ ignoreNotFound: true });
 }

@@ -74,7 +74,12 @@ export function createApp() {
   // Checked per request, so a build made while the server is running is picked up without a restart.
   const clientDist = path.join(repoRoot(), "public");
   const clientIndex = path.join(clientDist, "index.html");
-  app.use(express.static(clientDist, { index: false }));
+  app.use(express.static(clientDist, {
+    index: false,
+    setHeaders(res, filePath) {
+      if (filePath.endsWith(".mjs")) res.setHeader("Content-Type", "text/javascript");
+    },
+  }));
   app.get(/^(?!\/api\/).*/, (_req, res) => {
     if (existsSync(clientIndex)) res.sendFile(clientIndex);
     else res.status(404).send("The frontend is not built yet. Run: npm run build");

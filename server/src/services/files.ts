@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { mkdir, readFile, unlink, writeFile } from "fs/promises";
 import path from "path";
-import { deleteObject, docsBucketName, downloadObject, tenderBucketName, tenderObjectName, uploadObject } from "./gcs";
+import { deleteObject, docsBucketName, downloadAppObject, downloadObject, tenderBucketName, tenderObjectName, uploadAppObject, uploadObject } from "./gcs";
 import { repoRoot } from "../utils/root";
 
 export type StorageBackend = "local" | "gcs";
@@ -20,12 +20,6 @@ function gcsPrefix() {
 
 function objectPath(key: string) {
   return `${gcsPrefix()}${key.replace(/^\/+/, "")}`;
-}
-
-function requireDocsBucket() {
-  const name = docsBucketName();
-  if (!name) throw new Error("STORAGE_BACKEND=gcs requires GCS_BUCKET");
-  return name;
 }
 
 export function sha256(buffer: Buffer) {
@@ -70,21 +64,24 @@ const MIME: Record<string, string> = {
   txt: "text/plain",
 };
 
-/** Bank guarantee and surety-bond scans live under Tender Documents. */
-function isRegisterScan(key: string) {
-  return key.startsWith("bg/") || key.startsWith("isb/");
-}
-
 function contentType(fileName: string) {
   const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
   return MIME[ext] ?? "application/octet-stream";
 }
 
-async function saveRegisterScan(key: string, buffer: Buffer, fileName: string) {
+async function saveCloudCopy(key: string, buffer: Buffer, fileName: string) {
   await uploadObject(tenderBucketName(), tenderObjectName(key), buffer, contentType(fileName));
 }
 
-async function readRegisterScan(key: string) {
+async function readCloudCopy(key: string) {
+  const bucketName = docsBucketName() || "coal-ash-docs-master-diorama-489103-u2";
+  const prefixed = objectPath(key);
+  const fromApp = await downloadAppObject(bucketName, prefixed);
+  if (fromApp) return fromApp;
+  if (prefixed !== key) {
+    const bare = await downloadAppObject(bucketName, key);
+    if (bare) return bare;
+  }
   try {
     return await downloadObject(tenderBucketName(), tenderObjectName(key));
   } catch {
@@ -93,54 +90,58 @@ async function readRegisterScan(key: string) {
 }
 
 /**
- * Persist an upload. Bond and bank-guarantee scans are also stored at
- * `Tender Documents/bg/...` or `Tender Documents/isb/...` in the P2P bucket.
+ * Persist an upload. Every file is also stored at `Tender Documents/<key>` so a later
+ * live open can find tender notices as well as BG and ISB scans.
  */
 export async function storeFile(tenderId: string, fileName: string, buffer: Buffer) {
   const key = `${tenderId}/${Date.now()}-${safeName(fileName)}`;
+  const type = contentType(fileName);
   if (storageBackend() === "gcs") {
-    await uploadObject(requireDocsBucket(), objectPath(key), buffer, contentType(fileName));
-  } else {
-    const stored = path.join(UPLOAD_ROOT, key);
-    await mkdir(path.dirname(stored), { recursive: true });
-    await writeFile(stored, buffer);
+    const bucketName = docsBucketName() || "coal-ash-docs-master-diorama-489103-u2";
+    try {
+      await uploadAppObject(bucketName, objectPath(key), buffer, type);
+    } catch {
+      await saveCloudCopy(key, buffer, fileName);
+      return key;
+    }
+    await saveCloudCopy(key, buffer, fileName).catch(() => undefined);
+    return key;
   }
-  if (isRegisterScan(key)) await saveRegisterScan(key, buffer, fileName).catch(() => undefined);
+  const stored = path.join(UPLOAD_ROOT, key);
+  await mkdir(path.dirname(stored), { recursive: true });
+  await writeFile(stored, buffer);
+  await saveCloudCopy(key, buffer, fileName).catch(() => undefined);
   return key;
+}
+
+async function readLocal(key: string) {
+  const resolved = path.resolve(UPLOAD_ROOT, key);
+  const root = path.resolve(UPLOAD_ROOT);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    throw new Error("Document path is outside the upload store.");
+  }
+  return readFile(resolved);
 }
 
 export async function readStored(storedPath: string) {
   const key = storageKey(storedPath);
-  if (storageBackend() !== "gcs") {
-    const resolved = path.resolve(UPLOAD_ROOT, key);
-    const root = path.resolve(UPLOAD_ROOT);
-    if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-      throw new Error("Document path is outside the upload store.");
-    }
-    try {
-      return await readFile(resolved);
-    } catch (error) {
-      if (!isRegisterScan(key)) throw error;
-      const cloud = await readRegisterScan(key);
-      if (cloud) return cloud;
-      throw error;
-    }
-  }
-  if (isRegisterScan(key)) {
-    const cloud = await readRegisterScan(key);
+  try {
+    return await readLocal(key);
+  } catch (error) {
+    const cloud = await readCloudCopy(key);
     if (cloud) return cloud;
+    throw error;
   }
-  const bytes = await downloadObject(requireDocsBucket(), objectPath(key));
-  if (!bytes) throw new Error("File missing");
-  return bytes;
 }
 
 export async function deleteStored(storedPath: string) {
   if (!storedPath) return;
   const key = storageKey(storedPath);
-  if (isRegisterScan(key)) await deleteObject(tenderBucketName(), tenderObjectName(key)).catch(() => undefined);
+  await deleteObject(tenderBucketName(), tenderObjectName(key)).catch(() => undefined);
   if (storageBackend() === "gcs") {
-    await deleteObject(requireDocsBucket(), objectPath(key));
+    await deleteObject(tenderBucketName(), tenderObjectName(key)).catch(() => undefined);
+    const bucketName = docsBucketName();
+    if (bucketName) await deleteObject(bucketName, objectPath(key)).catch(() => undefined);
     return;
   }
   const resolved = path.resolve(UPLOAD_ROOT, key);

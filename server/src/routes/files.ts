@@ -28,6 +28,7 @@ files.get("/documents/:id", requireActor, async (req, res) => {
     const bytes = await readStored(document.storedPath);
     res.set({
       "Content-Type": document.mimeType || "application/octet-stream",
+      "Content-Length": String(bytes.length),
       "Content-Disposition": `inline; filename="${document.fileName.replace(/[^\x20-\x7e]|"/g, "")}"`,
       "X-Content-Type-Options": "nosniff",
     });
@@ -48,6 +49,7 @@ files.get("/bond-documents/:id", requireActor, async (req, res) => {
     const bytes = await readStored(document.storedPath);
     res.set({
       "Content-Type": document.mimeType || "application/octet-stream",
+      "Content-Length": String(bytes.length),
       "Content-Disposition": `${req.query.download ? "attachment" : "inline"}; filename="${document.fileName.replace(/[^\x20-\x7e]|"/g, "")}"`,
       "X-Content-Type-Options": "nosniff",
       "Cache-Control": "private, max-age=300",
@@ -69,6 +71,7 @@ files.get("/bg-documents/:id", requireActor, async (req, res) => {
     const bytes = await readStored(document.storedPath);
     res.set({
       "Content-Type": document.mimeType || "application/octet-stream",
+      "Content-Length": String(bytes.length),
       "Content-Disposition": `${req.query.download ? "attachment" : "inline"}; filename="${document.fileName.replace(/[^\x20-\x7e]|"/g, "")}"`,
       "X-Content-Type-Options": "nosniff",
       "Cache-Control": "private, max-age=300",
