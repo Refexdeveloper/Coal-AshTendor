@@ -11,8 +11,9 @@ import { deliver, emailLink, isStepAction } from "./notify";
  * mail, plus a CSV of every tender (opens in Excel). Sent from Administration with one button.
  */
 
-/** Default recipient for the report button. */
-export const REPORT_TO = "sathishkumar.r@refex.co.in, gowtham.s@refex.co.in";
+/** The morning and evening report goes to Dinesh. The three addresses are copied. */
+export const REPORT_TO = "dinesh@refex.co.in";
+export const REPORT_BCC = ["srivaths.varadharajan@refex.co.in", "gowtham.s@refex.co.in", "sathishkumar.r@refex.co.in"];
 
 const TIME_ZONE = "Asia/Kolkata";
 
@@ -522,25 +523,76 @@ function reportCsv(report: Report) {
   return `﻿${[header.join(","), ...lines].join("\r\n")}`;
 }
 
-/** Builds today's report and emails it, logged in the Email log as DAILY_REPORT. */
-export async function sendTodayReport(to: string[]) {
+/** Builds today's report and emails it to Dinesh, with the BCC list, logged as DAILY_REPORT. */
+export async function sendTodayReport(options?: { note?: string }) {
   const report = await loadTodayReport();
   const built = await buildTodayReportEmail(report);
   const stamp = new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE }).format(report.now);
-  const statuses: string[] = [];
-  for (const email of to) {
-    statuses.push(
-      await deliver({
-        to: email,
-        toName: email,
-        subject: built.subject,
-        text: built.text,
-        link: "",
-        rawHtml: built.html,
-        attachments: [{ filename: `coal-ash-tenders-${stamp}.csv`, content: built.csv, contentType: "text/csv" }],
-        log: { eventType: "DAILY_REPORT" },
-      }),
-    );
-  }
-  return { statuses, subject: built.subject, stats: report.stats };
+  const status = await deliver({
+    to: REPORT_TO,
+    toName: "Dinesh",
+    subject: built.subject,
+    text: built.text,
+    link: "",
+    rawHtml: built.html,
+    bcc: REPORT_BCC,
+    attachments: [{ filename: `coal-ash-tenders-${stamp}.csv`, content: built.csv, contentType: "text/csv" }],
+    log: { eventType: "DAILY_REPORT", note: options?.note },
+  });
+  return { statuses: [status], subject: built.subject, stats: report.stats };
+}
+
+const REPORT_SLOTS = [
+  { hour: 9, label: "09:00" },
+  { hour: 16, label: "16:00" },
+];
+
+function kolkataNow(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return { date: `${value("year")}-${value("month")}-${value("day")}`, minutes: Number(value("hour")) * 60 + Number(value("minute")) };
+}
+
+/** Sends the report at 9:00 and 16:00 India time. A missed slot is sent once when the server is next up that day. */
+export function startDailyReportSchedule() {
+  let busy = false;
+  const tried = new Map<string, number>();
+  const tick = async () => {
+    if (busy) return;
+    const { liveMail } = await import("./notify");
+    if (!liveMail() || !process.env.K_SERVICE) return;
+    const now = kolkataNow();
+    for (const slot of REPORT_SLOTS) {
+      const start = slot.hour * 60;
+      if (now.minutes < start || now.minutes >= start + 10) continue;
+      const id = `${now.date} ${slot.label}`;
+      const lastTry = tried.get(id) ?? 0;
+      if (Date.now() - lastTry < 15 * 60 * 1000) continue;
+      const recent = await db.notificationLog.findMany({ where: { eventType: "DAILY_REPORT" }, orderBy: { createdAt: "desc" }, take: 30 });
+      if (recent.some((row: { note?: string | null; status?: string }) => row.note === `scheduled ${id}` && row.status === "SENT")) {
+        tried.set(id, Date.now());
+        continue;
+      }
+      busy = true;
+      tried.set(id, Date.now());
+      try {
+        const result = await sendTodayReport({ note: `scheduled ${id}` });
+        console.log(`[report] ${slot.label} tender report: ${result.statuses.join(", ")}`);
+      } catch (error) {
+        console.error("[report] Scheduled tender report failed", error);
+      } finally {
+        busy = false;
+      }
+    }
+  };
+  void tick();
+  setInterval(() => void tick(), 30 * 1000).unref();
 }

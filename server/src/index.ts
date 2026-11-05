@@ -8,6 +8,7 @@ import { ensureDefaultUsers } from "./services/accounts";
 import { restoreLiveRegisters } from "./services/live-register";
 import { storageBackend, storageLabel } from "./services/files";
 import { maybeScheduledSync, syncEveryHours } from "./services/refexone-directory";
+import { startDailyReportSchedule } from "./services/daily-report";
 import { repoRoot } from "./utils/root";
 
 async function main() {
@@ -41,6 +42,7 @@ async function main() {
       void maybeScheduledSync();
       setInterval(() => void maybeScheduledSync(), 15 * 60 * 1000).unref();
     }
+    startDailyReportSchedule();
   });
   // An OCR extract can take several minutes. Do not close the upload request while that result is still coming.
   server.requestTimeout = 0;

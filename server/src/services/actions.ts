@@ -229,25 +229,17 @@ export async function updateUserAccessAction(actor: User, formData: FormData): P
   }
 }
 
-export async function sendTodayReportAction(actor: User, formData: FormData): Promise<ActionState> {
+export async function sendTodayReportAction(actor: User, _formData: FormData): Promise<ActionState> {
   const denied = adminOnly(actor);
   if (denied) return denied;
-  const { REPORT_TO, sendTodayReport } = await import("./daily-report");
-  const listed = `${REPORT_TO}, ${String(formData.get("to") || "")}`
-    .split(/[\s,;]+/)
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean);
-  const to = [...new Set(listed)];
-  const bad = to.filter((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
-  if (!to.length) return { error: "Enter at least one email address." };
-  if (bad.length) return { error: `Not an email address: ${bad.join(", ")}` };
+  const { REPORT_TO, REPORT_BCC, sendTodayReport } = await import("./daily-report");
   try {
-    const result = await sendTodayReport(to);
+    const result = await sendTodayReport();
     const sent = result.statuses.filter((status) => status === "SENT").length;
     if (!sent) return { error: `The report was not sent (${result.statuses.join(", ").toLowerCase()}). The Email log shows why.` };
     const { stats } = result;
     return {
-      ok: `Today's report sent to ${to.join(", ")} — total tenders ${stats.total}, active ${stats.active}, new today ${stats.newToday}, closing in 7 days ${stats.closing}, overdue tasks ${stats.overdue}.`,
+      ok: `Today's report sent to ${REPORT_TO}. BCC: ${REPORT_BCC.join(", ")}. Total tenders ${stats.total}, active ${stats.active}, new today ${stats.newToday}, closing in 7 days ${stats.closing}, overdue tasks ${stats.overdue}.`,
     };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "The report could not be sent." };

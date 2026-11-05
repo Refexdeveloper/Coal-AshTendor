@@ -103,7 +103,7 @@ const TEST_INBOX = "sathishkumar.r@refex.co.in";
 const LIVE_BCC = ["srivaths.varadharajan@refex.co.in", "gowtham.s@refex.co.in"];
 
 /** Cloud Run, or any production host whose public URL is not this machine. */
-function liveMail() {
+export function liveMail() {
   if (process.env.K_SERVICE) return true;
   if (process.env.NODE_ENV !== "production") return false;
   const app = (process.env.APP_URL || process.env.PUBLIC_APP_URL || "").toLowerCase();
@@ -217,13 +217,13 @@ function copyOf(to: string) {
   return cc;
 }
 
-/** Live BCC list, without anyone already named as To or CC. */
-function blindCopy(to: string, cc: string) {
+/** Live BCC list, without anyone already named as To or CC. Extra addresses are added for one message. */
+function blindCopy(to: string, cc: string, extra: string[] = []) {
   const skip = new Set([to, cc].join(",").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean));
-  return mailConfig()
-    .bcc.split(",")
+  return [...mailConfig().bcc.split(","), ...extra]
     .map((email) => email.trim())
     .filter((email) => email && !skip.has(email.toLowerCase()))
+    .filter((email, index, all) => all.findIndex((item) => item.toLowerCase() === email.toLowerCase()) === index)
     .join(", ");
 }
 
@@ -275,13 +275,15 @@ export async function deliver(message: {
   rawHtml?: string;
   /** Send to this address itself. The daily report uses this so an extra recipient is not folded into the test inbox. */
   direct?: boolean;
+  /** Extra BCC for this message only, added to the live BCC list. */
+  bcc?: string[];
   attachments?: MailAttachment[];
   log?: MailLog;
 }) {
   const config = mailConfig();
   const target = deliveredTo(message.to, message.toName);
   const cc = copyOf(target.email);
-  const bcc = blindCopy(target.email, cc);
+  const bcc = config.redirectTo ? "" : blindCopy(target.email, cc, message.bcc ?? []);
   const intendedFor = target.forWhom || null;
   const subject = intendedFor ? `[for ${message.toName}] ${message.subject}` : message.subject;
   const content: EmailContent = {

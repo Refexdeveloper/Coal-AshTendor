@@ -64,7 +64,7 @@ steps:
       - --add-cloudsql-instances=${_SQL_INSTANCE}
       - --memory=1Gi
       - --cpu=1
-      - --min-instances=0
+      - --min-instances=1
       - --max-instances=10
       - --timeout=900
       - --set-secrets=DB_PASSWORD=coal-ash-db-password:latest,SESSION_SECRET=coal-ash-session-secret:latest

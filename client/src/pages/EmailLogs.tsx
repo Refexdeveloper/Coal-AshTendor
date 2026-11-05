@@ -100,10 +100,9 @@ export default function EmailLogsPage() {
     setSending(true);
     setNotice(null);
     const form = new FormData();
-    form.set("to", "sathishkumar.r@refex.co.in, gowtham.s@refex.co.in");
     const answer = await postAction("send-today-report", form);
     setSending(false);
-    setNotice(answer?.error ? { error: answer.error } : { ok: answer?.ok ?? "Today's report sent to sathishkumar.r@refex.co.in and gowtham.s@refex.co.in." });
+    setNotice(answer?.error ? { error: answer.error } : { ok: answer?.ok ?? "Today's report sent to dinesh@refex.co.in." });
   };
 
   return (
@@ -126,12 +125,13 @@ export default function EmailLogsPage() {
       <section className="report-card">
         <h2>Send today&apos;s tender report</h2>
         <p>
-          Total, active and new tenders, bids closing in 7 days, overdue tasks, and every pending tender with its stage, dates, value, EMD and tender file. Sends
-          to sathishkumar.r@refex.co.in and gowtham.s@refex.co.in, with the Excel file attached. Download Excel lists every tender.
+          Total, active and new tenders, bids closing in 7 days, overdue tasks, and every pending tender with its stage, dates, value, EMD and tender file. Sent
+          automatically at 9:00 and 16:00 India time to dinesh@refex.co.in. BCC: srivaths.varadharajan@refex.co.in, gowtham.s@refex.co.in and
+          sathishkumar.r@refex.co.in. The Excel file is attached.
         </p>
         <div className="report-card-actions">
           <button type="button" className="report-btn" onClick={() => void sendReport()} disabled={sending}>
-            {sending ? "Sending…" : "Send report to sathishkumar.r and gowtham.s"}
+            {sending ? "Sending…" : "Send report to dinesh@refex.co.in"}
           </button>
           <a className="report-btn outline" href={apiUrl("/reports/today.csv")} download>
             Download Excel
