@@ -229,8 +229,8 @@ function blindCopy(to: string, cc: string, extra: string[] = []) {
 
 export type MailAttachment = { filename: string; content: string | Buffer; contentType: string; documentId?: string };
 
-/** Where a message belongs in the mail log. Without it the message is sent but not logged. */
-export type MailLog = { tenderId?: string | null; taskId?: string; eventType: string; note?: string };
+/** Where a message belongs in the mail log. Without it the message is sent but not logged. `id` updates a row already reserved for this send. */
+export type MailLog = { id?: string; tenderId?: string | null; taskId?: string; eventType: string; note?: string };
 
 const LOGO_URLS = [REFEXONE_EMAIL_LOGO_URL, "https://refexone.com/refexone-logo.png"];
 const LOGO_CID = "refexone-logo@coal-ash";
@@ -295,29 +295,35 @@ export async function deliver(message: {
   const files = message.attachments ?? [];
   const attachmentLog = files.map((file) => ({ filename: file.filename, size: Buffer.byteLength(file.content), documentId: file.documentId ?? "" }));
 
-  const row = message.log
+  const logged = {
+    tenderId: message.log?.tenderId ?? null,
+    taskId: message.log?.taskId ?? "",
+    eventType: message.log?.eventType,
+    recipientEmail: message.to,
+    recipientName: message.toName,
+    subject: message.subject,
+    body: message.text,
+    status: "QUEUED",
+    deliveredTo: target.email,
+    attachments: attachmentLog.length ? JSON.stringify(attachmentLog) : null,
+    html,
+    note: message.log?.note ?? null,
+  };
+  const row = message.log?.id
     ? await db.notificationLog
-        .create({
-          data: {
-            tenderId: message.log.tenderId ?? null,
-            taskId: message.log.taskId ?? "",
-            eventType: message.log.eventType,
-            recipientEmail: message.to,
-            recipientName: message.toName,
-            subject: message.subject,
-            body: message.text,
-            status: "QUEUED",
-            deliveredTo: target.email,
-            attachments: attachmentLog.length ? JSON.stringify(attachmentLog) : null,
-            html,
-            note: message.log.note ?? null,
-          },
-        })
+        .update({ where: { id: message.log.id }, data: logged })
         .catch((error) => {
-          console.error("Mail log write failed", error);
+          console.error("Mail log update failed", error);
           return null;
         })
-    : null;
+    : message.log
+      ? await db.notificationLog
+          .create({ data: logged })
+          .catch((error) => {
+            console.error("Mail log write failed", error);
+            return null;
+          })
+      : null;
   const finish = async (data: Record<string, unknown>) => {
     if (row) await db.notificationLog.update({ where: { id: row.id }, data }).catch((error) => console.error("Mail log update failed", error));
   };

@@ -300,16 +300,21 @@ ${note ? `<div style="font-size:12px;color:#a0a0a0;margin-top:3px">${escapeHtml(
 
 function statCard(value: string, label: string, sub: string, tone: keyof typeof LOOKS) {
   const look = LOOKS[tone];
-  return `<td class="stat" width="48%" align="center" valign="top" style="background:${look.background};border:1px solid ${look.border};border-radius:10px;padding:16px 6px">
-<div style="font-size:22px;font-weight:bold;color:${look.value};line-height:1.2">${escapeHtml(value)}</div>
-<div style="font-size:11px;color:${look.label};margin-top:5px;font-weight:bold;text-transform:uppercase;letter-spacing:0.4px">${escapeHtml(label)}</div>
-<div style="font-size:11px;color:${look.label};margin-top:3px;line-height:1.3">${escapeHtml(sub) || "&nbsp;"}</div>
+  return `<td class="stat" width="50%" valign="top" style="width:50%;padding:6px">
+<table role="presentation" width="100%" height="108" cellpadding="0" cellspacing="0" border="0" style="width:100%;height:108px;border-collapse:separate">
+<tr><td align="center" valign="middle" height="108" bgcolor="#ffffff" style="height:108px;background:${look.background};border:1px solid ${look.border};border-radius:10px;padding:14px 12px;text-align:center">
+<div style="font-size:22px;font-weight:bold;color:${look.value};line-height:1.2;text-align:center">${escapeHtml(value)}</div>
+<div style="font-size:11px;color:${look.label};margin-top:6px;font-weight:bold;text-transform:uppercase;letter-spacing:0.4px;text-align:center">${escapeHtml(label)}</div>
+<div style="font-size:11px;color:${look.label};margin-top:4px;line-height:1.35;text-align:center">${escapeHtml(sub) || "&nbsp;"}</div>
+</td></tr></table>
 </td>`;
 }
 
 function statPair(left: string, right: string) {
-  return `<tr><td style="padding:6px 18px" bgcolor="#ffffff">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${left}<td class="stat-gap" width="4%"></td>${right}</tr></table>
+  return `<tr><td style="padding:0 12px" bgcolor="#ffffff">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;border-collapse:separate">
+<tr>${left}${right}</tr>
+</table>
 </td></tr>`;
 }
 
@@ -396,10 +401,8 @@ export async function buildTodayReportEmail(report: Report) {
 <title>${escapeHtml(subject)}</title>
 <style>
 .mlabel{display:none}
-.stat{display:inline-block;width:48%;vertical-align:top}
 @media only screen and (max-width:640px){
-  .stat{display:block !important;width:100% !important;margin:0 0 8px !important}
-  .stat-gap{display:none !important}
+  .stat{display:block !important;width:100% !important}
   .rtable,.rtable tbody,.rtable tr,.rd{display:block !important;width:100% !important;box-sizing:border-box !important}
   .rh{display:none !important}
   .rtable tr{border:1px solid ${LINE} !important;margin:0 0 12px !important}
@@ -524,7 +527,7 @@ function reportCsv(report: Report) {
 }
 
 /** Builds today's report and emails it to Dinesh, with the BCC list, logged as DAILY_REPORT. */
-export async function sendTodayReport(options?: { note?: string }) {
+export async function sendTodayReport(options?: { note?: string; logId?: string }) {
   const report = await loadTodayReport();
   const built = await buildTodayReportEmail(report);
   const stamp = new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE }).format(report.now);
@@ -537,7 +540,7 @@ export async function sendTodayReport(options?: { note?: string }) {
     rawHtml: built.html,
     bcc: REPORT_BCC,
     attachments: [{ filename: `coal-ash-tenders-${stamp}.csv`, content: built.csv, contentType: "text/csv" }],
-    log: { eventType: "DAILY_REPORT", note: options?.note },
+    log: { id: options?.logId, eventType: "DAILY_REPORT", note: options?.note },
   });
   return { statuses: [status], subject: built.subject, stats: report.stats };
 }
@@ -561,29 +564,53 @@ function kolkataNow(now = new Date()) {
   return { date: `${value("year")}-${value("month")}-${value("day")}`, minutes: Number(value("hour")) * 60 + Number(value("minute")) };
 }
 
-/** Sends the report at 9:00 and 16:00 India time. If the server was down at that minute, it still sends that slot once later the same day. */
+const SLOT_MINUTES = 10;
+
+/** Writes one log row for this slot before the mail goes out. A second server, including one started by a deploy, finds that row and does not send again. */
+async function reserveSlot(id: string) {
+  const note = `scheduled ${id}`;
+  const existing = await db.notificationLog.findMany({ where: { eventType: "DAILY_REPORT", note }, take: 5 });
+  if (existing.length) return null;
+  const row = await db.notificationLog.create({
+    data: {
+      eventType: "DAILY_REPORT",
+      recipientEmail: REPORT_TO,
+      recipientName: "Dinesh",
+      subject: `Daily tender report ${id}`,
+      body: note,
+      status: "QUEUED",
+      note,
+    },
+  });
+  const claims = await db.notificationLog.findMany({ where: { eventType: "DAILY_REPORT", note }, orderBy: { createdAt: "asc" }, take: 5 });
+  const first = [...claims].sort((a: { createdAt?: Date; id?: string }, b: { createdAt?: Date; id?: string }) => {
+    const time = new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime();
+    return time || String(a.id).localeCompare(String(b.id));
+  })[0];
+  if (!first || first.id !== row.id) {
+    await db.notificationLog.delete({ where: { id: row.id } }).catch(() => undefined);
+    return null;
+  }
+  return String(row.id);
+}
+
+/** Sends the report only at 9:00 and 16:00 India time, once each. Starting or deploying the server at any other time does not send it. */
 export function startDailyReportSchedule() {
   let busy = false;
-  const tried = new Map<string, number>();
   const tick = async () => {
     if (busy) return;
     const { liveMail } = await import("./notify");
     if (!liveMail() || !process.env.K_SERVICE) return;
     const now = kolkataNow();
     for (const slot of REPORT_SLOTS) {
-      if (now.minutes < slot.hour * 60) continue;
+      const start = slot.hour * 60;
+      if (now.minutes < start || now.minutes >= start + SLOT_MINUTES) continue;
       const id = `${now.date} ${slot.label}`;
-      const lastTry = tried.get(id) ?? 0;
-      if (Date.now() - lastTry < 15 * 60 * 1000) continue;
-      const recent = await db.notificationLog.findMany({ where: { eventType: "DAILY_REPORT" }, orderBy: { createdAt: "desc" }, take: 40 });
-      if (recent.some((row: { note?: string | null; status?: string }) => String(row.note ?? "").includes(id) && (row.status === "SENT" || row.status === "QUEUED"))) {
-        tried.set(id, Date.now());
-        continue;
-      }
       busy = true;
-      tried.set(id, Date.now());
       try {
-        const result = await sendTodayReport({ note: `scheduled ${id}` });
+        const logId = await reserveSlot(id);
+        if (!logId) continue;
+        const result = await sendTodayReport({ note: `scheduled ${id}`, logId });
         console.log(`[report] ${slot.label} tender report: ${result.statuses.join(", ")}`);
       } catch (error) {
         console.error("[report] Scheduled tender report failed", error);
