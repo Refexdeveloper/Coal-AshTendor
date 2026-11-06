@@ -32,6 +32,7 @@ const ACTIONS: Record<string, Action> = {
   "import-guarantees": actions.importGuaranteesAction,
   "add-guarantee": actions.addGuaranteeAction,
   "update-emd": actions.updateEmdRegisterAction,
+  "convert-emd-sd": actions.convertEmdToSdAction,
   "update-guarantee": actions.updateGuaranteeAction,
   "upload-bg-documents": actions.uploadBgDocumentsAction,
   gem: actions.gemAction,

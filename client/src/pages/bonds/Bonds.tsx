@@ -110,7 +110,7 @@ export function SelectFilter({
 }
 
 /** What each card narrows the table to. */
-const CARD_ROWS: Record<string, { label: string; match: (row: Row) => boolean; sort?: "premium" | "amount" }> = {
+const CARD_ROWS: Record<string, { label: string; match: (row: Row) => boolean; sort?: "premium" | "stamp" | "amount" }> = {
   emd: { label: "EMD surety bonds", match: (row) => row.kind === "EMD" },
   pb: { label: "PBG (performance) bonds", match: (row) => row.kind === "PERFORMANCE" },
   active: { label: "Active bonds", match: (row) => row.health === "active" || row.health === "watch" || row.health === "soon" },
@@ -119,6 +119,7 @@ const CARD_ROWS: Record<string, { label: string; match: (row: Row) => boolean; s
   claim: { label: "Expired, claim still open", match: (row) => row.health === "claim" },
   tech: { label: "EMD under technical evaluation", match: (row) => row.kind === "EMD" && /technical/i.test(row.status) },
   premium: { label: "Bonds by premium paid", match: () => true, sort: "premium" },
+  stamp: { label: "Bonds by stamp duty", match: () => true, sort: "stamp" },
 };
 
 /**
@@ -177,7 +178,8 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
     { key: "soon", label: "Expiring in 30 days", fx: "hourglass" as CardFx, value: soon.length, note: soon.length ? inr(sum(soon, (row) => row.amount)) : "Nothing due", icon: "hourglass", tone: "red", hot: soon.length > 0 },
     { key: "watch", label: "Expiring in 90 days", fx: "pending" as CardFx, value: watch.length, note: watch.length ? inr(sum(watch, (row) => row.amount)) : "None", icon: "calendar", tone: "sky" },
     { key: "claim", label: "Claim window open", fx: "overdue" as CardFx, value: claim.length, note: claim.length ? "Expired, still claimable" : "None open", icon: "clock", tone: "rose", hot: claim.length > 0 },
-    { key: "premium", label: "Premium + stamp duty", fx: "coins" as CardFx, value: sum(rows, (row) => row.premium) + sum(rows, (row) => row.stampDuty), money: true, note: "Paid across all bonds", icon: "rupee", tone: "blue" },
+    { key: "premium", label: "Premium", fx: "coins" as CardFx, value: sum(rows, (row) => row.premium), money: true, note: "Premium paid", icon: "rupee", tone: "blue" },
+    { key: "stamp", label: "Stamp duty", fx: "docs" as CardFx, value: sum(rows, (row) => row.stampDuty), money: true, note: "Stamp duty paid", icon: "doc", tone: "sky" },
   ];
 
   const card = filter.card === "emd" || filter.card === "tech" ? undefined : CARD_ROWS[filter.card];
@@ -195,7 +197,9 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
     .sort((a, b) =>
       card?.sort === "premium"
         ? (b.premium ?? 0) - (a.premium ?? 0)
-        : (a.expiry && a.expiry >= today ? a.expiry.getTime() : Infinity) - (b.expiry && b.expiry >= today ? b.expiry.getTime() : Infinity) || (b.amount ?? 0) - (a.amount ?? 0),
+        : card?.sort === "stamp"
+          ? (b.stampDuty ?? 0) - (a.stampDuty ?? 0)
+          : (a.expiry && a.expiry >= today ? a.expiry.getTime() : Infinity) - (b.expiry && b.expiry >= today ? b.expiry.getTime() : Infinity) || (b.amount ?? 0) - (a.amount ?? 0),
     );
   const shown = listed.slice(0, allRows ? listed.length : 12);
   const shownExtras = EXTRA_FILTERS.filter((extra) => added.includes(extra.key) || params.get(extra.key));

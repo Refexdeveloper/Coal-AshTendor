@@ -1,6 +1,9 @@
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { lazy, Suspense, Fragment, useEffect, type CSSProperties } from "react";
+import { lazy, Suspense, Fragment, useEffect, useActionState, type CSSProperties } from "react";
 import { documentUrl, toCalendar, useApi } from "@client/api/client";
+import { convertEmdToSdAction } from "@client/api/actions";
+import type { ActionState } from "@client/api/action-state";
+import { Submit } from "@client/components/base/submit";
 import { useActor } from "@client/api/session";
 import type {
   ApprovalRecord,
@@ -86,6 +89,32 @@ type Data = {
   checklist: ChecklistItem[];
   plan: StagePlan;
 };
+
+const SD_EDITORS = ["ADMIN", "ACCOUNTS", "EMD_ISB", "COORDINATOR", "DEPT_HEAD", "GROUP_CEO", "REVIEWER"];
+
+function ConvertToSd({ tenderId, amount, sdAmount, converted, canConvert, onDone }: { tenderId: string; amount: string; sdAmount: number | null; converted: boolean; canConvert: boolean; onDone: () => void }) {
+  const [state, action] = useActionState(async (previous: ActionState, formData: FormData) => {
+    const result = await convertEmdToSdAction(previous, formData);
+    if (result?.ok) onDone();
+    return result;
+  }, null as ActionState);
+  const figure = sdAmount ?? parseInr(amount);
+  if (converted) return <p className="banner good">Converted to a security deposit{figure != null ? ` · ${inr(figure)}` : ""}.</p>;
+  if (!canConvert) return null;
+  return (
+    <form action={action} className="form-grid">
+      <input type="hidden" name="tenderId" value={tenderId} />
+      <label>
+        Security deposit amount
+        <input name="sdAmount" inputMode="decimal" defaultValue={figure == null ? "" : String(figure)} />
+      </label>
+      <div className="actions">
+        <Submit>Convert to SD</Submit>
+      </div>
+      {state?.error ? <p className="banner bad wide">{state.error}</p> : null}
+    </form>
+  );
+}
 
 export default function TenderPage() {
   const { id = "" } = useParams();
@@ -595,6 +624,14 @@ export default function TenderPage() {
             ) : (
               <p className="empty">EMD starts when relevance is approved.</p>
             )}
+            <ConvertToSd
+              tenderId={tender.id}
+              amount={tender.emd?.amount || ""}
+              sdAmount={tender.emd?.sdAmount ?? null}
+              converted={Boolean(tender.emd?.convertedToSd)}
+              canConvert={SD_EDITORS.includes(actor.role)}
+              onDone={() => void reload()}
+            />
           </section>
           {(() => {
             const request = parseBgRequest(tender.emd?.bgRequest);

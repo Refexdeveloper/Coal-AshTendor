@@ -120,6 +120,9 @@ export type EmdRecord = {
   authorityNote: string;
   notes: string;
   bgRequest?: string | null;
+  bankDetails?: string;
+  convertedToSd?: boolean;
+  sdAmount?: number | null;
 };
 
 export type ApprovalRecord = {

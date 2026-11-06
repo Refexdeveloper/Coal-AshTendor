@@ -457,6 +457,17 @@ async function amendmentFilesFrom(formData: FormData) {
   return amendmentFiles;
 }
 
+/** Turns one tender's EMD into a security deposit. */
+export async function convertEmdToSdAction(actor: User, formData: FormData): Promise<ActionState> {
+  try {
+    const { convertEmdToSd } = await import("./emd-board");
+    const result = await convertEmdToSd(actor, formData);
+    return { ok: `${result.recordId} EMD converted to a security deposit.`, tenderId: result.tenderId };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 /** Saves one tender's EMD instrument, and its refund or security-deposit conversion. */
 export async function updateEmdRegisterAction(actor: User, formData: FormData): Promise<ActionState> {
   try {
