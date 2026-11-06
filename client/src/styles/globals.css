@@ -1738,19 +1738,29 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 }
 .ceo-card-actions a { background: #0b4f8a; border-color: #0b4f8a; color: #fff; }
 .ceo-card .dk-detail { padding: 4px 0 4px; }
-.dk-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.84rem; }
-.dk-table th { padding: 10px 10px; text-align: left; white-space: nowrap; background: #f1f5f9; color: #334155; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.dk-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.84rem; table-layout: fixed; }
+.dk-table col.c-no { width: 36px; }
+.dk-table col.c-ref { width: 118px; }
+.dk-table col.c-date { width: 108px; }
+.dk-table col.c-client { width: 120px; }
+.dk-table col.c-value { width: 96px; }
+.dk-table col.c-status { width: 108px; }
+.dk-table col.c-act { width: 72px; }
+.dk-table th { padding: 10px 8px; text-align: left; white-space: nowrap; background: #f1f5f9; color: #334155; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: middle; }
 .dk-table th:first-child { border-radius: 10px 0 0 10px; }
 .dk-table th:last-child { border-radius: 0 10px 10px 0; }
-.dk-table td { padding: 11px 10px; border-bottom: 1px solid #eef2f7; color: #1e293b; white-space: nowrap; }
+.dk-table td { padding: 11px 8px; border-bottom: 1px solid #eef2f7; color: #1e293b; white-space: nowrap; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; }
 .dk-table .num { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
-.dk-table .act { text-align: right; }
+.dk-table .act { text-align: right; overflow: visible; }
 .dk-row { cursor: pointer; transition: background 0.2s; animation: fadeUp 0.45s both; animation-delay: calc(0.5s + var(--r, 0) * 40ms); }
 .dk-row:hover { background: #f8fbff; }
 .dk-row.is-open { background: #eff6ff; }
 .dk-row.is-late td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
-.dk-title { white-space: normal !important; min-width: 150px; font-weight: 500; }
-.dk-title small { font-size: 0.74rem; }
+.dk-title { white-space: normal !important; font-weight: 500; }
+.dk-title span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
+.dk-title small { display: block; font-size: 0.74rem; }
+.dk-date { font-variant-numeric: tabular-nums; color: #334155; }
+.dk-client { overflow: hidden; text-overflow: ellipsis; }
 .dk-ref { color: #1d4ed8; font-weight: 600; }
 .dk-pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 600; background: #f1f5f9; color: #475569; }
 .dk-pill.blue { background: #e0ecff; color: #1d4ed8; }

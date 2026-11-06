@@ -191,7 +191,7 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
     { key: "ISB", label: "ISB", value: instrumentSum("ISB"), money: true, note: `(${instrumentCount("ISB")})`, tone: "sky", icon: "shield" },
     { key: "ONLINE", label: "NEFT/RTGS", value: sum((row) => row.method === "ONLINE"), money: true, note: `(${count((row) => row.method === "ONLINE")})`, tone: "teal", icon: "doc" },
     { key: "DD", label: "Demand Draft", value: sum((row) => row.method === "DD"), money: true, note: `(${count((row) => row.method === "DD")})`, tone: "orange", icon: "doc" },
-    { key: "", label: "Total", value: instrumentSum("BG") + instrumentSum("ISB"), money: true, note: `Tender evaluation BG (${instrumentCount("BG")}) · ISB (${instrumentCount("ISB")})`, tone: "", icon: "shield" },
+    { key: "", label: "Total", value: instrumentSum("BG") + instrumentSum("ISB"), money: true, note: `(${rows.length}) · BG (${count((row) => row.method === "BG")}) · ISB (${count((row) => row.method === "ISB")})`, tone: "", icon: "shield" },
     { key: "EXEMPTION", label: "Exemption", value: count((row) => row.method === "EXEMPTION"), note: "Count", tone: "green", icon: "check" },
     { key: "WON", label: "Won", value: count((row) => row.result === "WON"), note: `${count((row) => row.result === "WON" && row.convertedToSd)} converted to SD`, tone: "green", icon: "check" },
     { key: "LOST", label: "Lost", value: count((row) => row.result === "LOST"), note: `${inr(sum((row) => row.result === "LOST", (row) => row.pending))} pending`, tone: "red", icon: "rupee" },

@@ -555,16 +555,27 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
           </header>
           <div className="dk-table-wrap">
             <table className="dk-table">
+              <colgroup>
+                <col className="c-no" />
+                <col className="c-ref" />
+                <col className="c-title" />
+                <col className="c-date" />
+                <col className="c-date" />
+                <col className="c-client" />
+                <col className="c-value" />
+                <col className="c-status" />
+                <col className="c-act" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>#</th>
                   <th>Tender reference</th>
                   <th>Title</th>
+                  <th>Tender start date</th>
+                  <th>Tender end date</th>
                   <th>Client</th>
                   <th className="num">Est. value</th>
                   <th>Status</th>
-                  <th>Tender start date</th>
-                  <th>Tender end date</th>
                   <th className="act">Actions</th>
                 </tr>
               </thead>
@@ -588,16 +599,16 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
                           <span className="dk-ref">{tender.recordId}</span>
                         </td>
                         <td className="dk-title">
-                          {tender.projectName || "Untitled"}
-                          {late ? <small className="text-bad"> · overdue task</small> : null}
+                          <span>{tender.projectName || "Untitled"}</span>
+                          {late ? <small className="text-bad">Overdue task</small> : null}
                         </td>
-                        <td>{tender.clientName || "—"}</td>
+                        <td className="dk-date">{formatDay(tender.createdAt, tz)}</td>
+                        <td className="dk-date">{formatDay(tender.bidSubmissionEnd, tz)}</td>
+                        <td className="dk-client">{tender.clientName || "—"}</td>
                         <td className="num">{inr(tender.estimatedValue)}</td>
                         <td>
                           <span className={`dk-pill ${tone}`}>{label}</span>
                         </td>
-                        <td>{formatDay(tender.createdAt, tz)}</td>
-                        <td>{formatDay(tender.bidSubmissionEnd, tz)}</td>
                         <td className="act" onClick={(event) => event.stopPropagation()}>
                           <Link className="dk-icon-btn" to={`/tenders/${tender.id}`} title="Open the tender record" aria-label="Open the tender record">
                             <Icon name="eye" />
