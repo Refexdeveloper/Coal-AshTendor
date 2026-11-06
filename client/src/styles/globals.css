@@ -2594,3 +2594,52 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 .isb-switch button.is-on { background: var(--grad-primary); color: #fff; box-shadow: 0 8px 18px -8px rgba(154, 52, 18, 0.7); }
 .isb-switch button.is-on small { background: rgba(255, 255, 255, 0.25); color: #fff; }
 .bgdoc-flag { margin-left: 6px; padding: 1px 6px; border-radius: 6px; font-style: normal; font-size: 0.64rem; font-weight: 700; background: var(--gold-soft); color: var(--gold); }
+
+/* Phone width: one column, full labels, switches that stay inside the screen. */
+@media (max-width: 640px) {
+  .content { padding: 12px; }
+  .page-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .page-head h1 { font-size: 1.35rem; overflow-wrap: anywhere; }
+  .page-head .actions, .page-head form { width: 100%; }
+  .tabs { flex-wrap: nowrap; overflow-x: auto; }
+  .tabs .tab { flex: none; }
+  .table-wrap, .dk-table-wrap { max-width: 100%; -webkit-overflow-scrolling: touch; }
+  .countdown { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .exec-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 12px; }
+  .count-card small, .count-card b { white-space: normal; overflow-wrap: anywhere; }
+  .exec-filters { margin: -64px 12px 0; padding: 12px; }
+  .kpis, .exec-kpis { padding: 0 12px; grid-template-columns: minmax(0, 1fr); }
+  .money-row, .how, .facts, .glance-grid, .stats { grid-template-columns: minmax(0, 1fr); }
+  .topbar { gap: 8px; padding: 0 10px; }
+  .top-search { max-width: none; }
+
+  .dk { padding: 0 12px 16px; margin: -12px -12px 0; gap: 14px; }
+  .dk-hero { min-height: 0; margin: 0 -12px; padding: 18px 14px 22px; flex-direction: column; gap: 14px; }
+  .dk-hero h1 { font-size: 1.55rem; }
+  .dk-hero p { font-size: 0.88rem; }
+  .dk-hero-tools, .board-stack { width: 100%; align-items: stretch; justify-content: stretch; }
+  .board-toggle, .isb-switch { display: flex; width: 100%; }
+  .board-toggle a, .isb-switch button {
+    flex: 1 1 0; min-width: 0; height: auto; min-height: 44px;
+    flex-direction: column; justify-content: center; gap: 2px;
+    padding: 6px 4px; font-size: 0.7rem; line-height: 1.15; text-align: center; white-space: normal;
+  }
+  .board-toggle svg { width: 15px; height: 15px; }
+  .dk-cards, .emd-board .dk-cards, .dk-health, .dk .dk-legend { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .dk-card { min-height: 0; padding: 14px; gap: 12px; }
+  .dk-card-icon { width: 44px; height: 44px; border-radius: 12px; }
+  .dk-card-icon .dk-ico { width: 22px; height: 22px; }
+  .dk-card-label, .dk-card small, .dk-card b { white-space: normal; overflow-wrap: anywhere; }
+  .dk-card b { font-size: 1.45rem; }
+  .dk-filters { padding: 12px; }
+  .dk-filter, .dk-search { flex-basis: 100%; min-width: 0; }
+  .dk-panel { padding: 14px; }
+  .dk-panel-head { align-items: flex-start; }
+  .emd-board .dk-panel-head .dk-search-box { flex: 1 1 100%; width: 100%; }
+  .emd-row header { flex-wrap: wrap; }
+  .emd-row dl { grid-template-columns: 1fr 1fr; }
+  .bg-detail .exec-metrics, .exec-metrics { grid-template-columns: minmax(0, 1fr); }
+  .bg-add-amend, .bg-request-form fieldset, .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .bgdoc-preview { height: 70vh; min-height: 280px; }
+  .refex-sync-stats { grid-template-columns: minmax(0, 1fr); }
+}
