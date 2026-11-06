@@ -118,7 +118,6 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
   const claim = rows.filter((row) => row.health === "claim");
 
   const cards = [
-    { key: "total", label: "Total", fx: "docs" as CardFx, value: sum(rows, (row) => row.current.amount), money: true, note: `${rows.length} guarantees`, icon: "doc", tone: "teal" },
     { key: "pbg", label: "PBG", fx: "award" as CardFx, value: sum(pbg, (row) => row.amount), money: true, note: `${pbg.length} performance guarantees`, icon: "trophy", tone: "violet" },
     { key: "abg", label: "APBG", fx: "trophy" as CardFx, value: sum(abg, (row) => row.current.amount), money: true, note: `${abg.length} advance guarantees`, icon: "target", tone: "blue" },
     { key: "active", label: "Active guarantees", fx: "ready" as CardFx, value: live.length, note: inr(sum(live, (row) => row.current.amount)), icon: "check", tone: "green" },
@@ -128,6 +127,7 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
     { key: "amended", label: "Amended guarantees", fx: "gears" as CardFx, value: rows.filter((row) => row.amendmentList.length).length, note: `${rows.reduce((total, row) => total + row.amendmentList.length, 0)} amendments in all`, icon: "doc", tone: "teal" },
     { key: "charges", label: "Charges", fx: "coins" as CardFx, value: sum(rows, (row) => row.charges), money: true, note: "Issuance charges", icon: "rupee", tone: "blue" },
     { key: "stamp", label: "Stamp duty", fx: "docs" as CardFx, value: sum(rows, (row) => row.stampDuty), money: true, note: "Issuance stamp duty", icon: "doc", tone: "sky" },
+    { key: "total", label: "Total", fx: "docs" as CardFx, value: sum(rows, (row) => row.current.amount), money: true, note: `${rows.length} guarantees`, icon: "doc", tone: "teal" },
   ];
 
   const card = filter.card === "emd" ? undefined : CARD_ROWS[filter.card];

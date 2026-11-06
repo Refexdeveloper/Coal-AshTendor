@@ -187,16 +187,15 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
   const instrumentSum = (kind: Instrument["kind"]) => instruments.filter((row) => row.kind === kind).reduce((total, row) => total + (row.amount ?? 0), 0);
   const instrumentCount = (kind: Instrument["kind"]) => instruments.filter((row) => row.kind === kind).length;
   const cards: { key: string; label: string; value: number; money?: boolean; note: string; tone: string; icon: string }[] = [
-    { key: "", label: "EMD exposure", value: sum((row) => row.method !== "EXEMPTION"), money: true, note: `${rows.length} tenders`, tone: "", icon: "shield" },
-    { key: "BG", label: "Bank Guarantee", value: instrumentCount("BG"), note: `${inr(instrumentSum("BG"))} · EMD only`, tone: "violet", icon: "doc" },
-    { key: "ISB", label: "Insurance Surety Bond", value: instrumentCount("ISB"), note: `${inr(instrumentSum("ISB"))} · EMD only`, tone: "sky", icon: "shield" },
-    { key: "ONLINE", label: "NEFT/RTGS", value: count((row) => row.method === "ONLINE"), note: inr(sum((row) => row.method === "ONLINE")), tone: "teal", icon: "doc" },
-    { key: "DD", label: "Demand Draft", value: count((row) => row.method === "DD"), note: inr(sum((row) => row.method === "DD")), tone: "orange", icon: "doc" },
-    { key: "EXEMPTION", label: "Exemption", value: count((row) => row.method === "EXEMPTION"), note: "No deposit", tone: "green", icon: "check" },
+    { key: "BG", label: "BG", value: instrumentSum("BG"), money: true, note: `(${instrumentCount("BG")})`, tone: "violet", icon: "doc" },
+    { key: "ISB", label: "ISB", value: instrumentSum("ISB"), money: true, note: `(${instrumentCount("ISB")})`, tone: "sky", icon: "shield" },
+    { key: "ONLINE", label: "NEFT/RTGS", value: sum((row) => row.method === "ONLINE"), money: true, note: `(${count((row) => row.method === "ONLINE")})`, tone: "teal", icon: "doc" },
+    { key: "DD", label: "Demand Draft", value: sum((row) => row.method === "DD"), money: true, note: `(${count((row) => row.method === "DD")})`, tone: "orange", icon: "doc" },
+    { key: "", label: "Total", value: sum((row) => row.method !== "EXEMPTION"), money: true, note: `(${rows.length})`, tone: "", icon: "shield" },
+    { key: "EXEMPTION", label: "Exemption", value: count((row) => row.method === "EXEMPTION"), note: "Count", tone: "green", icon: "check" },
     { key: "EVALUATION", label: "Under evaluation", value: count((row) => row.result === "EVALUATION"), note: "Result not in", tone: "", icon: "clock" },
     { key: "WON", label: "Won", value: count((row) => row.result === "WON"), note: `${count((row) => row.result === "WON" && row.convertedToSd)} converted to SD`, tone: "green", icon: "check" },
-    { key: "LOST", label: "Lost · pending", value: sum((row) => row.result === "LOST", (row) => row.pending), money: true, note: `${count((row) => row.result === "LOST")} tenders`, tone: "red", icon: "rupee" },
-    { key: "CANCELLED", label: "Cancelled", value: count((row) => row.result === "CANCELLED"), note: inr(sum((row) => row.result === "CANCELLED")), tone: "rose", icon: "doc" },
+    { key: "LOST", label: "Lost", value: count((row) => row.result === "LOST"), note: `${inr(sum((row) => row.result === "LOST", (row) => row.pending))} pending`, tone: "red", icon: "rupee" },
   ];
 
   return (
