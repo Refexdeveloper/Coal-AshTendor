@@ -571,8 +571,8 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
                   <th>#</th>
                   <th>Tender reference</th>
                   <th>Title</th>
-                  <th>Tender start date</th>
-                  <th>Tender end date</th>
+                  <th className="dk-th-date">Start date</th>
+                  <th className="dk-th-date">End date</th>
                   <th>Client</th>
                   <th className="num">Est. value</th>
                   <th>Status</th>
