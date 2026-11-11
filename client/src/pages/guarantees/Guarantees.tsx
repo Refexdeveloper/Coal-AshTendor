@@ -183,6 +183,22 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
             {onlyType === "EMD" ? "EMD from the BG register" : "Bank guarantee register"} <span className="wave">{onlyType === "EMD" ? "🛡️" : "🏦"}</span>
           </div>
           <h1>{onlyType === "EMD" ? "EMD bank guarantees" : "Bank guarantees"}</h1>
+          {onlyType ? null : (
+            <nav className="isb-switch" aria-label="BG type">
+              {(
+                [
+                  ["", "All", everyBg.length],
+                  ["PBG", "PBG", everyBg.filter((row) => row.bgType === "PBG").length],
+                  ["APBG", "APBG", everyBg.filter((row) => row.bgType === "APBG").length],
+                ] as const
+              ).map(([value, label, count]) => (
+                <button key={label} type="button" className={filter.type === value ? "is-on" : ""} onClick={() => setFilter("type", value)}>
+                  {label}
+                  <small>{count}</small>
+                </button>
+              ))}
+            </nav>
+          )}
         </div>
         <div className="dk-hero-tools">
           {toggle}
