@@ -2563,6 +2563,10 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 .gem-last.warn { background: var(--gold-soft); }
 .gem-last.bad { background: var(--wine-soft); color: var(--wine); }
 .gem-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.gem-toolbar-end { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-left: auto; }
+.gem-toolbar-end form { margin: 0; }
+.gem-table th:last-child, .gem-table td.gem-row-actions { position: sticky; right: 0; min-width: 168px; background: #fff; box-shadow: -8px 0 12px -12px rgba(41, 37, 36, 0.45); }
+.gem-table thead th:last-child { background: #f6f4f1; z-index: 1; }
 .gem-tabs { margin-bottom: 0; }
 .gem-tabs .tab { cursor: pointer; font: inherit; font-size: 0.78rem; font-weight: 600; }
 .gem-toolbar input { flex: 0 1 300px; }

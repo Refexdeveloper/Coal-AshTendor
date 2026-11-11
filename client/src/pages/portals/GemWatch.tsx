@@ -105,7 +105,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
             <form action={run("gem")}>
               <input type="hidden" name="intent" value="run" />
               <button className="btn" type="submit" disabled={running}>
-                {running ? "Running…" : "Run now"}
+                {running ? "Running…" : portal.lastScanAt ? "Re-run" : "Run now"}
               </button>
             </form>
           ) : null}
@@ -133,21 +133,6 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
             ) : null}
           </span>
         ))}
-        {canKeywords ? (
-          <form
-            className="gem-add"
-            action={async (formData) => {
-              await run("gem")(formData);
-              setKeyword("");
-            }}
-          >
-            <input type="hidden" name="intent" value="add-keyword" />
-            <input name="keyword" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Add a keyword" aria-label="New keyword" required />
-            <button className="btn" type="submit">
-              Add
-            </button>
-          </form>
-        ) : null}
         {excludes.length ? <span className="gem-chip-label">Excluding</span> : null}
         {excludes.map((word) => (
           <span key={word} className="gem-chip off">
@@ -235,7 +220,32 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
             </button>
           ))}
         </div>
-        <input type="search" placeholder="Search bid number, title, buyer…" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <div className="gem-toolbar-end">
+          {canKeywords ? (
+            <form
+              className="gem-add"
+              action={async (formData) => {
+                await run("gem")(formData);
+                setKeyword("");
+              }}
+            >
+              <input type="hidden" name="intent" value="add-keyword" />
+              <input name="keyword" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Add a keyword" aria-label="New keyword" required />
+              <button className="btn" type="submit">
+                Add keyword
+              </button>
+            </form>
+          ) : null}
+          {canRun ? (
+            <form action={run("gem")}>
+              <input type="hidden" name="intent" value="run" />
+              <button className="btn" type="submit" disabled={running}>
+                {running ? "Running…" : portal.lastScanAt ? "Re-run" : "Run now"}
+              </button>
+            </form>
+          ) : null}
+          <input type="search" placeholder="Search bid number, title, buyer…" value={query} onChange={(event) => setQuery(event.target.value)} />
+        </div>
       </div>
 
       <div className="table-wrap flat">
@@ -248,7 +258,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
               <th>Keyword</th>
               <th>Bid ends</th>
               <th>Status</th>
-              <th />
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -301,7 +311,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                         <input type="hidden" name="intent" value="import" />
                         <input type="hidden" name="bidId" value={bid.id} />
                         <button className="btn" type="submit">
-                          Import
+                          {bid.status === "FAILED" ? "Retry import" : "Import as tender"}
                         </button>
                       </form>
                     ) : null}
