@@ -155,6 +155,7 @@ export default function TenderPage() {
   const { tender, users, fieldEditor } = data;
   const calendar = toCalendar(data.calendar);
   const ceo = actor.role === "GROUP_CEO";
+  const canSendBack = ["ADMIN", "COORDINATOR", "REVIEWER", "DEPT_HEAD", "GROUP_CEO"].includes(actor.role);
   const tabs: readonly (readonly [string, string])[] = ceo ? CEO_TABS : TABS;
   const tab = tabs.find(([key]) => key === query.tab)?.[0] ?? tabs[0][0];
   const names = new Map(users.map((user) => [user.id, user.name]));
@@ -224,6 +225,9 @@ export default function TenderPage() {
     noticeId: notice?.id ?? null,
     finalCostingValue: tender.finalCostingValue,
     emdEvidenceId: tender.emd?.documentId || null,
+    emdDocuments: tender.documents
+      .filter((document) => document.docType === "EMD_DOCUMENT" || document.docType === "EMD_EVIDENCE")
+      .map((document) => ({ id: document.id, name: document.fileName })),
     attention,
     costings: tender.costings.map((record) => ({
       stage: record.stage,
@@ -235,6 +239,18 @@ export default function TenderPage() {
       when: formatWhen(record.createdAt, tz),
     })),
   };
+  const emdDraft = tender.emd
+    ? {
+        amount: tender.emd.amount,
+        beneficiary: tender.emd.beneficiary,
+        referenceNumber: tender.emd.referenceNumber,
+        exemptionBasis: tender.emd.exemptionBasis,
+        notes: tender.emd.notes,
+        authorityNote: tender.emd.authorityNote,
+        submitted: tender.emd.submittedToAuthority,
+        bgRequest: tender.emd.bgRequest ?? "",
+      }
+    : null;
   const tabBadge: Record<string, number> = {
     overview: openTasks.filter((task) => !task.stage.startsWith("EMD_")).length,
     details: attention,
@@ -344,7 +360,14 @@ export default function TenderPage() {
 
       <div key={tab} className="tab-body">
       {tab === "brief" ? <ExecutiveBrief tender={tender} users={users} calendar={calendar} /> : null}
-      {tab === "stages" ? <StageHistory tender={tender} users={users} calendar={calendar} plan={data.plan} /> : null}
+      {tab === "stages" ? (
+        <div className="stack">
+          {canSendBack && openTasks.length ? (
+            <TaskCards tenderId={tender.id} tasks={openTasks} bgRequiresBoth={data.bgRequiresBoth} canAuthorize={false} canSendBack ctx={ctx} emd={emdDraft} />
+          ) : null}
+          <StageHistory tender={tender} users={users} calendar={calendar} plan={data.plan} />
+        </div>
+      ) : null}
       {tab === "overview" ? (
         <div className="overview">
           <div className="stack">
@@ -356,21 +379,9 @@ export default function TenderPage() {
               tasks={openTasks.filter((task) => !task.stage.startsWith("EMD_"))}
               bgRequiresBoth={data.bgRequiresBoth}
               canAuthorize={actor.role === "ADMIN" || actor.role === "DEPT_HEAD"}
+              canSendBack={canSendBack}
               ctx={ctx}
-              emd={
-                tender.emd
-                  ? {
-                      amount: tender.emd.amount,
-                      beneficiary: tender.emd.beneficiary,
-                      referenceNumber: tender.emd.referenceNumber,
-                      exemptionBasis: tender.emd.exemptionBasis,
-                      notes: tender.emd.notes,
-                      authorityNote: tender.emd.authorityNote,
-                      submitted: tender.emd.submittedToAuthority,
-                      bgRequest: tender.emd.bgRequest ?? "",
-                    }
-                  : null
-              }
+              emd={emdDraft}
             />
             {!closed && MANAGER_ROLES.includes(actor.role) ? (
               <ManagePanel
@@ -583,21 +594,9 @@ export default function TenderPage() {
             tasks={openTasks.filter((task) => task.stage.startsWith("EMD_"))}
             bgRequiresBoth={data.bgRequiresBoth}
             canAuthorize={actor.role === "ADMIN" || actor.role === "DEPT_HEAD"}
+            canSendBack={canSendBack}
             ctx={ctx}
-            emd={
-              tender.emd
-                ? {
-                    amount: tender.emd.amount,
-                    beneficiary: tender.emd.beneficiary,
-                    referenceNumber: tender.emd.referenceNumber,
-                    exemptionBasis: tender.emd.exemptionBasis,
-                    notes: tender.emd.notes,
-                    authorityNote: tender.emd.authorityNote,
-                    submitted: tender.emd.submittedToAuthority,
-                    bgRequest: tender.emd.bgRequest ?? "",
-                  }
-                : null
-            }
+            emd={emdDraft}
           />
           <section className="panel">
             <h2>EMD</h2>

@@ -105,11 +105,14 @@ export function BgRequestFields({
   saved,
   defaults,
   bankDetails = true,
+  documentsRequired = false,
 }: {
   tenderId: string;
   saved: BgRequest | null;
   /** The beneficiary's bank account; left to the BG team, so the requirement check hides it. */
   bankDetails?: boolean;
+  /** The requirement check cannot move on until the EMD document is attached. */
+  documentsRequired?: boolean;
   defaults: { beneficiaryName: string; beneficiaryAddress: string; contractSummary: string; amount: string };
 }) {
   const value = (key: keyof BgRequest, fallback = "") => saved?.[key] || fallback;
@@ -202,7 +205,14 @@ export function BgRequestFields({
         <fieldset className="wide">
           <legend>Documents</legend>
           <div className="wide">
-            <FilePick name="emdDocs" label="Upload documents (optional)" hint="Any file type, several at once, up to 20 MB each" multiple accept="" />
+            <FilePick
+              name="emdDocs"
+              label={documentsRequired ? "Upload EMD document" : "Upload documents (optional)"}
+              hint={documentsRequired ? "This file is saved with the tender and shown on the next EMD step." : "Any file type, several at once, up to 20 MB each"}
+              required={documentsRequired}
+              multiple
+              accept=""
+            />
           </div>
         </fieldset>
       </div>

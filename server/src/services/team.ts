@@ -16,6 +16,7 @@ export const TEAM = [
   { email: "sundaralingam.g@refex.co.in", name: "Sundaralingam G", role: "COSTING", key: "sundarlingam" },
   { email: "aditya.ks@refex.co.in", name: "Aditya K S", role: "REVIEWER" },
   { email: "vishesh.h@refex.co.in", name: "Vishesh H", role: "DEPT_HEAD", key: "vishesh" },
+  { email: "susmitha.s@refex.co.in", name: "Susmitha S", role: "DEPT_HEAD" },
   { email: "krishna.s@refex.co.in", name: "Krishnananth S", role: "ACCOUNTS", key: "krishnanath" },
   { email: "surya.m@refex.co.in", name: "Surya M", role: "ACCOUNTS", key: "surya" },
   { email: "sanjeev.ks@refex.co.in", name: "Sanjeev Sharma", role: "EMD_ISB", key: "sanjeev" },
@@ -42,6 +43,7 @@ const RANJANA = "ranjana.s@refex.co.in";
 const SUNDAR = "sundaralingam.g@refex.co.in";
 const ADITYA = "aditya.ks@refex.co.in";
 const VISHESH = "vishesh.h@refex.co.in";
+const SUSMITHA = "susmitha.s@refex.co.in";
 const KRISHNA = "krishna.s@refex.co.in";
 const SURYA = "surya.m@refex.co.in";
 const SANJEEV = "sanjeev.ks@refex.co.in";
@@ -60,7 +62,7 @@ const ROUTES: Record<string, Route> = {
   EMD_ISB: [SANJEEV],
   DRAFT_COSTING: [SUNDAR],
   FINAL_COSTING: { ASH: [SUNDAR, WASEEM], COAL: [ADITYA] },
-  DEPT_APPROVAL: [VISHESH],
+  DEPT_APPROVAL: [VISHESH, SUSMITHA],
   BUSINESS_DECISION: [VISHESH],
   BID_SUBMISSION: { ASH: [RANJANA], COAL: [ADITYA] },
 };

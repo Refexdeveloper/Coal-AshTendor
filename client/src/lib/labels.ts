@@ -124,7 +124,7 @@ export const STAGE_HELP: Record<string, string> = {
   EMD_ISB: "Prepare the ISB / surety bond, record its reference, attach evidence and mark it verified.",
   EMD_EXEMPTION: "Record why the exemption applies, attach the supporting certificate and mark it verified.",
   EMD_OTHER: "Prepare the EMD instrument, record its reference, attach evidence and mark it verified.",
-  EMD_CLARIFICATION: "The notice does not make the EMD type clear. Check it and choose the instrument; nothing is assumed.",
+  EMD_CLARIFICATION: "Check the EMD requirement, choose the instrument, and upload the EMD document. The file is shown on the next step.",
   BID_SUBMISSION: "Submit on the portal before the deadline, then record the time, reference and acknowledgement here.",
 };
 

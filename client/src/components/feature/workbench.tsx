@@ -7,6 +7,16 @@ import { Submit } from "@client/components/base/submit";
 import { documentUrl } from "@client/api/client";
 import { BgRequestFields, parseBgRequest } from "./bg-request";
 
+const CHOICE: Record<string, string> = {
+  "Bank Guarantee": "BG",
+  "ISB / Surety Bond": "ISB",
+  Exemption: "EXEMPTION",
+  "Demand Draft": "DD",
+  "Online Payment": "ONLINE",
+  Other: "OTHER",
+  "Other instrument": "OTHER",
+};
+
 export type WorkTask = {
   id: string;
   stage: string;
@@ -31,12 +41,33 @@ type EmdDraft = {
   bgRequest: string;
 };
 
+const FIRST_STEP = new Set(["DATA_VALIDATION", "OCR_EXCEPTION"]);
+
+function SendBack({ tenderId, taskId }: { tenderId: string; taskId: string }) {
+  return (
+    <BoundForm>
+      <h3 className="wide">Send back</h3>
+      <p className="muted wide">Sends this step to the previous owner. They receive an email that includes the remark.</p>
+      <input type="hidden" name="tenderId" value={tenderId} />
+      <input type="hidden" name="taskId" value={taskId} />
+      <label className="wide">
+        Remark
+        <textarea name="notes" rows={3} required placeholder="Why this step is being sent back" />
+      </label>
+      <Submit name="intent" value="send-back" variant="ghost">
+        ↺ Send back
+      </Submit>
+    </BoundForm>
+  );
+}
+
 export function TaskCards({
   tenderId,
   tasks,
   emd,
   canAuthorize,
   bgRequiresBoth,
+  canSendBack = false,
   ctx,
 }: {
   tenderId: string;
@@ -44,6 +75,7 @@ export function TaskCards({
   emd: EmdDraft | null;
   canAuthorize: boolean;
   bgRequiresBoth: boolean;
+  canSendBack?: boolean;
   ctx: TaskContext;
 }) {
   if (!tasks.length) return <p className="panel empty">No open tasks on this tender.</p>;
@@ -76,6 +108,7 @@ export function TaskCards({
           ) : (
             <p className="muted">Waiting on {task.assignees}.</p>
           )}
+          {task.mine || canSendBack ? (FIRST_STEP.has(task.stage) ? null : <SendBack tenderId={tenderId} taskId={task.id} />) : null}
         </article>
       ))}
     </div>
@@ -187,6 +220,7 @@ function TaskForm({
     <BgRequestFields
       tenderId={tenderId}
       bankDetails={task.stage !== "EMD_CLARIFICATION"}
+      documentsRequired={task.stage === "EMD_CLARIFICATION"}
       saved={parseBgRequest(emd?.bgRequest)}
       defaults={{ beneficiaryName: ctx.client, beneficiaryAddress: ctx.location, contractSummary: ctx.workDescription, amount: ctx.emdFeeValue != null ? String(ctx.emdFeeValue) : "" }}
     />
@@ -199,7 +233,7 @@ function TaskForm({
         {bgRequest}
         <label>
           Instrument
-          <select name="choice" defaultValue="">
+          <select name="choice" defaultValue={CHOICE[ctx.emdTypeText] ?? ""}>
             <option value="" disabled>
               Choose after checking the notice
             </option>
@@ -216,7 +250,7 @@ function TaskForm({
           <textarea name="notes" rows={3} required />
         </label>
         <Submit name="intent" value="emd-clarify">
-          Save and create the EMD task
+          Upload and send to the next step
         </Submit>
       </BoundForm>
     );
@@ -226,6 +260,20 @@ function TaskForm({
       <BoundForm>
         <input type="hidden" name="tenderId" value={tenderId} />
         <input type="hidden" name="taskId" value={task.id} />
+        {ctx.emdDocuments.length ? (
+          <div className="wide">
+            <p className="muted">EMD documents from the requirement check</p>
+            <ul className="doc-links">
+              {ctx.emdDocuments.map((doc) => (
+                <li key={doc.id}>
+                  <a href={documentUrl(doc.id)} target="_blank" rel="noreferrer">
+                    {doc.name}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {task.stage === "EMD_BG" ? bgRequest : null}
         {task.stage === "EMD_BG" && bgRequiresBoth ? <p className="muted wide">Both Krishnananth S and Surya M must verify this guarantee.</p> : null}
         {task.stage === "EMD_EXEMPTION" ? (

@@ -340,6 +340,7 @@ async function notifyTasks(tenderId: string, tasks: WorkflowTask[], calendar: Ca
       extra: {
         taskTitle: task.title,
         dueAt: formatWhen(task.dueAt, calendar.timeZone),
+        comments: task.comments,
         detail: task.comments,
       },
     });
@@ -1103,6 +1104,115 @@ export async function decideDepartment(
     addresses: await emailsFor([actor.id, (await db.tender.findUnique({ where: { id: task.tenderId } }))?.createdById || ""]),
     extra: { decision: decision === "RETURNED" ? "Returned for revision" : decision === "APPROVED" ? "Approved" : "Rejected", comments: comments.trim() },
   });
+}
+
+/** The step a send-back reopens. The first steps have none. */
+const STEP_BEFORE: Record<string, { stage: string; branch: string; title: string; role: string }> = {
+  RELEVANCE: { stage: "DATA_VALIDATION", branch: "MAIN", title: "Review extracted tender data", role: "COORDINATOR" },
+  DRAFT_COSTING: { stage: "RELEVANCE", branch: "MAIN", title: "Relevance review", role: "REVIEWER" },
+  SALES_INPUT: { stage: "DRAFT_COSTING", branch: "COSTING", title: "Draft costing", role: "COSTING" },
+  FINAL_COSTING: { stage: "SALES_INPUT", branch: "COSTING", title: "Sales costing input", role: "SALES" },
+  DEPT_APPROVAL: { stage: "FINAL_COSTING", branch: "COSTING", title: "Final costing", role: "COSTING" },
+  BUSINESS_DECISION: { stage: "DEPT_APPROVAL", branch: "COSTING", title: "Department head approval", role: "DEPT_HEAD" },
+  BID_SUBMISSION: { stage: "DEPT_APPROVAL", branch: "COSTING", title: "Department head approval", role: "DEPT_HEAD" },
+  EMD_CLARIFICATION: { stage: "RELEVANCE", branch: "MAIN", title: "Relevance review", role: "REVIEWER" },
+};
+
+const SEND_BACK_ROLES = ["ADMIN", "COORDINATOR", "REVIEWER", "DEPT_HEAD", "GROUP_CEO"];
+
+function statusFor(stage: string) {
+  switch (stage) {
+    case "DATA_VALIDATION":
+      return { overallStatus: "DATA_VALIDATION_REQUIRED", relevanceStatus: "NOT_STARTED" };
+    case "RELEVANCE":
+      return { overallStatus: "PENDING_RELEVANCE", relevanceStatus: "PENDING" };
+    case "DRAFT_COSTING":
+      return { overallStatus: "APPROVED_IN_PROGRESS", costingStatus: "DRAFT_IN_PROGRESS", approvalStatus: "NOT_STARTED" };
+    case "SALES_INPUT":
+      return { costingStatus: "SALES_PENDING", approvalStatus: "NOT_STARTED" };
+    case "FINAL_COSTING":
+      return { costingStatus: "FINAL_IN_PROGRESS", approvalStatus: "NOT_STARTED" };
+    case "DEPT_APPROVAL":
+      return { overallStatus: "APPROVED_IN_PROGRESS", costingStatus: "PENDING_DEPT", approvalStatus: "PENDING" };
+    case "EMD_CLARIFICATION":
+      return { emdStatus: "CLARIFICATION_REQUIRED" };
+    case "EMD_BG":
+      return { emdStatus: "PENDING_BG" };
+    case "EMD_ISB":
+      return { emdStatus: "PENDING_ISB" };
+    case "EMD_EXEMPTION":
+      return { emdStatus: "EXEMPTION_VERIFICATION" };
+    case "EMD_OTHER":
+      return { emdStatus: "IN_PROGRESS" };
+    default:
+      return {};
+  }
+}
+
+async function previousStep(task: { tenderId: string; stage: string }) {
+  if (["EMD_BG", "EMD_ISB", "EMD_EXEMPTION", "EMD_OTHER"].includes(task.stage)) {
+    const clarified = await db.workflowTask.findFirst({ where: { tenderId: task.tenderId, stage: "EMD_CLARIFICATION" } });
+    if (clarified) return { stage: "EMD_CLARIFICATION", branch: "EMD", title: "Clarify EMD requirement", role: "REVIEWER" };
+    return { stage: "RELEVANCE", branch: "MAIN", title: "Relevance review", role: "REVIEWER" };
+  }
+  return STEP_BEFORE[task.stage] ?? null;
+}
+
+/** Closes the open step and reopens the previous one, with the remark mailed to its owner. */
+export async function sendBack(actor: Actor, taskId: string, remark: string) {
+  const note = remark.trim();
+  if (note.length < 3) throw new WorkflowError("Enter a remark before sending this step back.");
+  const task = await db.workflowTask.findUnique({ where: { id: taskId } });
+  if (!task) throw new WorkflowError("That step was not found.");
+  if (!OPEN_TASK.includes(task.status)) throw new WorkflowError("This step is already closed.");
+  const assigned = parseIds(task.assigneeIds).includes(actor.id);
+  if (!assigned && !SEND_BACK_ROLES.includes(actor.role)) throw new WorkflowError("Only the person on this step can send it back.");
+  const prev = await previousStep(task);
+  if (!prev) throw new WorkflowError("This is the first step. There is nothing to send it back to.");
+  const routing = await db.tender.findUnique({ where: { id: task.tenderId } });
+  const earlier = await db.workflowTask.findMany({ where: { tenderId: task.tenderId, stage: prev.stage } });
+  const last = earlier.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  const remembered = last ? [...new Set([...parseIds(last.assigneeIds), last.completedById].filter(Boolean))] : [];
+  const stillActive = remembered.length ? await db.user.findMany({ where: { id: { in: remembered }, active: true } }) : [];
+  const owners = stillActive.length ? stillActive.map((user) => user.id) : await ownersFor(prev.stage, routing ?? {}, prev.role);
+  if (!owners.length) throw new WorkflowError(`Nobody for ${prev.title} can sign in. Add them in Administration.`);
+  const calendar = await getCalendar();
+  const plan = await plannedDue(prev.stage, calendar);
+  const follow = await db.$transaction(async (tx) => {
+    const closed = await tx.workflowTask.updateMany({
+      where: { id: task.id, status: { in: OPEN_TASK } },
+      data: { status: "COMPLETED", decision: "RETURNED", comments: note, completedById: actor.id, completedAt: new Date() },
+    });
+    if (closed.count !== 1) throw new WorkflowError("This step was already closed.");
+    await tx.tender.update({ where: { id: task.tenderId }, data: statusFor(prev.stage) });
+    const open = await tx.workflowTask.findFirst({ where: { tenderId: task.tenderId, stage: prev.stage, status: { in: OPEN_TASK } } });
+    const data = {
+      status: "RETURNED_FOR_REVISION",
+      comments: note,
+      assigneeIds: JSON.stringify(owners),
+      dueAt: plan.dueAt,
+      slaMinutes: plan.slaMinutes,
+      baseAt: new Date(),
+      reminder50Sent: false,
+      reminder75Sent: false,
+      breachSent: false,
+      breachLevel2Sent: false,
+    };
+    const next = open
+      ? await tx.workflowTask.update({ where: { id: open.id }, data })
+      : await tx.workflowTask.create({
+          data: { tenderId: task.tenderId, branch: prev.branch, stage: prev.stage, title: last?.title || prev.title, ...data },
+        });
+    await audit(tx, {
+      tenderId: task.tenderId,
+      actor,
+      action: "Sent back",
+      entity: "WorkflowTask",
+      detail: `${task.title} sent back to ${prev.title}. ${note}`,
+    });
+    return next;
+  });
+  await notifyTasks(task.tenderId, [follow], calendar);
 }
 
 export async function saveEmdProgress(

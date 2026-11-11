@@ -596,6 +596,7 @@ export async function notifyAddresses(options: {
       headline: assigned && vars.taskTitle ? `Pending your action — ${vars.taskTitle}` : subject,
       facts,
       completed,
+      remarks: vars.comments || vars.detail || undefined,
       next: assigned && vars.taskTitle ? { label: vars.taskTitle, note: vars.dueAt ? `Pending your action · due ${vars.dueAt}` : "Pending your action" } : undefined,
       attachments: attached.lines.length ? attached.lines : undefined,
       cta: { label: assigned ? "Review and act →" : "View the tender →", url: vars.link },

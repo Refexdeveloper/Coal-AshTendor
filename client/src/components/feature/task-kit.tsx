@@ -25,6 +25,7 @@ export type TaskContext = {
   noticeId: string | null;
   finalCostingValue: number | null;
   emdEvidenceId: string | null;
+  emdDocuments: { id: string; name: string }[];
   attention: number;
   costings: { stage: string; label: string; amountText: string; assumptions: string; documentId: string; by: string; when: string }[];
 };
@@ -34,6 +35,7 @@ const SUCCESS: Record<string, { message: string; celebrate?: boolean }> = {
   "approve-relevance": { message: "Tender approved. Costing and EMD have both started.", celebrate: true },
   "reject-relevance": { message: "Tender rejected and closed. The reason is in the history." },
   "cost-complete": { message: "Costing step completed and handed to the next owner." },
+  "send-back": { message: "Sent back with your remark. The previous owner has been emailed." },
   "cost-return": { message: "Returned for revision with your note." },
   "dept-approve": { message: "Final costing approved.", celebrate: true },
   "dept-return": { message: "Costing returned for revision." },

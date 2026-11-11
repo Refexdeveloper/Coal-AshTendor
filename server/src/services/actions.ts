@@ -112,7 +112,8 @@ export async function taskAction(actor: User, formData: FormData): Promise<Actio
     const tenderId = String(formData.get("tenderId") || "");
     const notes = String(formData.get("notes") || "");
     const file = (await filesFrom(formData, "file"))[0];
-    if (intent === "validate") await domain.submitForRelevance(actor, taskId, formData.get("confirmed") === "yes");
+    if (intent === "send-back") await domain.sendBack(actor, taskId, notes);
+    else if (intent === "validate") await domain.submitForRelevance(actor, taskId, formData.get("confirmed") === "yes");
     else if (intent === "approve-relevance" || intent === "reject-relevance") {
       await domain.decideRelevance(actor, taskId, intent === "approve-relevance" ? "APPROVED" : "REJECTED", notes);
     } else if (intent === "cost-complete" || intent === "cost-return") {
