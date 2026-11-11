@@ -53,7 +53,7 @@ const docPath = (bid: GemBid) => (bid.bidType === 5 ? "showdirectradocumentPdf" 
  * The GeM bid watch for administrators: settings, a manual pass, run history and the bids found,
  * with Import / Ignore for each. While a pass runs the page refreshes itself.
  */
-export function GemWatch({ gem, timeZone, run, reload, canEdit, canRun }: { gem: GemData; timeZone: string; run: (name: string) => (formData: FormData) => Promise<void>; reload: () => void; canEdit: boolean; canRun: boolean }) {
+export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, canRun }: { gem: GemData; timeZone: string; run: (name: string) => (formData: FormData) => Promise<void>; reload: () => void; canEdit: boolean; canKeywords: boolean; canRun: boolean }) {
   const [tab, setTab] = useState("NEW");
   const [editing, setEditing] = useState(false);
   const [query, setQuery] = useState("");
@@ -122,7 +122,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canRun }: { gem:
         {keywords.map((word) => (
           <span key={word} className="gem-chip">
             {word}
-            {canEdit ? (
+            {canKeywords ? (
               <form action={run("gem")}>
                 <input type="hidden" name="intent" value="remove-keyword" />
                 <input type="hidden" name="keyword" value={word} />
@@ -133,7 +133,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canRun }: { gem:
             ) : null}
           </span>
         ))}
-        {canEdit ? (
+        {canKeywords ? (
           <form
             className="gem-add"
             action={async (formData) => {

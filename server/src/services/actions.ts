@@ -549,7 +549,7 @@ export async function gemAction(actor: User, formData: FormData): Promise<Action
   const gem = await import("./gem");
   const intent = String(formData.get("intent") || "");
   try {
-    if (actor.role !== "ADMIN" && actor.role !== "COORDINATOR") throw new WorkflowError("Only an administrator or coordinator can manage the GeM watch.");
+    if (!["ADMIN", "COORDINATOR", "GROUP_CEO"].includes(actor.role)) throw new WorkflowError("Only an administrator, a coordinator, or the Group CEO can run the GeM watch.");
     const portal = await gem.gemPortal();
     if (intent === "settings") {
       if (actor.role !== "ADMIN") throw new WorkflowError("Only an administrator can change the GeM watch settings.");
@@ -570,7 +570,7 @@ export async function gemAction(actor: User, formData: FormData): Promise<Action
       return { ok: "GeM watch settings saved." };
     }
     if (intent === "add-keyword" || intent === "remove-keyword") {
-      if (actor.role !== "ADMIN") throw new WorkflowError("Only an administrator can change the GeM keywords.");
+      if (actor.role !== "ADMIN" && actor.role !== "GROUP_CEO") throw new WorkflowError("Only an administrator or the Group CEO can change the GeM keywords.");
       const word = String(formData.get("keyword") || "").trim();
       if (!word) throw new WorkflowError("Type a keyword.");
       const current: string[] = String(portal.keywords)

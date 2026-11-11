@@ -28,7 +28,7 @@ export default function PortalsPage() {
   const { data, error, reload } = useApi<Data>("/portals");
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
   const { portals, exceptions, calendar, gem } = data;
-  const admin = actor.role === "ADMIN" || actor.role === "COORDINATOR";
+  const admin = actor.role === "ADMIN" || actor.role === "COORDINATOR" || actor.role === "GROUP_CEO";
   return (
     <>
       <header className="page-head">
@@ -41,7 +41,7 @@ export default function PortalsPage() {
       </header>
       {query.notice ? <p className="banner good">{query.notice}</p> : null}
       {query.error ? <p className="banner bad">{query.error}</p> : null}
-      <GemWatch gem={gem} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit={actor.role === "ADMIN"} canRun={admin} />
+      <GemWatch gem={gem} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit={actor.role === "ADMIN"} canKeywords={actor.role === "ADMIN" || actor.role === "GROUP_CEO"} canRun={admin} />
       <h2 className="section-title">Other portals</h2>
       <div className="table-wrap">
         <table>
