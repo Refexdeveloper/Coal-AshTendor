@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { apiUrl } from "@client/api/client";
 import { formatWhen } from "@client/utils/calendar";
 import type { Portal } from "@client/lib/types";
+
+const PdfViewer = lazy(() => import("@client/components/feature/pdf-viewer"));
 
 export type GemBid = {
   id: string;
@@ -58,6 +61,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
   const [editing, setEditing] = useState(false);
   const [query, setQuery] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [openId, setOpenId] = useState("");
   const { portal, runs, bids, tenders, running, progress } = gem;
   const [, tick] = useState(0);
 
@@ -272,8 +276,10 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
             {shown.map((bid) => {
               const tender = tenderOf(bid.tenderId);
               const closed = Boolean(bid.endAt && new Date(bid.endAt).getTime() < Date.now());
+              const open = openId === bid.id;
               return (
-                <tr key={bid.id}>
+                <Fragment key={bid.id}>
+                <tr className={open ? "is-open" : ""}>
                   <td className="gem-number">
                     <a href={`${GEM}/${docPath(bid)}/${bid.bidId}`} target="_blank" rel="noreferrer" title="Open the bid document on GeM">
                       {bid.bidNumber}
@@ -301,6 +307,9 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                     {bid.error ? <small className="muted gem-error">{bid.error}</small> : null}
                   </td>
                   <td className="gem-row-actions">
+                    <button type="button" className={`btn ghost${open ? " is-on" : ""}`} onClick={() => setOpenId(open ? "" : bid.id)}>
+                      {open ? "Hide document" : "View document"}
+                    </button>
                     {tender ? (
                       <Link className="btn ghost" to={`/tenders/${tender.id}`}>
                         {tender.recordId}
@@ -335,6 +344,18 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                     ) : null}
                   </td>
                 </tr>
+                {open ? (
+                  <tr className="gem-doc-row">
+                    <td colSpan={7}>
+                      <div className="preview gem-doc">
+                        <Suspense fallback={<div className="pdfv-state">Loading the document…</div>}>
+                          <PdfViewer src={apiUrl(`/gem-bids/${encodeURIComponent(bid.id)}/document`)} name={`${bid.bidNumber}.pdf`} />
+                        </Suspense>
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
               );
             })}
           </tbody>

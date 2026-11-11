@@ -82,6 +82,24 @@ files.get("/bg-documents/:id", requireActor, async (req, res) => {
   }
 });
 
+/** A GeM bid's PDF, fetched from GeM for the expand-row viewer. Signed-in users only. */
+files.get("/gem-bids/:id/document", requireActor, async (req, res) => {
+  try {
+    const { readGemBidPdf } = await import("../services/gem");
+    const file = await readGemBidPdf(String(req.params.id));
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Length": String(file.buffer.length),
+      "Content-Disposition": `inline; filename="${file.name.replace(/[^\x20-\x7e]|"/g, "")}"`,
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, max-age=300",
+    });
+    res.send(file.buffer);
+  } catch (error) {
+    res.status(404).send(error instanceof Error ? error.message : "Document not available");
+  }
+});
+
 /** Short-lived signed links the OCR service downloads. Public on purpose: the signature is the access check. */
 files.get("/ocr-files/:token/:fileName", async (req, res) => {
   const storedPath = pathFromOcrToken(req.params.token);

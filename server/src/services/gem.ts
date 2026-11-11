@@ -107,6 +107,15 @@ async function downloadBidDocument(doc: GemDoc) {
   return { name: `${number}.pdf`, type: "application/pdf", buffer: bytes };
 }
 
+/** The stored bid's PDF, fetched from GeM for the row's document view. */
+export async function readGemBidPdf(id: string) {
+  const bid = await db.gemBid.findUnique({ where: { id } });
+  if (!bid) throw new Error("That GeM bid is not in the list.");
+  const doc = JSON.parse(bid.raw || "{}") as GemDoc;
+  if (!doc.id && !first(doc, "b_id")) throw new Error("This bid has no document to open.");
+  return downloadBidDocument(doc);
+}
+
 /** The GeM portal row, created with the default keywords the first time. */
 export async function gemPortal() {
   const existing = await db.portal.findFirst({ where: { accessMethod: "GEM_API" } });

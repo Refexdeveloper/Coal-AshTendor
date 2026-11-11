@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useLocation } from "react-router-dom";
 import { logoutAction } from "@client/api/actions";
-import { ROLES } from "@client/lib/labels";
+import { roleTitle } from "@client/lib/labels";
 import { navFor } from "./navConfig";
 import { NavIcon } from "./NavIcon";
 import { initials } from "./Topbar";
@@ -16,7 +16,7 @@ export function Sidebar({
   onNavigate?: () => void;
 }) {
   const { pathname } = useLocation();
-  const role = ROLES[user.role] ?? user.role;
+  const role = roleTitle(user);
   return (
     <div className="sidebar-inner">
       <div className="brand">

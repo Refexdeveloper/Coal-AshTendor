@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { formatDay, formatWhen, zonedParts } from "@client/utils/calendar";
 import { effectiveValue } from "@client/utils/format";
 import { NOT_FOUND, TENDER_FIELDS } from "@client/lib/fields";
-import { APPROVAL, BID, COSTING, DECISION, EMD, EMD_TYPE, OVERALL, RELEVANCE, ROLES, STAGE } from "@client/lib/labels";
+import { APPROVAL, BID, COSTING, DECISION, EMD, EMD_TYPE, OVERALL, RELEVANCE, roleTitle, STAGE } from "@client/lib/labels";
 import { inr } from "@client/utils/money";
 import type { ApprovalRecord, BidSubmission, CalendarJson, EmdRecord, PublicUser, Tender, TenderField, WorkflowTask } from "@client/lib/types";
 import { Status } from "@client/components/base/pill";
@@ -357,7 +357,7 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
           </div>
           <h1>{user.name}</h1>
           <p>
-            Here's your Coal &amp; Ash tender pipeline overview <span className="dk-role">· {ROLES[user.role] ?? user.role}</span>
+            Here's your Coal &amp; Ash tender pipeline overview <span className="dk-role">· {roleTitle(user)}</span>
           </p>
         </div>
         <div className="dk-hero-tools">

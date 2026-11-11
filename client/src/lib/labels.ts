@@ -174,6 +174,12 @@ export const ROLES: Record<string, string> = {
   GROUP_CEO: "Group CEO",
 };
 
+/** Title shown beside a signed-in person. Srivaths's login reads Group CTO. */
+export function roleTitle(user: { role: string; email?: string }) {
+  if (user.email?.toLowerCase() === "srivaths.varadharajan@refex.co.in") return "Group CTO";
+  return ROLES[user.role] ?? user.role;
+}
+
 export const CLOSED_OVERALL = [
   "REJECTED_CLOSED",
   "NOT_BID_DEADLINE_MISSED",

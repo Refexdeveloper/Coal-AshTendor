@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
-import { ROLES } from "@client/lib/labels";
+import { roleTitle } from "@client/lib/labels";
 import { ApiError, useApi } from "@client/api/client";
 import type { PublicUser } from "@client/lib/types";
 import { LoginForm } from "@client/components/feature/login-form";
@@ -67,7 +67,7 @@ export default function LoginPage() {
             <div className="accounts">
               {users.map((user) => (
                 <span key={user.id}>
-                  {user.name} · {ROLES[user.role] ?? user.role}
+                  {user.name} · {roleTitle(user)}
                   <br />
                   {user.email}
                 </span>

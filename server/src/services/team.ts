@@ -33,6 +33,7 @@ export const TEAM = [
   { email: "babu.sathiyavelu@refex.co.in", name: "Babu Sathiyavelu", role: "SALES" },
   { email: "ashishkumar.m@refex.co.in", name: "Aashish Kumar Mukherji", role: "SALES" },
   { email: "harshit.saxena@refex.co.in", name: "Harshit Saxena", role: "SALES" },
+  { email: "srivaths.varadharajan@refex.co.in", name: "Srivaths Varadharajan", role: "GROUP_CEO" },
 ] as const;
 
 const PRASANTH = "prasanth.p@refex.co.in";

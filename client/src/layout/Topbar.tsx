@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { logoutAction } from "@client/api/actions";
-import { ROLES } from "@client/lib/labels";
+import { roleTitle } from "@client/lib/labels";
 import { navTitle } from "./navConfig";
 import { NavIcon } from "./NavIcon";
 
@@ -15,7 +15,7 @@ export function Topbar({
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
-  const role = ROLES[user.role] ?? user.role;
+  const role = roleTitle(user);
   return (
     <header className="topbar">
       <button className="icon-btn menu-btn" type="button" onClick={onMenu} aria-label="Open navigation">

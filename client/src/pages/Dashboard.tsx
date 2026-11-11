@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
 import type { CSSProperties } from "react";
 import { formatWhen } from "@client/utils/calendar";
-import { CREATOR_ROLES, OVERALL, ROLES, STAGE } from "@client/lib/labels";
+import { CREATOR_ROLES, OVERALL, roleTitle, STAGE } from "@client/lib/labels";
 import { inr } from "@client/utils/money";
 import { useApi } from "@client/api/client";
 import { useActor } from "@client/api/session";
@@ -168,7 +168,7 @@ export default function DashboardPage() {
           </h1>
           <p>
             Here&apos;s where every tender stands today
-            <span className="hero-role"> · {ROLES[user.role] ?? user.role}</span>
+            <span className="hero-role"> · {roleTitle(user)}</span>
           </p>
         </div>
         <aside className="hero-side">
