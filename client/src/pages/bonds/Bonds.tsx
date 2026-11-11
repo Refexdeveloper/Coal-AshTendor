@@ -59,7 +59,16 @@ const EXTRA_FILTERS: { key: string; label: string; pick: (row: Row) => string; s
   { key: "mode", label: "Mode", pick: (row) => row.mode },
 ];
 
-const KIND_LABEL: Record<string, string> = { EMD: "EMD", PERFORMANCE: "PBG" };
+const KIND_LABEL: Record<string, string> = { EMD: "EMD", PERFORMANCE: "PBG", APBG: "APBG" };
+/** APS on a performance bond is the additional performance bond (APBG). */
+const isApbg = (row: Row) => row.usedFor === "APS";
+const matchesKind = (row: Row, kind: string) => {
+  if (!kind) return true;
+  if (kind === "APBG") return isApbg(row);
+  if (kind === "PERFORMANCE") return row.kind === "PERFORMANCE" && !isApbg(row);
+  return row.kind === kind;
+};
+const typeLabel = (row: Row) => (row.kind === "EMD" ? "EMD" : isApbg(row) ? "APBG" : "PBG");
 
 export function Glyph({ name }: { name: "plus" | "x" }) {
   return (
@@ -160,7 +169,7 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
   // Expiries lie ahead, so the expiry view offers future ranges and does not stop at today.
   const period = resolvePeriod(filter.period || "all", undefined, { future: byExpiry });
   // The period and the PBG / EMD switch scope the whole board: cards, charts and table.
-  const rows = everyBond.filter((row) => inPeriod(period, byExpiry ? row.expiry : row.issueDate) && (!filter.kind || row.kind === filter.kind));
+  const rows = everyBond.filter((row) => inPeriod(period, byExpiry ? row.expiry : row.issueDate) && matchesKind(row, filter.kind));
   const earliest = everyBond.reduce<Date | null>((min, row) => (row.issueDate && (!min || row.issueDate < min) ? row.issueDate : min), null);
   const keep = [...fixed, ...["period", "basis"].filter((key) => params.get(key)).map((key) => `${key}=${encodeURIComponent(params.get(key)!)}`)];
   const cardHref = (key: string) => `${path}?${[...keep, `card=${key}`].join("&")}#bond-list`;
@@ -173,7 +182,7 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
   const live = rows.filter((row) => CARD_ROWS.active.match(row));
 
   const cards = [
-    { key: "pb", label: "PBG bonds", fx: "award" as CardFx, value: sum(pb, (row) => row.amount), money: true, note: `${pb.length} bonds · ${pb.filter((row) => row.usedFor === "APS").length} APS`, icon: "trophy", tone: "violet" },
+    { key: "pb", label: filter.kind === "APBG" ? "APBG bonds" : "PBG bonds", fx: "award" as CardFx, value: sum(filter.kind === "APBG" ? rows : pb, (row) => row.amount), money: true, note: filter.kind === "APBG" ? `${rows.length} bonds` : `${pb.length} bonds`, icon: "trophy", tone: "violet" },
     { key: "active", label: "Active bonds", fx: "ready" as CardFx, value: live.length, note: inr(sum(live, (row) => row.amount)), icon: "check", tone: "green" },
     { key: "soon", label: "Expiring in 30 days", fx: "hourglass" as CardFx, value: soon.length, note: soon.length ? inr(sum(soon, (row) => row.amount)) : "Nothing due", icon: "hourglass", tone: "red", hot: soon.length > 0 },
     { key: "watch", label: "Expiring in 90 days", fx: "pending" as CardFx, value: watch.length, note: watch.length ? inr(sum(watch, (row) => row.amount)) : "None", icon: "calendar", tone: "sky" },
@@ -188,7 +197,7 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
   const insurers = [...new Set(rows.map((row) => row.insurer).filter(Boolean))].sort();
   const listed = rows
     .filter((row) => !card || card.match(row))
-    .filter((row) => !filter.kind || row.kind === filter.kind)
+    .filter((row) => matchesKind(row, filter.kind))
     .filter((row) => !filter.state || row.state === filter.state)
     .filter((row) => !filter.insurer || row.insurer === filter.insurer)
     .filter((row) => !filter.health || row.health === filter.health)
@@ -274,7 +283,8 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
             {(
               [
                 ["", "All", everyBond.length],
-                ["PERFORMANCE", "PBG", everyBond.filter((row) => row.kind === "PERFORMANCE").length],
+                ["PERFORMANCE", "PBG", everyBond.filter((row) => matchesKind(row, "PERFORMANCE")).length],
+                ["APBG", "APBG", everyBond.filter((row) => matchesKind(row, "APBG")).length],
               ] as const
             ).map(([value, label, count]) => (
               <button key={label} type="button" className={filter.kind === value ? "is-on" : ""} onClick={() => setFilter("kind", value)}>
@@ -377,6 +387,7 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
             {[
               ["", "All"],
               ["PERFORMANCE", "PBG"],
+              ["APBG", "APBG"],
             ].map(([value, label]) => (
               <button key={label} type="button" className={filter.kind === value ? "is-on" : ""} onClick={() => setFilter("kind", value)}>
                 {label}
@@ -538,7 +549,7 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
                       >
                         <td className="muted">{row.serialNo ?? index + 1}</td>
                         <td>
-                          <span className={`dk-pill ${row.kind === "EMD" ? "amber" : "violet"}`}>{row.kind === "EMD" ? "EMD" : row.usedFor ? `PBG · ${row.usedFor}` : "PBG"}</span>
+                          <span className={`dk-pill ${row.kind === "EMD" ? "amber" : isApbg(row) ? "sky" : "violet"}`}>{typeLabel(row)}</span>
                         </td>
                         <td className="dk-title">
                           {row.name || "—"}
@@ -667,7 +678,7 @@ function NextToExpire({ rows, today, search }: { rows: Row[]; today: Date; searc
               <span className="dk-deadline-main">
                 <strong>{row.name}</strong>
                 <small>
-                  {row.kind === "EMD" ? "EMD" : `PBG · ${row.usedFor || "—"}`} · {inr(row.amount)}
+                  {typeLabel(row)} · {inr(row.amount)}
                 </small>
               </span>
               <span className="dk-deadline-end">{day(row.expiry)}</span>

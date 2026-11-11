@@ -374,8 +374,8 @@ const ATTACH_LIMIT = 15 * 1024 * 1024;
  * Read once per notice and reused for every recipient. Files that do not fit are named in the email instead.
  */
 export async function tenderAttachments(tenderId: string) {
-  const { readStored } = await import("./files");
-  const documents = await db.tenderDocument.findMany({ where: { tenderId }, orderBy: { uploadedAt: "desc" } });
+  const { isSpreadsheet, readStored } = await import("./files");
+  const documents = (await db.tenderDocument.findMany({ where: { tenderId }, orderBy: { uploadedAt: "desc" } })).filter((document) => !isSpreadsheet(document.fileName, document.mimeType));
   const seen = new Set<string>();
   const files: MailAttachment[] = [];
   const skipped: string[] = [];
@@ -410,11 +410,11 @@ export async function resendLogged(logId: string, extraTo: string[] = []) {
   const attachments: MailAttachment[] = [];
   const listed = original.attachments ? (JSON.parse(original.attachments) as { filename: string; documentId?: string }[]) : [];
   if (listed.length) {
-    const { readStored } = await import("./files");
+    const { isSpreadsheet, readStored } = await import("./files");
     for (const item of listed) {
       if (!item.documentId) continue;
       const document = await db.tenderDocument.findUnique({ where: { id: item.documentId } });
-      if (!document) continue;
+      if (!document || isSpreadsheet(document.fileName, document.mimeType)) continue;
       try {
         attachments.push({ filename: document.fileName, content: await readStored(document.storedPath), contentType: document.mimeType || "application/octet-stream", documentId: document.id });
       } catch {

@@ -79,7 +79,7 @@ export function FilePick({
   hint,
   required = false,
   multiple = false,
-  accept = ".pdf,.txt,.png,.jpg,.jpeg,.webp,.tif,.tiff",
+  accept = ".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.tif,.tiff",
   onPicked,
 }: {
   name: string;
@@ -105,7 +105,7 @@ export function FilePick({
       </span>
       <span className="filepick-copy">
         <strong>{names.length ? names.join(", ") : label}</strong>
-        <small>{names.length ? "Click to choose a different file" : hint ?? "Click to choose, or drop a file here. PDF, image or text."}</small>
+        <small>{names.length ? "Click to choose a different file" : hint ?? "Click to choose, or drop a file here. Excel, PDF, image or text. Excel files are visible only to the Group CEO."}</small>
       </span>
       <input
         name={name}

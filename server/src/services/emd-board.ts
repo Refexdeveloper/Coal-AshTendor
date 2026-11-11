@@ -151,6 +151,7 @@ export async function listEmdBoard() {
         pending,
         convertedToSd: Boolean(record?.convertedToSd),
         sdAmount: (record?.sdAmount as number | null) ?? null,
+        remark: String(record?.notes ?? ""),
         documents: docs,
       };
     })
@@ -208,36 +209,44 @@ export async function updateEmdRegister(actor: { id: string; name: string; role:
   return { tenderId, recordId: String(tender.recordId) };
 }
 
-/** Turns this tender's EMD into a security deposit without changing the instrument already on the record. */
+/** Turns this tender's EMD into a security deposit as a BG or an ISB, with the remark that was entered. */
 export async function convertEmdToSd(actor: { id: string; name: string; role: string }, formData: FormData) {
   if (!EDITORS.includes(actor.role)) throw new Error("You cannot convert this EMD.");
   const tenderId = text(formData.get("tenderId"));
   const tender = await db.tender.findUnique({ where: { id: tenderId } });
   if (!tender) throw new Error("Tender not found.");
   const existing = await db.emdRecord.findFirst({ where: { tenderId } });
+  const instrument = text(formData.get("instrument"));
+  if (instrument !== "BG" && instrument !== "ISB") throw new Error("Choose BG or ISB.");
+  const remark = text(formData.get("remark"));
+  if (!remark) throw new Error("Enter a remark.");
   const current = money(existing?.amount) ?? (tender.emdExposure as number | null);
   const sdAmount = money(formData.get("sdAmount")) ?? current;
   if (sdAmount == null) throw new Error("Enter the security deposit amount.");
-  const data = { convertedToSd: true, sdAmount };
+  const previous = text(existing?.notes);
+  const notes = previous && !previous.includes(remark) ? `${previous}\n${remark}` : remark;
+  const data = { convertedToSd: true, sdAmount, instrumentType: instrument, notes };
   if (existing) await db.emdRecord.update({ where: { id: existing.id }, data });
   else {
     await db.emdRecord.create({
       data: {
         tenderId,
-        instrumentType: String(tender.emdType || "UNCLEAR"),
         amount: String(current ?? sdAmount),
         preparationStatus: "NOT_STARTED",
         beneficiary: "",
         exemptionBasis: "",
         referenceNumber: "",
         documentId: "",
-        notes: "",
         authorityNote: "",
         bankDetails: "",
         ...data,
       },
     });
   }
+  await db.tender.update({
+    where: { id: tenderId },
+    data: { emdType: instrument, emdExposure: sdAmount },
+  });
   await db.auditLog.create({
     data: {
       tenderId,
@@ -245,7 +254,7 @@ export async function convertEmdToSd(actor: { id: string; name: string; role: st
       actorName: actor.name,
       action: "Converted EMD to security deposit",
       entity: "EmdRecord",
-      detail: `₹${sdAmount.toLocaleString("en-IN")}`,
+      detail: `${instrument} · ₹${sdAmount.toLocaleString("en-IN")} · ${remark}`,
     },
   });
   return { tenderId, recordId: String(tender.recordId), sdAmount };

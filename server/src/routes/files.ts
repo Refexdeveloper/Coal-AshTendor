@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { readStored } from "../services/files";
+import { isSpreadsheet, readStored } from "../services/files";
 import { pathFromOcrToken } from "../services/ocr-link";
 import { db } from "../db";
 import { requireActor } from "../middleware/auth";
@@ -20,7 +20,7 @@ export const files = Router();
 /** Stored tender documents, for signed-in users. */
 files.get("/documents/:id", requireActor, async (req, res) => {
   const document = await db.tenderDocument.findUnique({ where: { id: req.params.id as string } });
-  if (!document) {
+  if (!document || (isSpreadsheet(document.fileName, document.mimeType) && req.actor!.role !== "GROUP_CEO")) {
     res.status(404).send("Not found");
     return;
   }
@@ -29,7 +29,7 @@ files.get("/documents/:id", requireActor, async (req, res) => {
     res.set({
       "Content-Type": document.mimeType || "application/octet-stream",
       "Content-Length": String(bytes.length),
-      "Content-Disposition": `inline; filename="${document.fileName.replace(/[^\x20-\x7e]|"/g, "")}"`,
+      "Content-Disposition": `${isSpreadsheet(document.fileName, document.mimeType) ? "attachment" : "inline"}; filename="${document.fileName.replace(/[^\x20-\x7e]|"/g, "")}"`,
       "X-Content-Type-Options": "nosniff",
     });
     res.send(bytes);

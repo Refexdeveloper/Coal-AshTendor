@@ -152,11 +152,20 @@ export async function deleteStored(storedPath: string) {
   await unlink(resolved).catch(() => undefined);
 }
 
+const SPREADSHEET_EXT = [".xlsx", ".xls", ".xlsm", ".xlsb"];
+
+/** Excel workbooks. These are stored with the tender but shown only to the Group CEO. */
+export function isSpreadsheet(fileName: string, mime = "") {
+  const lower = fileName.toLowerCase();
+  const type = mime.toLowerCase();
+  return SPREADSHEET_EXT.some((ext) => lower.endsWith(ext)) || type.includes("spreadsheet") || type === "application/vnd.ms-excel";
+}
+
 export function allowedUpload(fileName: string, mime: string) {
   const lower = fileName.toLowerCase();
   const mimeOk = ["application/pdf", "text/plain", "image/png", "image/jpeg", "image/webp", "image/tiff"].includes(mime);
-  const extOk = [".pdf", ".txt", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"].some((ext) => lower.endsWith(ext));
-  return mimeOk || extOk;
+  const extOk = [".pdf", ".txt", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ...SPREADSHEET_EXT].some((ext) => lower.endsWith(ext));
+  return mimeOk || extOk || isSpreadsheet(fileName, mime);
 }
 
 export async function pagesFromBuffer(buffer: Buffer, mime: string, fileName: string) {

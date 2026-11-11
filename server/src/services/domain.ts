@@ -368,7 +368,7 @@ export async function createTender(
   }
   for (const file of input.files) {
     if (file.buffer.length > 20 * 1024 * 1024) throw new WorkflowError(`${file.name} is larger than 20 MB.`);
-    if (!allowedUpload(file.name, file.type)) throw new WorkflowError(`${file.name} must be a PDF, text file, or image.`);
+    if (!allowedUpload(file.name, file.type)) throw new WorkflowError(`${file.name} must be a PDF, an Excel file, a text file, or an image.`);
   }
 
   const prepared: {
@@ -926,7 +926,7 @@ export async function completeCosting(
   }
   // The draft can be handed on with its assumptions alone; sales input and final costing need their sheet.
   if (!input.file && task.stage !== "DRAFT_COSTING") throw new WorkflowError("Attach the costing sheet before completing this task.");
-  if (input.file && !allowedUpload(input.file.name, input.file.type)) throw new WorkflowError("The costing sheet must be a PDF, text file, or image.");
+  if (input.file && !allowedUpload(input.file.name, input.file.type)) throw new WorkflowError("The costing sheet must be an Excel file, a PDF, a text file, or an image.");
   const amount = parseInr(input.amount);
   if (task.stage === "FINAL_COSTING" && amount == null) throw new WorkflowError("Enter the final costing amount as a number, without crore or lakh wording.");
   const sheet = input.file;
@@ -1127,7 +1127,7 @@ export async function saveEmdProgress(
   const settings = await db.appSettings.findUnique({ where: { id: "default" } });
   let documentId = task.tender.emd?.documentId || "";
   if (input.file) {
-    if (!allowedUpload(input.file.name, input.file.type)) throw new WorkflowError("Evidence must be a PDF, text file, or image.");
+    if (!allowedUpload(input.file.name, input.file.type)) throw new WorkflowError("Evidence must be a PDF, an Excel file, a text file, or an image.");
     const storedPath = await storeFile(task.tenderId, input.file.name, input.file.buffer);
     const document = await db.tenderDocument.create({
       data: {
@@ -1558,7 +1558,7 @@ export async function recordBid(
   }
   let evidenceId = tender.bid?.evidenceDocumentId || "";
   if (input.file) {
-    if (!allowedUpload(input.file.name, input.file.type)) throw new WorkflowError("Evidence must be a PDF, text file, or image.");
+    if (!allowedUpload(input.file.name, input.file.type)) throw new WorkflowError("Evidence must be a PDF, an Excel file, a text file, or an image.");
     const storedPath = await storeFile(tenderId, input.file.name, input.file.buffer);
     const document = await db.tenderDocument.create({
       data: {
@@ -1698,7 +1698,7 @@ export async function addDocuments(
   if (!canEdit(actor) && actor.id !== tender.createdById) throw new WorkflowError("You cannot add documents to this tender.");
   for (const file of files) {
     if (file.buffer.length > 20 * 1024 * 1024) throw new WorkflowError(`${file.name} is larger than 20 MB.`);
-    if (!allowedUpload(file.name, file.type)) throw new WorkflowError(`${file.name} must be a PDF, text file, or image.`);
+    if (!allowedUpload(file.name, file.type)) throw new WorkflowError(`${file.name} must be a PDF, an Excel file, a text file, or an image.`);
     const hash = sha256(file.buffer);
     const same = await db.tenderDocument.findFirst({ where: { tenderId, sha256: hash } });
     if (same) throw new WorkflowError(`${file.name} is already stored on this tender.`);

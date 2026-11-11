@@ -104,9 +104,20 @@ function ConvertToSd({ tenderId, amount, sdAmount, converted, canConvert, onDone
   return (
     <form action={action} className="form-grid">
       <input type="hidden" name="tenderId" value={tenderId} />
+      <label className="wide">
+        Remark
+        <textarea name="remark" rows={2} required placeholder="Why this EMD is becoming a security deposit" />
+      </label>
+      <label>
+        Security deposit as
+        <select name="instrument" defaultValue="BG" required>
+          <option value="BG">BG</option>
+          <option value="ISB">ISB</option>
+        </select>
+      </label>
       <label>
         Security deposit amount
-        <input name="sdAmount" inputMode="decimal" defaultValue={figure == null ? "" : String(figure)} />
+        <input name="sdAmount" inputMode="decimal" defaultValue={figure == null ? "" : String(figure)} required />
       </label>
       <div className="actions">
         <Submit>Convert to SD</Submit>

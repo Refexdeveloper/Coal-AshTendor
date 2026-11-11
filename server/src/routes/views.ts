@@ -13,6 +13,7 @@ import { listGuarantees } from "../services/guarantees";
 import { listEmdBoard } from "../services/emd-board";
 import { documentCounts, documentsFor } from "../services/bg-documents";
 import { bondDocumentCounts, documentsForBond } from "../services/bond-documents";
+import { isSpreadsheet } from "../services/files";
 
 /** Calendar sets do not survive JSON; the client rebuilds them. */
 export function calendarJson(calendar: Calendar) {
@@ -260,7 +261,8 @@ views.get("/admin", async (req, res) => {
 views.get("/emd-board", async (req, res) => {
   const board = await listEmdBoard();
   const canEdit = [...BOND_MANAGERS, "GROUP_CEO", "REVIEWER"].includes(req.actor!.role);
-  res.json({ ...board, canEdit });
+  const rows = req.actor!.role === "GROUP_CEO" ? board.rows : board.rows.map((row) => ({ ...row, documents: row.documents.filter((doc) => !isSpreadsheet(doc.fileName)) }));
+  res.json({ ...board, rows, canEdit });
 });
 
 /** The EMD / performance bond register for the dashboard. */
@@ -316,6 +318,14 @@ views.get("/tenders/:id", async (req, res) => {
   if (!tender) {
     res.status(404).json({ error: "Tender not found" });
     return;
+  }
+  const ceo = actor.role === "GROUP_CEO";
+  if (!ceo) {
+    const hidden = new Set(tender.documents.filter((doc) => isSpreadsheet(doc.fileName, doc.mimeType)).map((doc) => doc.id));
+    tender.documents = tender.documents.filter((doc) => !hidden.has(doc.id));
+    tender.costings = tender.costings.map((row) => (hidden.has(row.documentId) ? { ...row, documentId: "" } : row));
+    if (tender.emd && hidden.has(tender.emd.documentId)) tender.emd = { ...tender.emd, documentId: "" };
+    if (tender.bid && hidden.has(tender.bid.evidenceDocumentId)) tender.bid = { ...tender.bid, evidenceDocumentId: "" };
   }
   const [users, calendar, settings, fieldEditor, plan] = await Promise.all([
     peopleFor(tender),

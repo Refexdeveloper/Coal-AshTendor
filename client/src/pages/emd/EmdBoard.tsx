@@ -2,7 +2,7 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useActionState } from "react";
 import { documentUrl, useApi } from "@client/api/client";
-import { updateEmdRegisterAction } from "@client/api/actions";
+import { convertEmdToSdAction, updateEmdRegisterAction } from "@client/api/actions";
 import type { ActionState } from "@client/api/action-state";
 import { LoadFailed, Loading } from "@client/components/base/loading";
 import { Submit } from "@client/components/base/submit";
@@ -32,6 +32,7 @@ type Row = {
   pending: number;
   convertedToSd: boolean;
   sdAmount: number | null;
+  remark: string;
   documents: Doc[];
 };
 type Instrument = {
@@ -150,12 +151,45 @@ function EditRow({ row, onDone }: { row: Row; onDone: () => void }) {
   );
 }
 
+function ConvertToSd({ row, onDone }: { row: Row; onDone: () => void }) {
+  const [state, action] = useActionState(async (previous: ActionState, formData: FormData) => {
+    const result = await convertEmdToSdAction(previous, formData);
+    if (result?.ok) onDone();
+    return result;
+  }, null as ActionState);
+  return (
+    <form action={action} className="form-grid bg-add">
+      <input type="hidden" name="tenderId" value={row.tenderId} />
+      <label className="wide">
+        Remark
+        <textarea name="remark" rows={2} required placeholder="Why this EMD is becoming a security deposit" />
+      </label>
+      <label>
+        Security deposit as
+        <select name="instrument" defaultValue="BG" required>
+          <option value="BG">BG</option>
+          <option value="ISB">ISB</option>
+        </select>
+      </label>
+      <label>
+        Security deposit amount
+        <input name="sdAmount" inputMode="decimal" defaultValue={numInput(row.sdAmount ?? row.amount)} required />
+      </label>
+      {state?.error ? <p className="banner bad wide">{state.error}</p> : null}
+      <div className="actions wide">
+        <Submit>Convert to SD</Submit>
+      </div>
+    </form>
+  );
+}
+
 /** EMD while a tender is open: how it was paid, where the tender stands, and what happens to the money afterwards. */
 export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
   const { data, error, reload } = useApi<Data>("/emd-board");
   const [card, setCard] = useState("");
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
+  const [converting, setConverting] = useState<string | null>(null);
   const rows = data?.rows ?? [];
   const instruments = data?.instruments ?? [];
   const needle = query.trim().toLowerCase();
@@ -298,8 +332,27 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
                 <small>{[row.customer || "No customer", row.portal, row.location].filter(Boolean).join(" · ")}</small>
               </div>
               <span className={`dk-pill ${RESULT[row.result].tone}`}>{RESULT[row.result].label}</span>
+              {data.canEdit && !row.convertedToSd ? (
+                <button
+                  type="button"
+                  className={`dk-ghost${converting === row.tenderId ? " is-on" : ""}`}
+                  onClick={() => {
+                    setEditing(null);
+                    setConverting((current) => (current === row.tenderId ? null : row.tenderId));
+                  }}
+                >
+                  {converting === row.tenderId ? "Close" : "Convert to SD"}
+                </button>
+              ) : null}
               {data.canEdit ? (
-                <button type="button" className={`dk-ghost${editing === row.tenderId ? " is-on" : ""}`} onClick={() => setEditing((current) => (current === row.tenderId ? null : row.tenderId))}>
+                <button
+                  type="button"
+                  className={`dk-ghost${editing === row.tenderId ? " is-on" : ""}`}
+                  onClick={() => {
+                    setConverting(null);
+                    setEditing((current) => (current === row.tenderId ? null : row.tenderId));
+                  }}
+                >
                   {editing === row.tenderId ? "Close" : "Edit"}
                 </button>
               ) : null}
@@ -351,13 +404,25 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
                   </dd>
                 </div>
               ) : null}
-              {row.result === "WON" ? (
+              {row.convertedToSd ? (
                 <div>
                   <dt>Security deposit</dt>
-                  <dd>{row.convertedToSd ? `Converted · ${inr(row.sdAmount ?? row.amount)}` : "Not converted"}</dd>
+                  <dd>
+                    Converted · {METHOD[row.method] ?? row.method} · {inr(row.sdAmount ?? row.amount)}
+                    {row.remark ? ` · ${row.remark}` : ""}
+                  </dd>
                 </div>
               ) : null}
             </dl>
+            {converting === row.tenderId ? (
+              <ConvertToSd
+                row={row}
+                onDone={() => {
+                  setConverting(null);
+                  void reload();
+                }}
+              />
+            ) : null}
             {editing === row.tenderId ? (
               <EditRow
                 row={row}

@@ -124,7 +124,7 @@ export function CreateForm() {
           <input
             name="files"
             type="file"
-            accept=".pdf,.txt,.png,.jpg,.jpeg,.webp,.tif,.tiff"
+            accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.tif,.tiff"
             multiple
             required
             onChange={(event) => {

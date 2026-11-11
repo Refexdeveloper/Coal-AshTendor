@@ -169,7 +169,7 @@ function TaskForm({
         <FilePick
           name="file"
           label={task.stage === "DRAFT_COSTING" ? "Costing sheet (optional)" : "Costing sheet (required to complete)"}
-          hint="Excel exported to PDF, a scan or a text file"
+          hint="Excel, PDF, a scan or a text file. An Excel file is stored, and only the Group CEO can open it."
         />
         <div className="actions wide">
           <Submit name="intent" value="cost-complete">
