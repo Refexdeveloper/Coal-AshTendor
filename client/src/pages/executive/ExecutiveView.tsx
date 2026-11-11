@@ -1,6 +1,6 @@
 import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { formatDay, formatWhen } from "@client/utils/calendar";
+import { formatDay, formatWhen, zonedParts } from "@client/utils/calendar";
 import { effectiveValue } from "@client/utils/format";
 import { NOT_FOUND, TENDER_FIELDS } from "@client/lib/fields";
 import { APPROVAL, BID, COSTING, DECISION, EMD, EMD_TYPE, OVERALL, RELEVANCE, ROLES, STAGE } from "@client/lib/labels";
@@ -84,6 +84,7 @@ const CARD_LABEL: Record<string, string> = {
   lost: "Lost tenders",
   eval: "In evaluation",
   due: "Upcoming deadlines",
+  today: "New tenders today",
   rate: "Won and lost tenders",
   active: "Active pipeline",
   costing: "Approved final costing",
@@ -256,9 +257,16 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
   const dueWeek = upcoming.filter((tender) => tender.bidSubmissionEnd!.getTime() - now < 7 * 864e5);
   const overdue = tenders.flatMap((tender) => tender.tasks).filter((task) => task.dueAt && task.dueAt.getTime() < now).length;
   const winRate = won + lost ? Math.round((won / (won + lost)) * 100) : 0;
+  const todayParts = zonedParts(new Date(), tz);
+  const receivedToday = (tender: Row) => {
+    const parts = zonedParts(tender.createdAt, tz);
+    return parts.year === todayParts.year && parts.month === todayParts.month && parts.day === todayParts.day;
+  };
+  const newToday = everyTender.filter(receivedToday);
 
   const cards = [
     { key: "total", label: "Total tenders", fx: "docs" as CardFx, value: tenders.length, note: `${active.length} active tenders`, icon: "doc", tone: "blue", href: stageHref() },
+    { key: "today", label: "New tenders today", fx: "docs" as CardFx, value: newToday.length, note: `Received ${formatDay(new Date(), tz)}`, icon: "calendar", tone: "sky", href: cardHref("today") },
     { key: "bids", label: "Bids submitted", fx: "send" as CardFx, value: bidsSubmitted, note: "Bids submitted", icon: "clock", tone: "violet", href: cardHref("bids") },
     { key: "won", label: "Awarded tenders", fx: "award" as CardFx, value: won, note: "Successfully awarded", icon: "trophy", tone: "green", href: cardHref("won") },
     { key: "lost", label: "Lost tenders", fx: "lost" as CardFx, value: lost, note: "Not awarded", icon: "cross", tone: "red", href: cardHref("lost") },
@@ -279,6 +287,7 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
     if (key === "costing") return tenders.filter((tender) => tender.costingStatus === "APPROVED");
     if (key === "emd") return active.filter((tender) => tender.emdType !== "EXEMPTION");
     if (key === "overdue") return tenders.filter((tender) => tender.tasks.some((task) => task.dueAt && task.dueAt.getTime() < now));
+    if (key === "today") return newToday;
     return null;
   };
   const focused = cardRows(filter.card);
