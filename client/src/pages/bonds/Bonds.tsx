@@ -121,7 +121,8 @@ export function SelectFilter({
 /** What each card narrows the table to. */
 const CARD_ROWS: Record<string, { label: string; match: (row: Row) => boolean; sort?: "premium" | "stamp" | "amount" }> = {
   emd: { label: "EMD surety bonds", match: (row) => row.kind === "EMD" },
-  pb: { label: "PBG (performance) bonds", match: (row) => row.kind === "PERFORMANCE" },
+  pb: { label: "PBG bonds", match: (row) => row.kind === "PERFORMANCE" && !isApbg(row) },
+  apbg: { label: "APBG bonds", match: (row) => isApbg(row) },
   active: { label: "Active bonds", match: (row) => row.health === "active" || row.health === "watch" || row.health === "soon" },
   soon: { label: "Expiring in 30 days", match: (row) => row.health === "soon" },
   watch: { label: "Expiring in 31–90 days", match: (row) => row.health === "watch" },
@@ -175,14 +176,20 @@ export default function BondsPage({ embedded = false, toggle }: { embedded?: boo
   const cardHref = (key: string) => `${path}?${[...keep, `card=${key}`].join("&")}#bond-list`;
   const allHref = `${path}${keep.length ? `?${keep.join("&")}` : ""}#bond-list`;
 
-  const pb = rows.filter((row) => row.kind === "PERFORMANCE");
+  const pbgRows = rows.filter((row) => CARD_ROWS.pb.match(row));
+  const apbgRows = rows.filter((row) => CARD_ROWS.apbg.match(row));
   const soon = rows.filter((row) => row.health === "soon");
   const watch = rows.filter((row) => row.health === "watch");
   const claim = rows.filter((row) => row.health === "claim");
   const live = rows.filter((row) => CARD_ROWS.active.match(row));
 
   const cards = [
-    { key: "pb", label: filter.kind === "APBG" ? "APBG bonds" : "PBG bonds", fx: "award" as CardFx, value: sum(filter.kind === "APBG" ? rows : pb, (row) => row.amount), money: true, note: filter.kind === "APBG" ? `${rows.length} bonds` : `${pb.length} bonds`, icon: "trophy", tone: "violet" },
+    ...(filter.kind === "APBG"
+      ? []
+      : [{ key: "pb", label: "PBG bonds", fx: "award" as CardFx, value: sum(pbgRows, (row) => row.amount), money: true, note: `${pbgRows.length} bonds`, icon: "trophy", tone: "violet" }]),
+    ...(filter.kind === "PERFORMANCE"
+      ? []
+      : [{ key: "apbg", label: "APBG bonds", fx: "trophy" as CardFx, value: sum(apbgRows, (row) => row.amount), money: true, note: `${apbgRows.length} bonds`, icon: "target", tone: "blue" }]),
     { key: "active", label: "Active bonds", fx: "ready" as CardFx, value: live.length, note: inr(sum(live, (row) => row.amount)), icon: "check", tone: "green" },
     { key: "soon", label: "Expiring in 30 days", fx: "hourglass" as CardFx, value: soon.length, note: soon.length ? inr(sum(soon, (row) => row.amount)) : "Nothing due", icon: "hourglass", tone: "red", hot: soon.length > 0 },
     { key: "watch", label: "Expiring in 90 days", fx: "pending" as CardFx, value: watch.length, note: watch.length ? inr(sum(watch, (row) => row.amount)) : "None", icon: "calendar", tone: "sky" },
