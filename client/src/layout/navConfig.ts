@@ -11,7 +11,7 @@ export const NAV: { href: string; label: string; icon: string; roles?: string[] 
   { href: "/reports", label: "Reports", icon: "chart" },
   { href: "/notifications", label: "Notifications", icon: "bell" },
   { href: "/email-logs", label: "Email log", icon: "mail", roles: ["ADMIN"] },
-  { href: "/portals", label: "Portals", icon: "globe", roles: ["ADMIN", "COORDINATOR", "REVIEWER"] },
+  { href: "/portals", label: "Portals", icon: "globe", roles: ["ADMIN", "COORDINATOR", "REVIEWER", "GROUP_CEO"] },
   { href: "/admin", label: "Administration", icon: "gear", roles: ["ADMIN"] },
 ];
 

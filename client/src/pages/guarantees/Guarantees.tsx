@@ -104,9 +104,9 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
 
   const byExpiry = filter.basis === "expiry";
   const period = resolvePeriod(filter.period || "all", undefined, { future: byExpiry });
-  const rows = everyBg.filter((row) => inPeriod(period, byExpiry ? row.current.expiry : row.issueDate));
+  const rows = everyBg.filter((row) => inPeriod(period, byExpiry ? row.current.expiry : row.issueDate) && (!filter.type || row.bgType === filter.type));
   const earliest = everyBg.reduce<Date | null>((min, row) => (row.issueDate && (!min || row.issueDate < min) ? row.issueDate : min), null);
-  const keep = [...fixed, ...["period", "basis"].filter((key) => params.get(key)).map((key) => `${key}=${encodeURIComponent(params.get(key)!)}`)];
+  const keep = [...fixed, ...["period", "basis", "type"].filter((key) => params.get(key)).map((key) => `${key}=${encodeURIComponent(params.get(key)!)}`)];
   const cardHref = (key: string) => `${path}?${[...keep, `card=${key}`].join("&")}#bg-list`;
   const allHref = `${path}${keep.length ? `?${keep.join("&")}` : ""}#bg-list`;
 
@@ -118,8 +118,8 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
   const claim = rows.filter((row) => row.health === "claim");
 
   const cards = [
-    { key: "pbg", label: "PBG", fx: "award" as CardFx, value: sum(pbg, (row) => row.amount), money: true, note: `${pbg.length} performance guarantees`, icon: "trophy", tone: "violet" },
-    { key: "abg", label: "APBG", fx: "trophy" as CardFx, value: sum(abg, (row) => row.current.amount), money: true, note: `${abg.length} advance guarantees`, icon: "target", tone: "blue" },
+    ...(filter.type === "APBG" ? [] : [{ key: "pbg", label: "PBG", fx: "award" as CardFx, value: sum(pbg, (row) => row.amount), money: true, note: `${pbg.length} performance guarantees`, icon: "trophy", tone: "violet" }]),
+    ...(filter.type === "PBG" ? [] : [{ key: "abg", label: "APBG", fx: "trophy" as CardFx, value: sum(abg, (row) => row.current.amount), money: true, note: `${abg.length} advance guarantees`, icon: "target", tone: "blue" }]),
     { key: "active", label: "Active guarantees", fx: "ready" as CardFx, value: live.length, note: inr(sum(live, (row) => row.current.amount)), icon: "check", tone: "green" },
     { key: "soon", label: "Expiring in 30 days", fx: "hourglass" as CardFx, value: soon.length, note: soon.length ? inr(sum(soon, (row) => row.current.amount)) : "Nothing due", icon: "hourglass", tone: "red", hot: soon.length > 0 },
     { key: "watch", label: "Expiring in 90 days", fx: "pending" as CardFx, value: watch.length, note: watch.length ? inr(sum(watch, (row) => row.current.amount)) : "None", icon: "calendar", tone: "sky" },
