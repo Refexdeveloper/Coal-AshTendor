@@ -55,7 +55,7 @@ const STATE_LABEL: Record<StepState, { label: string; tone: string }> = {
 const FIELD_GROUPS: { title: string; icon: string; keys: string[] }[] = [
   { title: "Commercials", icon: "₹", keys: ["estimated_cost", "tender_fee", "emd_fee", "emd_form", "emd_exemption", "performance_bg", "security_deposit", "price_type", "price_variation", "gst", "payment_terms"] },
   { title: "Key dates & terms", icon: "◷", keys: ["bid_submission_end", "bid_opening", "prebid_conference", "hardcopy_submission", "contract_period", "bid_validity", "mobilization"] },
-  { title: "Scope & eligibility", icon: "◈", keys: ["work_description", "scope", "pq_technical", "pq_financial", "jv_allowed", "l1_acceptance", "reverse_auction"] },
+  { title: "Scope & eligibility", icon: "◈", keys: ["tender_category", "work_description", "scope", "pq_technical", "pq_financial", "jv_allowed", "l1_acceptance", "reverse_auction"] },
   { title: "Risk & obligations", icon: "⚠", keys: ["penalties", "liquidated_damages", "penalty_recovery", "defect_liability", "quantity_deviation", "measurement_mode", "load_measurement"] },
   { title: "Portal & contacts", icon: "☏", keys: ["gem_ref", "portal_registration", "submission_mode", "hardcopy_required", "envelope_count", "contact_person", "contact_details"] },
 ];

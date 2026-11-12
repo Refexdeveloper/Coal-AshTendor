@@ -645,6 +645,22 @@ export async function updateFields(actor: Actor, tenderId: string, values: Recor
   if (CLOSED_OVERALL.includes(tender.overallStatus) && !missed) throw new WorkflowError("Closed tenders keep their recorded fields.");
   if (!(await canEditFields(actor, tenderId))) throw new WorkflowError("Only the Tender Coordinator, a reviewer, the person on the current stage, or the bid submitter after validation is submitted can correct these fields.");
   const changes: string[] = [];
+  for (const definition of TENDER_FIELDS) {
+    if (tender.fields.some((field: { fieldKey: string }) => field.fieldKey === definition.key)) continue;
+    if (!(definition.key in values)) continue;
+    const created = await db.tenderField.create({
+      data: {
+        tenderId,
+        fieldNo: definition.no,
+        fieldKey: definition.key,
+        label: definition.label,
+        critical: Boolean(definition.critical),
+        correctedValue: "",
+        validationStatus: "MISSING",
+      },
+    });
+    tender.fields.push(created);
+  }
   for (const field of tender.fields) {
     if (!(field.fieldKey in values)) continue;
     const next = values[field.fieldKey].trim();
@@ -1412,6 +1428,38 @@ export async function attachEmdDocuments(actor: Actor, tenderId: string, files: 
     stored.push(file.name);
   }
   if (stored.length) await audit(db, { tenderId, actor, action: "Uploaded EMD documents", entity: "TenderDocument", detail: stored.join(", ") });
+  return stored.length;
+}
+
+/**
+ * Stores documents fetched from the tender's source (e.g. the files a GeM bid links to) as-is. No role check: the
+ * caller is the import that created the tender. PDF text is kept for search; no OCR, so they do not overwrite fields.
+ */
+export async function attachSourceDocuments(actor: Actor, tenderId: string, files: { name: string; type: string; buffer: Buffer }[], docType = "SUPPORTING") {
+  const stored: string[] = [];
+  for (const file of files) {
+    const hash = sha256(file.buffer);
+    if (await db.tenderDocument.findFirst({ where: { tenderId, sha256: hash } })) continue;
+    const storedPath = await storeFile(tenderId, file.name, file.buffer);
+    const isPdf = file.type === "application/pdf";
+    const extracted = isPdf ? await pagesFromBuffer(file.buffer, file.type, file.name).catch(() => ({ pages: [] as string[] })) : { pages: [] as string[] };
+    const version = (await db.tenderDocument.count({ where: { tenderId, docType } })) + 1;
+    await createDocument({
+      tenderId,
+      fileName: file.name,
+      storedPath,
+      mimeType: file.type || "application/octet-stream",
+      sizeBytes: file.buffer.length,
+      sha256: hash,
+      docType,
+      version,
+      uploadedById: actor.id,
+      textExtract: extracted.pages.join("\n\f").slice(0, 150000),
+      pageCount: extracted.pages.length,
+    });
+    stored.push(file.name);
+  }
+  if (stored.length) await audit(db, { tenderId, actor, action: "Attached linked documents", entity: "TenderDocument", detail: stored.join(", ") });
   return stored.length;
 }
 

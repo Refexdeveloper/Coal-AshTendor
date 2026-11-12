@@ -12,7 +12,7 @@ const GAP = 14;
 type Size = { width: number; height: number };
 
 /** Reader for the tender notice: one scrolling column, fit-to-width, page jump, zoom, search and a full-screen mode. */
-export default function PdfViewer({ src, name }: { src: string; name: string }) {
+export default function PdfViewer({ src, name, onLink }: { src: string; name: string; onLink?: (url: string) => void }) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [sizes, setSizes] = useState<Size[]>([]);
   const [failed, setFailed] = useState(false);
@@ -269,6 +269,7 @@ export default function PdfViewer({ src, name }: { src: string; name: string }) 
                 needle={needle}
                 active={hitPages[hit] === i + 1}
                 root={scroller}
+                onLink={onLink}
               />
             ))
           ) : null}
@@ -298,6 +299,8 @@ function Tool({ label, onClick, disabled, children }: { label: string; onClick: 
 }
 
 /** One page: a sized placeholder that draws itself (canvas plus selectable text) once it nears the viewport. */
+type HotLink = { url: string; left: number; top: number; width: number; height: number };
+
 function PdfPage({
   pdf,
   number,
@@ -307,6 +310,7 @@ function PdfPage({
   needle,
   active,
   root,
+  onLink,
 }: {
   pdf: PDFDocumentProxy;
   number: number;
@@ -316,12 +320,14 @@ function PdfPage({
   needle: string;
   active: boolean;
   root: React.RefObject<HTMLDivElement | null>;
+  onLink?: (url: string) => void;
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const textBox = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(false);
   const [drawn, setDrawn] = useState("");
+  const [links, setLinks] = useState<HotLink[]>([]);
 
   useEffect(() => {
     const node = holder.current;
@@ -358,7 +364,18 @@ function PdfPage({
       textBox.current.replaceChildren();
       textLayer = new TextLayer({ textContentSource: p.streamTextContent(), container: textBox.current, viewport });
       await textLayer.render().catch(() => undefined);
-      if (!cancelled) setDrawn(key);
+      const annotations = (await p.getAnnotations().catch(() => [])) as { subtype?: string; url?: string; unsafeUrl?: string; rect?: number[] }[];
+      const boxes: HotLink[] = [];
+      for (const ann of annotations) {
+        const url = ann.url || ann.unsafeUrl;
+        if (ann.subtype !== "Link" || !url || !ann.rect) continue;
+        const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(ann.rect);
+        boxes.push({ url, left: Math.min(x1, x2), top: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) });
+      }
+      if (!cancelled) {
+        setLinks(boxes);
+        setDrawn(key);
+      }
     });
     return () => {
       cancelled = true;
@@ -388,6 +405,24 @@ function PdfPage({
     >
       <canvas ref={canvas} style={{ width, height }} />
       <div ref={textBox} className="textLayer" />
+      {onLink && links.length ? (
+        <div className="pdfv-links">
+          {links.map((box, index) => (
+            <button
+              key={`${box.url}-${index}`}
+              type="button"
+              className="pdfv-link"
+              style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
+              title="Open this document here"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onLink(box.url);
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
       {drawn ? null : <span className="pdfv-page-loading">Page {number}</span>}
       <span className="pdfv-page-no">{number}</span>
     </div>

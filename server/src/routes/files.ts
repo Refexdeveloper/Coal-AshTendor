@@ -82,6 +82,35 @@ files.get("/bg-documents/:id", requireActor, async (req, res) => {
   }
 });
 
+/** The documents a GeM bid PDF links to (ATC, BOQ, specification, buyer uploads). Signed-in users only. */
+files.get("/gem-bids/:id/links", requireActor, async (req, res) => {
+  try {
+    const { readGemBidLinks } = await import("../services/gem");
+    res.json({ links: await readGemBidLinks(String(req.params.id)) });
+  } catch (error) {
+    res.status(404).json({ error: error instanceof Error ? error.message : "Links not available" });
+  }
+});
+
+/** One linked document of a GeM bid, fetched from GeM. `?download=1` saves it instead of showing it. */
+files.get("/gem-bids/:id/linked/:index", requireActor, async (req, res) => {
+  try {
+    const { readGemLinked } = await import("../services/gem");
+    const file = await readGemLinked(String(req.params.id), Number(req.params.index));
+    const inline = file.type === "application/pdf" && req.query.download !== "1";
+    res.set({
+      "Content-Type": file.type,
+      "Content-Length": String(file.buffer.length),
+      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${file.name.replace(/[^\x20-\x7e]|"/g, "")}"`,
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, max-age=300",
+    });
+    res.send(file.buffer);
+  } catch (error) {
+    res.status(404).send(error instanceof Error ? error.message : "Document not available");
+  }
+});
+
 /** A GeM bid's PDF, fetched from GeM for the expand-row viewer. Signed-in users only. */
 files.get("/gem-bids/:id/document", requireActor, async (req, res) => {
   try {

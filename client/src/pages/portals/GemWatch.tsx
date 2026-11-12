@@ -1,4 +1,4 @@
-import { Fragment, lazy, Suspense, useEffect, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiUrl } from "@client/api/client";
 import { formatWhen } from "@client/utils/calendar";
@@ -22,7 +22,10 @@ export type GemBid = {
   tenderId: string;
   error: string;
   firstSeenAt: Date;
+  /** JSON list of the documents the bid PDF links to, once read. */
+  links?: string | null;
 };
+type GemLink = { url: string; label: string; ext: string; v?: number };
 type GemRun = { id: string; startedAt: Date; finishedAt: Date | null; status: string; discovered: number; errorSummary: string };
 export type GemData = {
   portal: Portal & { excludeWords: string; autoImport: boolean; maxPages: number; maxImports: number };
@@ -52,6 +55,140 @@ const RUN_TONE: Record<string, string> = { SUCCESS: "good", PARTIAL: "warn", FAI
 const GEM = "https://bidplus.gem.gov.in";
 const docPath = (bid: GemBid) => (bid.bidType === 5 ? "showdirectradocumentPdf" : bid.bidType === 2 ? "showradocumentPdf" : "showbidDocument");
 
+const EXT_TONE: Record<string, string> = { pdf: "pdf", csv: "sheet", xls: "sheet", xlsx: "sheet", doc: "word", docx: "word" };
+
+/** Prefer the name printed in the bid ("Scope of Work") over "Buyer document 3". */
+function linkName(link: GemLink) {
+  if (link.label && !/^Buyer document\b/.test(link.label) && link.label !== "Linked document") return link.label;
+  try {
+    const file = decodeURIComponent(new URL(link.url).pathname).split("/").filter(Boolean).pop() ?? "";
+    if (/\.[a-z0-9]{2,5}$/i.test(file)) return file;
+  } catch {
+    /* keep the stored label */
+  }
+  return link.label;
+}
+
+function unnamed(links: GemLink[]) {
+  return links.some((link) => /^Buyer document\b/.test(link.label) || link.label === "Linked document");
+}
+
+function sameFile(a: string, b: string) {
+  if (a === b) return true;
+  try {
+    const left = new URL(a);
+    const right = new URL(b);
+    if (left.href === right.href) return true;
+    const name = (url: URL) => decodeURIComponent(url.pathname).split("/").filter(Boolean).pop() ?? "";
+    const file = name(left);
+    return Boolean(file) && file === name(right);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The bid PDF plus the documents it links to (ATC, BOQ, specification, buyer uploads). PDFs open in the viewer,
+ * other files download. The links are read from the bid PDF on first open and kept on the bid.
+ */
+function BidDocuments({ bid }: { bid: GemBid }) {
+  const stored = (() => {
+    try {
+      const list = bid.links ? (JSON.parse(bid.links) as GemLink[]) : null;
+      // A list saved before the bid's own document names were read is fetched again.
+      return list && list.every((link) => link.v === 2) ? list : null;
+    } catch {
+      return null;
+    }
+  })();
+  const [links, setLinks] = useState<GemLink[] | null>(stored);
+  const [error, setError] = useState("");
+  const [shown, setShown] = useState(-1); // -1 = the bid document itself
+  const pending = useRef("");
+  const refreshed = useRef(false);
+  const base = `/gem-bids/${encodeURIComponent(bid.id)}`;
+
+  useEffect(() => {
+    if (links && !unnamed(links)) return;
+    if (links && refreshed.current) return;
+    refreshed.current = true;
+    let live = true;
+    fetch(apiUrl(`${base}/links`), { credentials: "include" })
+      .then(async (response) => {
+        const body = (await response.json().catch(() => ({}))) as { links?: GemLink[]; error?: string };
+        if (!live) return;
+        if (!response.ok) setError(body.error ?? "Could not read the linked documents.");
+        else setLinks(body.links ?? []);
+      })
+      .catch(() => live && setError("Could not reach the server for the linked documents."));
+    return () => {
+      live = false;
+    };
+  }, [base, links]);
+
+  const current = shown >= 0 && links ? links[shown] : null;
+  const openLinked = (url: string) => {
+    if (!links) {
+      pending.current = url;
+      return;
+    }
+    const index = links.findIndex((link) => sameFile(link.url, url));
+    if (index < 0) return;
+    const link = links[index];
+    if (link.ext === "pdf") {
+      setShown(index);
+      return;
+    }
+    const save = document.createElement("a");
+    save.href = apiUrl(`${base}/linked/${index}?download=1`);
+    save.rel = "noreferrer";
+    save.click();
+  };
+  useEffect(() => {
+    if (!pending.current || !links) return;
+    const url = pending.current;
+    pending.current = "";
+    const index = links.findIndex((link) => sameFile(link.url, url));
+    if (index >= 0 && links[index].ext === "pdf") setShown(index);
+  }, [links]);
+  return (
+    <div className="gem-docs">
+      <div className="gem-links" role="list">
+        <button type="button" role="listitem" className={`gem-link pdf${shown === -1 ? " is-on" : ""}`} onClick={() => setShown(-1)}>
+          <span className="gem-link-ext">PDF</span>
+          <span>Bid document</span>
+        </button>
+        {links === null && !error ? <span className="gem-links-note">Reading linked documents…</span> : null}
+        {error ? <span className="gem-links-note text-bad">{error}</span> : null}
+        {links && !links.length ? <span className="gem-links-note">No linked documents in this bid.</span> : null}
+        {links?.map((link, index) =>
+          link.ext === "pdf" ? (
+            <button key={link.url} type="button" role="listitem" className={`gem-link pdf${shown === index ? " is-on" : ""}`} onClick={() => setShown(index)} title={link.label}>
+              <span className="gem-link-ext">PDF</span>
+              <span className="gem-link-name">{linkName(link)}</span>
+            </button>
+          ) : (
+            <a key={link.url} role="listitem" className={`gem-link ${EXT_TONE[link.ext] ?? "other"}`} href={apiUrl(`${base}/linked/${index}?download=1`)} title={`Download · ${linkName(link)}`}>
+              <span className="gem-link-ext">{link.ext.toUpperCase()}</span>
+              <span className="gem-link-name">{linkName(link)}</span>
+              <span className="gem-link-dl" aria-hidden="true">↓</span>
+            </a>
+          ),
+        )}
+      </div>
+      <div className="preview gem-doc">
+        <Suspense fallback={<div className="pdfv-state">Loading the document…</div>}>
+          {current ? (
+            <PdfViewer key={current.url} src={apiUrl(`${base}/linked/${shown}`)} name={`${linkName(current)} - ${bid.bidNumber}.pdf`} onLink={openLinked} />
+          ) : (
+            <PdfViewer key="bid" src={apiUrl(`${base}/document`)} name={`${bid.bidNumber}.pdf`} onLink={openLinked} />
+          )}
+        </Suspense>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The GeM bid watch for administrators: settings, a manual pass, run history and the bids found,
  * with Import / Ignore for each. While a pass runs the page refreshes itself.
@@ -61,6 +198,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
   const [editing, setEditing] = useState(false);
   const [query, setQuery] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [allKeywords, setAllKeywords] = useState(false);
   const [openId, setOpenId] = useState("");
   const { portal, runs, bids, tenders, running, progress } = gem;
   const [, tick] = useState(0);
@@ -122,8 +260,9 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
       </header>
 
       <div className="gem-chips">
-        <span className="gem-chip-label">Keywords</span>
-        {keywords.map((word) => (
+        <span className="gem-chip-label">Keywords ({keywords.length})</span>
+        {/* Over 250 keywords: the first few show, the rest on request. */}
+        {(allKeywords ? keywords : keywords.slice(0, 20)).map((word) => (
           <span key={word} className="gem-chip">
             {word}
             {canKeywords ? (
@@ -137,6 +276,11 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
             ) : null}
           </span>
         ))}
+        {keywords.length > 20 ? (
+          <button type="button" className="gem-chip more" onClick={() => setAllKeywords((value) => !value)}>
+            {allKeywords ? "Show fewer" : `Show all ${keywords.length}`}
+          </button>
+        ) : null}
         {excludes.length ? <span className="gem-chip-label">Excluding</span> : null}
         {excludes.map((word) => (
           <span key={word} className="gem-chip off">
@@ -347,11 +491,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                 {open ? (
                   <tr className="gem-doc-row">
                     <td colSpan={7}>
-                      <div className="preview gem-doc">
-                        <Suspense fallback={<div className="pdfv-state">Loading the document…</div>}>
-                          <PdfViewer src={apiUrl(`/gem-bids/${encodeURIComponent(bid.id)}/document`)} name={`${bid.bidNumber}.pdf`} />
-                        </Suspense>
-                      </div>
+                      <BidDocuments bid={bid} />
                     </td>
                   </tr>
                 ) : null}

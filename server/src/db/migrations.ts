@@ -16,6 +16,7 @@ const ADDED_COLUMNS: Record<string, [string, string][]> = {
     ["sdAmount", "DOUBLE NULL"],
     ["convertedToSd", "BOOLEAN NOT NULL DEFAULT false"],
   ],
+  GemBid: [["links", "LONGTEXT NULL"]],
   Portal: [
     ["excludeWords", "TEXT NULL"],
     ["autoImport", "BOOLEAN NOT NULL DEFAULT true"],
@@ -182,4 +183,11 @@ export async function migrate() {
     const rows = (await run(`SHOW INDEX FROM \`${table}\` WHERE Key_name = '${index}'`).catch(() => [])) as unknown[];
     if (!rows.length) await run(`ALTER TABLE \`${table}\` ADD KEY \`${index}\` ${columns}`).catch(() => undefined);
   }
+  // Field 45 arrived after tenders already had their 44 rows. Add the empty category where it is missing.
+  await run(
+    `INSERT INTO \`TenderField\` (\`id\`, \`tenderId\`, \`fieldNo\`, \`fieldKey\`, \`label\`, \`extractedValue\`, \`correctedValue\`, \`sourceDocumentId\`, \`sourcePage\`, \`validationStatus\`, \`conflictNote\`, \`correctedById\`, \`critical\`)
+     SELECT REPLACE(UUID(), '-', ''), t.\`id\`, 45, 'tender_category', 'Tender category', '', '', '', '', 'MISSING', '', '', 0
+     FROM \`Tender\` t
+     WHERE NOT EXISTS (SELECT 1 FROM \`TenderField\` f WHERE f.\`tenderId\` = t.\`id\` AND f.\`fieldKey\` = 'tender_category')`,
+  ).catch(() => undefined);
 }

@@ -67,6 +67,7 @@ const SHORT: Record<string, [string, string]> = {
 const DECISION_SUBJECT: Record<string, string> = { RELEVANCE: "Relevance", DEPT_APPROVAL: "Costing", FINAL_COSTING: "Final costing", EMD_CLARIFICATION: "EMD clarification" };
 
 const FIELD_SECTIONS = [
+  [45, 45, "Category"],
   [1, 6, "Identity"],
   [7, 10, "Dates"],
   [11, 16, "Commercial"],
@@ -75,7 +76,44 @@ const FIELD_SECTIONS = [
   [31, 44, "Contract conditions"],
 ] as const;
 
-const FILTER_KEYS = ["period", "basis", "q", "client", "emd", "owner", "portal", "group", "card"] as const;
+const FILTER_KEYS = ["period", "basis", "q", "client", "emd", "owner", "portal", "group", "card", "line"] as const;
+
+/** Business lines on the tender dashboard. A tender is counted in the first line its title or scope matches. */
+const LINES: { key: string; label: string }[] = [
+  { key: "ob", label: "OB" },
+  { key: "coal", label: "Coal" },
+  { key: "supply", label: "Supply of coal" },
+  { key: "om", label: "O&M" },
+  { key: "ash", label: "Sale of Ash" },
+  { key: "auction", label: "Auction" },
+];
+
+const CATEGORY_KEY: Record<string, string> = {
+  OB: "ob",
+  Coal: "coal",
+  "Supply of coal": "supply",
+  "O&M": "om",
+  "Sale of Ash": "ash",
+  Auction: "auction",
+};
+
+function tenderLine(tender: { projectName: string; fields?: { fieldKey: string; correctedValue: string; extractedValue: string }[] }) {
+  const chosen = tender.fields?.find((field) => field.fieldKey === "tender_category");
+  const saved = (chosen?.correctedValue || chosen?.extractedValue || "").trim();
+  if (CATEGORY_KEY[saved]) return CATEGORY_KEY[saved];
+  const bits = [tender.projectName];
+  for (const field of tender.fields ?? []) {
+    if (field.fieldKey === "project_name" || field.fieldKey === "work_description" || field.fieldKey === "scope") bits.push(field.correctedValue || field.extractedValue);
+  }
+  const text = bits.join(" ");
+  if (/\bsupply of coal\b|\bcoal supply\b/i.test(text)) return "supply";
+  if (/\bsale of (fly |pond |bottom )?ash\b|\bash sale\b/i.test(text)) return "ash";
+  if (/\bo\s*&\s*m\b|\bo\s+and\s+m\b|operation(?:s)? (?:and|&) maintenance/i.test(text)) return "om";
+  if (/\bauction\b/i.test(text)) return "auction";
+  if (/\boverburden\b|\bob removal\b|\bremoval of ob\b|\bob\b/i.test(text)) return "ob";
+  if (/\bcoal\b/i.test(text)) return "coal";
+  return "";
+}
 
 /** Figure and pipeline cards. Each key is the same set the card counts, shown in the table below. */
 const CARD_LABEL: Record<string, string> = {
@@ -224,7 +262,9 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
   const byDeadline = filter.basis === "deadline";
   const ownersOf = (tender: Row) => new Set(tender.tasks.flatMap((task) => JSON.parse(task.assigneeIds) as string[]));
   const needle = filter.q.trim().toLowerCase();
-  const tenders = everyTender.filter((tender) => {
+  const lineLabel = LINES.find((item) => item.key === filter.line)?.label ?? "";
+  const lineUniverse = filter.line ? everyTender.filter((tender) => tenderLine(tender) === filter.line) : everyTender;
+  const tenders = lineUniverse.filter((tender) => {
     if (!inPeriod(period, byDeadline ? tender.bidSubmissionEnd : tender.createdAt)) return false;
     if (filter.client && tender.clientName !== filter.client) return false;
     if (filter.emd && tender.emdType !== filter.emd) return false;
@@ -262,7 +302,7 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
     const parts = zonedParts(tender.createdAt, tz);
     return parts.year === todayParts.year && parts.month === todayParts.month && parts.day === todayParts.day;
   };
-  const newToday = everyTender.filter(receivedToday);
+  const newToday = lineUniverse.filter(receivedToday);
 
   const cards = [
     { key: "total", label: "Total tenders", fx: "docs" as CardFx, value: tenders.length, note: `${active.length} active tenders`, icon: "doc", tone: "blue", href: stageHref() },
@@ -364,6 +404,18 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
           {toggle}
           <PeriodPicker value={filter.period || "all"} onChange={(key) => setFilter("period", key)} earliest={earliest} compact align="right" />
         </div>
+        <nav className="isb-switch line-switch" aria-label="Tender category">
+          <button type="button" className={filter.line ? "" : "is-on"} onClick={() => setFilter("line", "")}>
+            All
+            <small>{everyTender.length}</small>
+          </button>
+          {LINES.map((item) => (
+            <button key={item.key} type="button" className={filter.line === item.key ? "is-on" : ""} onClick={() => setFilter("line", item.key)}>
+              {item.label}
+              <small>{everyTender.filter((tender) => tenderLine(tender) === item.key).length}</small>
+            </button>
+          ))}
+        </nav>
       </section>
 
       <section className="dk-cards" aria-label="Tender figures">
@@ -522,7 +574,8 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
         </button>
         <div className="dk-showing">
           <p>
-            Showing <b>{filter.card || selected ? rows.length : tenders.length}</b> of {everyTender.length} tenders
+            Showing <b>{filter.card || selected ? rows.length : tenders.length}</b> of {lineUniverse.length} tenders
+            {lineLabel ? ` · ${lineLabel}` : ""}
             {focusLabel ? ` · ${focusLabel}` : ""}
             {period.from ? ` · ${byDeadline ? "bid deadline" : "received"} ${period.detail}` : ""}
           </p>

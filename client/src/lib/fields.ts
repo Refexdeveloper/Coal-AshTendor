@@ -15,6 +15,14 @@ export type FieldDef = {
 
 export const TENDER_FIELDS: FieldDef[] = [
   { no: 1, key: "project_name", label: "Name of the Project", type: "text", critical: true, synonyms: ["Project name", "Name of work"] },
+  {
+    no: 45,
+    key: "tender_category",
+    label: "Tender category",
+    type: "choice",
+    options: ["OB", "Coal", "Supply of coal", "O&M", "Sale of Ash", "Auction"],
+    synonyms: ["Category", "Business category", "Tender type"],
+  },
   { no: 2, key: "tender_ref", label: "Tender reference number", type: "text", critical: true, synonyms: ["Tender reference", "NIT reference"] },
   { no: 3, key: "tender_id", label: "Tender ID", type: "text", critical: true, synonyms: ["Tender no", "NIT no", "NIT number"] },
   { no: 4, key: "client_name", label: "Client name", type: "text", critical: true, synonyms: ["Name of client", "Employer"] },

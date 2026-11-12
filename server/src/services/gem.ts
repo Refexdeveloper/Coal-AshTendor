@@ -1,5 +1,6 @@
 import { db } from "../db";
-import { createTender, type Actor } from "./domain";
+import { attachSourceDocuments, createTender, type Actor } from "./domain";
+import { FIRST_EXCLUDES, FIRST_KEYWORDS, GEM_EXCLUDES, GEM_KEYWORDS } from "./gem-keywords";
 
 /**
  * GeM bid watch. Searches the open bids on bidplus.gem.gov.in ("All Bids") for each keyword, keeps the bids whose
@@ -15,9 +16,9 @@ const UA = "Mozilla/5.0 (compatible; CoalAshTenderWatch/1.0; +https://refex.co.i
 const PAUSE_MS = 400;
 
 export const GEM_PORTAL_NAME = "GeM — All Bids";
-export const DEFAULT_KEYWORDS = ["Pond Ash", "Fly Ash", "Ash transportation", "Coal Transportation", "NHAI Road Projects", "Low lying areas", "Mines filling"];
+export const DEFAULT_KEYWORDS = GEM_KEYWORDS;
 /** Product purchases that only mention ash, and road toll work that only mentions NHAI. */
-export const DEFAULT_EXCLUDES = ["cement", "brick", "bricks", "portland", "ppc", "toll", "fee plaza", "user fee"];
+export const DEFAULT_EXCLUDES = GEM_EXCLUDES;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const splitList = (value: string) =>
@@ -43,18 +44,26 @@ export function bidTitle(doc: GemDoc) {
   return [first(doc, "bd_category_name") ?? first(doc, "b_category_name") ?? "", first(doc, "bbt_title") ?? ""].filter(Boolean).join(" · ");
 }
 
+const STOPWORDS = new Set(["of", "and", "from", "to", "by", "for", "the", "in", "on", "with", "at", "through", "into", "between", "a", "an"]);
+const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /**
- * A bid matches when its title holds the keyword: the whole phrase, or every word of it as the start of a word
- * ("Transportation of ash" matches "Ash transportation"). Long keywords match on their first two words, so
- * "NHAI Road Projects" also catches titles that just say "NHAI road".
+ * A bid matches when its title holds the keyword as a whole phrase, or holds its meaningful words (not "of", "and",
+ * "by"…) as words in any order: all of them for keywords of up to three such words, the first three for longer ones.
+ * "Transportation of ash" matches "Ash transportation"; a plural matches its singular ("tippers" ~ "tipper").
+ * Short acronyms such as CHP or AHP only match as whole words.
  */
 export function matches(title: string, keyword: string) {
   const text = title.toLowerCase();
   const phrase = keyword.toLowerCase().trim();
-  if (text.includes(phrase)) return true;
-  const words = phrase.split(/\s+/).filter((word) => word.length > 1);
-  const core = words.length > 2 ? words.slice(0, 2) : words;
-  return core.length > 1 && core.every((word) => new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(text));
+  if (!phrase) return false;
+  if (new RegExp(`(^|[^a-z0-9])${escape(phrase)}($|[^a-z0-9])`).test(text)) return true;
+  const words = phrase.split(/\s+/).filter((word) => word.length > 1 && !STOPWORDS.has(word));
+  if (words.length < 2) return false;
+  return words.slice(0, 3).every((word) => {
+    const stem = word.length > 4 && word.endsWith("s") ? word.slice(0, -1) : word;
+    return new RegExp(`(^|[^a-z0-9])${escape(stem)}`).test(text);
+  });
 }
 
 export function excludedBy(title: string, excludes: string[]) {
@@ -107,6 +116,170 @@ async function downloadBidDocument(doc: GemDoc) {
   return { name: `${number}.pdf`, type: "application/pdf", buffer: bytes };
 }
 
+/** A document the bid PDF links to: the buyer's uploads, the ATC, the BOQ and the technical specification. */
+export type GemLink = { url: string; label: string; ext: string; v?: number };
+/** Bumped when the naming changes, so lists stored earlier are read again. */
+const LINK_NAMING = 2;
+
+/** Hosts GeM keeps bid attachments on. Only these are fetched, so a link in a PDF can never point the server elsewhere. */
+const LINK_HOSTS = ["bidplus.gem.gov.in", "fulfilment.gem.gov.in", "mkp.gem.gov.in"];
+const MAX_LINKED_BYTES = 20 * 1024 * 1024;
+
+function linkLabel(url: URL) {
+  const path = decodeURIComponent(url.pathname + url.search).toLowerCase();
+  if (/atc_/.test(path)) return "ATC (additional terms)";
+  if (/technical_specification|specification/.test(path)) return "Technical specification";
+  if (/boq_item|boqlineitems|\/excel\//.test(path)) return "BOQ";
+  if (/biddoc/.test(path)) return "Buyer document";
+  if (/corrigendum/.test(path)) return "Corrigendum";
+  // The bid prints this one as "Buyer uploaded ATC document Click here to view the file".
+  if (url.hostname === "fulfilment.gem.gov.in") return "Buyer uploaded ATC document";
+  return "Linked document";
+}
+
+/**
+ * Titles printed in the bid next to each file, such as "Scope of Work:1794466546.pdf" or "PRICE SCHEDULE - 1793273784.xlsx".
+ * A title that wraps ("…as per their" / "requirement:1793944326.pdf") is joined back from the lines above it.
+ */
+async function documentTitles(pdf: Buffer) {
+  const titles = new Map<string, string>();
+  try {
+    const { extractText } = await import("unpdf");
+    const result = await extractText(new Uint8Array(pdf), { mergePages: true });
+    const text = Array.isArray(result.text) ? result.text.join("\n") : String(result.text ?? "");
+    const lines = text.split(/\n/).map((line) => line.trim());
+    // A line above ends the title when it is a finished entry, a section heading, a page number or Hindi text.
+    const stops = (line: string) =>
+      !line || /\d{6,}\.(?:pdf|xlsx?|csv|docx?|zip)$/i.test(line) || /required\s*:?$/i.test(line) || /^\d+\s*\/\s*\d+$/.test(line) || /[:.]$/.test(line) || /[^\x20-\x7e]/.test(line);
+    lines.forEach((line, index) => {
+      const match = /^(.*?)\s*(?:[:\-–]\s*)?(\d{6,}\.(?:pdf|xlsx?|csv|docx?|zip))\s*$/i.exec(line);
+      if (!match) return;
+      const own = match[1].replace(/\s*[:\-–]\s*$/, "").trim();
+      if (!own) return; // a bare file name under the work title: the generic label is clearer
+      const parts = [own];
+      // Only a title that starts mid-sentence ("requirement", "download …") carries on from the line above.
+      for (let up = index - 1; up >= Math.max(0, index - 3) && /^[a-z]/.test(parts[0]) && !stops(lines[up]); up -= 1) parts.unshift(lines[up]);
+      const title = parts.join(" ").replace(/\s+/g, " ").trim();
+      if (!title || /https?:/i.test(title) || title.length > 220) return;
+      const file = match[2].toLowerCase();
+      if (!titles.has(file)) titles.set(file, title);
+    });
+  } catch {
+    /* keep the generic label when the bid text cannot be read */
+  }
+  return titles;
+}
+
+function fileNameOf(url: string) {
+  try {
+    return decodeURIComponent(new URL(url).pathname).split("/").filter(Boolean).pop()?.toLowerCase() ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** A stored list still using "Buyer document" has not picked up the names printed in the bid. */
+function unnamed(links: GemLink[]) {
+  return links.some((link) => link.v !== LINK_NAMING);
+}
+
+/** The attachment links written into a bid PDF, in order, without repeats. GeM's generic GTC and web pages are left out. */
+export async function bidLinks(pdf: Buffer): Promise<GemLink[]> {
+  const text = pdf.toString("latin1");
+  const seen = new Set<string>();
+  const links: GemLink[] = [];
+  for (const match of text.matchAll(/\/URI\s*\(((?:\\.|[^\\)])*)\)/g)) {
+    const raw = match[1].replace(/\\(.)/g, "$1").trim();
+    let url: URL;
+    try {
+      url = new URL(raw);
+    } catch {
+      continue;
+    }
+    if (url.protocol !== "https:" || !LINK_HOSTS.includes(url.hostname)) continue;
+    const full = decodeURIComponent(url.pathname + url.search);
+    const ext = (full.match(/\.(pdf|xlsx?|csv|docx?|zip|jpe?g|png)$/i)?.[1] ?? "").toLowerCase();
+    if (!ext) continue; // bid pages and download forms, not files
+    if (seen.has(url.href)) continue;
+    seen.add(url.href);
+    links.push({ url: url.href, label: linkLabel(url), ext, v: LINK_NAMING });
+  }
+  const titles = await documentTitles(pdf);
+  for (const link of links) {
+    const title = titles.get(fileNameOf(link.url));
+    if (title) link.label = title;
+  }
+  // Number repeated labels: Buyer document 1, Buyer document 2.
+  const counts = new Map<string, number>();
+  for (const link of links) counts.set(link.label, (counts.get(link.label) ?? 0) + 1);
+  const index = new Map<string, number>();
+  for (const link of links) {
+    if ((counts.get(link.label) ?? 0) < 2) continue;
+    const n = (index.get(link.label) ?? 0) + 1;
+    index.set(link.label, n);
+    link.label = `${link.label} ${n}`;
+  }
+  return links;
+}
+
+/** The links of a stored bid. Read from its PDF the first time and kept on the row. */
+export async function readGemBidLinks(id: string): Promise<GemLink[]> {
+  const bid = await db.gemBid.findUnique({ where: { id } });
+  if (!bid) throw new Error("That GeM bid is not in the list.");
+  if (bid.links) {
+    try {
+      const stored = JSON.parse(bid.links) as GemLink[];
+      if (!unnamed(stored)) return stored;
+    } catch {
+      /* read again below */
+    }
+  }
+  const doc = JSON.parse(bid.raw || "{}") as GemDoc;
+  if (!doc.id && !first(doc, "b_id")) return [];
+  const file = await downloadBidDocument(doc);
+  const links = await bidLinks(file.buffer);
+  await db.gemBid.update({ where: { id }, data: { links: JSON.stringify(links) } });
+  return links;
+}
+
+const LINK_TYPES: Record<string, string> = {
+  pdf: "application/pdf",
+  csv: "text/csv",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  zip: "application/zip",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+};
+
+/** Downloads one linked document. Only GeM hosts, at most 20 MB. */
+export async function downloadLinked(link: GemLink, bidNumber: string) {
+  const url = new URL(link.url);
+  if (url.protocol !== "https:" || !LINK_HOSTS.includes(url.hostname)) throw new Error("That link is not a GeM document.");
+  const response = await fetch(url, { headers: { "User-Agent": UA }, redirect: "follow" });
+  if (!response.ok) throw new Error(`GeM answered ${response.status} for ${link.label}.`);
+  if (/text\/html/i.test(response.headers.get("content-type") ?? "")) throw new Error(`${link.label} is a web page, not a file.`);
+  const size = Number(response.headers.get("content-length") ?? 0);
+  if (size > MAX_LINKED_BYTES) throw new Error(`${link.label} is larger than 20 MB.`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > MAX_LINKED_BYTES) throw new Error(`${link.label} is larger than 20 MB.`);
+  const number = bidNumber.replace(/[^A-Za-z0-9-]+/g, "-");
+  return { name: `${link.label} - ${number}.${link.ext}`, type: LINK_TYPES[link.ext] ?? "application/octet-stream", buffer };
+}
+
+/** One linked document of a stored bid, picked by its place in the list (never by a URL from the request). */
+export async function readGemLinked(id: string, index: number) {
+  const bid = await db.gemBid.findUnique({ where: { id } });
+  if (!bid) throw new Error("That GeM bid is not in the list.");
+  const links = await readGemBidLinks(id);
+  const link = links[index];
+  if (!link) throw new Error("That linked document is not on this bid.");
+  return downloadLinked(link, bid.bidNumber);
+}
+
 /** The stored bid's PDF, fetched from GeM for the row's document view. */
 export async function readGemBidPdf(id: string) {
   const bid = await db.gemBid.findUnique({ where: { id } });
@@ -119,7 +292,15 @@ export async function readGemBidPdf(id: string) {
 /** The GeM portal row, created with the default keywords the first time. */
 export async function gemPortal() {
   const existing = await db.portal.findFirst({ where: { accessMethod: "GEM_API" } });
-  if (existing) return existing;
+  if (existing) {
+    // A watch still on the first seven keywords (or the first exclude words) moves to the full lists; edited lists stay.
+    const same = (value: string, list: string[]) => value.split(/[,\n;]+/).map((item) => item.trim().toLowerCase()).filter(Boolean).sort().join("|") === list.map((item) => item.toLowerCase()).sort().join("|");
+    const data: Record<string, unknown> = {};
+    if (same(existing.keywords || "", FIRST_KEYWORDS)) data.keywords = GEM_KEYWORDS.join(", ");
+    if (same(existing.excludeWords || "", FIRST_EXCLUDES)) data.excludeWords = GEM_EXCLUDES.join(", ");
+    if (data.keywords && existing.maxPages > 5) data.maxPages = 5;
+    return Object.keys(data).length ? db.portal.update({ where: { id: existing.id }, data }) : existing;
+  }
   return db.portal.create({
     data: {
       name: GEM_PORTAL_NAME,
@@ -130,7 +311,8 @@ export async function gemPortal() {
       frequencyHours: 6,
       enabled: true,
       autoImport: false,
-      maxPages: 30,
+      // Over 250 keywords: five pages each on the first pass; later passes stop at bids already seen.
+      maxPages: 5,
       maxImports: 25,
       accessMethod: "GEM_API",
       lastStatus: "NOT_SCANNED",
@@ -165,7 +347,25 @@ export async function importGemBid(actor: Actor, gemBidId: string) {
         ...(end.text ? { bid_submission_end: end.text } : {}),
       },
     });
-    await db.gemBid.update({ where: { id: bid.id }, data: { status: "IMPORTED", tenderId: result.tenderId, error: result.duplicate ? `Already on tender ${result.recordId}.` : "" } });
+    // The documents the bid PDF links to (ATC, BOQ, specification, buyer uploads) go on the tender too.
+    let linkNote = "";
+    if (!result.duplicate) {
+      const links = await bidLinks(file.buffer);
+      await db.gemBid.update({ where: { id: bid.id }, data: { links: JSON.stringify(links) } });
+      const fetched: { name: string; type: string; buffer: Buffer }[] = [];
+      const failed: string[] = [];
+      for (const link of links) {
+        await sleep(PAUSE_MS);
+        try {
+          fetched.push(await downloadLinked(link, bid.bidNumber));
+        } catch {
+          failed.push(link.label);
+        }
+      }
+      if (fetched.length) await attachSourceDocuments(actor, result.tenderId, fetched, "GEM_LINKED");
+      if (failed.length) linkNote = `Linked documents not fetched: ${failed.join(", ")}.`;
+    }
+    await db.gemBid.update({ where: { id: bid.id }, data: { status: "IMPORTED", tenderId: result.tenderId, error: result.duplicate ? `Already on tender ${result.recordId}.` : linkNote } });
     return { tenderId: result.tenderId, recordId: result.recordId, already: result.duplicate };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

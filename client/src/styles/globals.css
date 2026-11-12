@@ -1425,6 +1425,9 @@ pre { white-space: pre-wrap; font-size: 0.85rem; }
 .pdfv-page-sheet.is-active { box-shadow: 0 0 0 3px var(--ember-hover), 0 6px 18px -8px rgba(41, 37, 36, 0.25); }
 .pdfv-page-sheet canvas { display: block; border-radius: 4px; }
 .pdfv-page-sheet .textLayer { border-radius: 4px; }
+.pdfv-links { position: absolute; inset: 0; z-index: 3; }
+.pdfv-link { position: absolute; padding: 0; border: 0; border-radius: 2px; background: transparent; cursor: pointer; }
+.pdfv-link:hover, .pdfv-link:focus-visible { background: rgba(37, 99, 235, 0.16); outline: 1px solid rgba(37, 99, 235, 0.55); }
 .pdfv-page-sheet .textLayer span.pdfv-hit { background: rgba(234, 88, 12, 0.32); border-radius: 2px; }
 .pdfv-page-sheet .textLayer ::selection { background: rgba(47, 91, 234, 0.3); }
 .pdfv-page-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ash); font-size: 0.85rem; }
@@ -2453,6 +2456,9 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 .board-toggle a:active { transform: scale(0.97); }
 .board-toggle a.is-on { background: var(--grad-primary); color: #fff; box-shadow: 0 8px 18px -8px rgba(154, 52, 18, 0.7); }
 .board-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dk-hero:has(.line-switch) { flex-wrap: wrap; }
+.line-switch { position: relative; z-index: 1; flex: 1 0 100%; flex-wrap: nowrap; width: max-content; max-width: 100%; margin-top: 2px; overflow-x: auto; }
+.line-switch button { white-space: nowrap; flex: none; padding: 0 14px; }
 .dk-hero-tools { align-items: center; }
 
 /* Bank guarantee: issuance and amendment history inside an expanded row */
@@ -2578,6 +2584,21 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 .gem-table tr.is-open td { background: var(--ember-soft); }
 .table-wrap:has(.gem-doc) { container-type: inline-size; }
 .gem-doc-row td { background: #f7f5f2; padding: 10px; }
+.gem-docs { position: sticky; left: 0; width: 100cqi; max-width: 100%; display: grid; gap: 8px; }
+.gem-docs .gem-doc { position: static; width: 100%; }
+.gem-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.gem-link { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px 5px 5px; border: 1px solid var(--line, #e3ded6); border-radius: 999px; background: #fff; color: inherit; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-decoration: none; transition: border-color .15s, box-shadow .15s, transform .15s; }
+.gem-link:hover { border-color: #c9bfb1; box-shadow: 0 2px 8px rgba(40, 30, 20, .08); transform: translateY(-1px); }
+.gem-link.is-on { border-color: var(--brand, #c2410c); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand, #c2410c) 18%, transparent); }
+.gem-link-ext { padding: 2px 6px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: .04em; color: #fff; background: #8a8178; }
+.gem-link.pdf .gem-link-ext { background: #c2410c; }
+.gem-link.sheet .gem-link-ext { background: #15803d; }
+.gem-link.word .gem-link-ext { background: #1d4ed8; }
+.gem-link-dl { color: #8a8178; font-weight: 700; }
+.gem-link { max-width: 100%; }
+.gem-link-name { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gem-links-note { font-size: 12.5px; color: #8a8178; }
+.gem-links-open { margin-left: auto; font-size: 12.5px; font-weight: 600; }
 .gem-doc { position: sticky; left: 0; width: 100cqi; max-width: 100%; height: 70vh; min-height: 420px; box-sizing: border-box; }
 .gem-row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .gem-row-actions form { margin: 0; }
@@ -2632,6 +2653,8 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
     flex-direction: column; justify-content: center; gap: 2px;
     padding: 6px 4px; font-size: 0.7rem; line-height: 1.15; text-align: center; white-space: normal;
   }
+  .line-switch { width: 100%; }
+  .line-switch button { flex: none; flex-direction: row; min-height: 36px; white-space: nowrap; padding: 0 12px; font-size: 0.78rem; }
   .board-toggle svg { width: 15px; height: 15px; }
   .dk-cards, .emd-board .dk-cards, .dk-health, .dk .dk-legend { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .dk-card { min-height: 0; padding: 14px; gap: 12px; }
@@ -2651,3 +2674,5 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
   .bgdoc-preview { height: 70vh; min-height: 280px; }
   .refex-sync-stats { grid-template-columns: minmax(0, 1fr); }
 }
+.gem-chip.more { cursor: pointer; font: inherit; font-size: 0.78rem; font-weight: 700; background: #fff; color: var(--ember); border-style: dashed; }
+.gem-chip.more:hover { background: var(--ember-soft); }

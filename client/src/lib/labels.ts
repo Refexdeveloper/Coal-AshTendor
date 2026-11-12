@@ -131,6 +131,7 @@ export const STAGE_HELP: Record<string, string> = {
 export const DOC_TYPE: Record<string, string> = {
   NOTICE: "Tender notice",
   SUPPORTING: "Supporting document",
+  GEM_LINKED: "GeM linked document",
   COSTING_DRAFT: "Draft costing sheet",
   COSTING_SALES: "Sales input sheet",
   COSTING_FINAL: "Final costing sheet",
