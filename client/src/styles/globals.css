@@ -1738,10 +1738,10 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 }
 .ceo-card-actions a { background: #0b4f8a; border-color: #0b4f8a; color: #fff; }
 .ceo-card .dk-detail { padding: 4px 0 4px; }
-.dk-table { width: 100%; min-width: 1120px; border-collapse: separate; border-spacing: 0; font-size: 0.84rem; table-layout: fixed; }
+.dk-table { width: 100%; min-width: 1480px; border-collapse: separate; border-spacing: 0; font-size: 0.84rem; table-layout: fixed; }
 .dk-table col.c-no { width: 40px; }
 .dk-table col.c-ref { width: 118px; }
-.dk-table col.c-title { width: auto; }
+.dk-table col.c-title { width: 620px; }
 .dk-table col.c-date { width: 126px; }
 .dk-table col.c-client { width: 128px; }
 .dk-table col.c-value { width: 100px; }
@@ -1758,8 +1758,8 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 .dk-row:hover { background: #f8fbff; }
 .dk-row.is-open { background: #eff6ff; }
 .dk-row.is-late td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
-.dk-title { white-space: normal !important; font-weight: 500; }
-.dk-title span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
+.dk-title { white-space: normal !important; font-weight: 500; font-size: 0.74rem; line-height: 1.3; overflow: visible; text-overflow: clip; }
+.dk-title span { display: block; overflow: visible; white-space: normal; line-height: 1.3; overflow-wrap: anywhere; }
 .dk-title small { display: block; font-size: 0.74rem; }
 .dk-table td.dk-date {
   width: 126px;
