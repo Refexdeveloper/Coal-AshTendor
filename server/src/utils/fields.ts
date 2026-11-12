@@ -17,7 +17,7 @@ export const TENDER_FIELDS: FieldDef[] = [
   {
     no: 45,
     key: "tender_category",
-    label: "Tender category",
+    label: "Tender type",
     type: "choice",
     options: ["OB", "Coal", "Supply of coal", "O&M", "Sale of Ash", "Auction"],
     synonyms: ["Category", "Business category", "Tender type"],

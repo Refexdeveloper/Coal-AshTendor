@@ -121,7 +121,8 @@ export function FieldEditor({
         </div>
       </section>
       {GROUPS.map(([from, to, title]) => {
-        const group = fields.filter((field) => field.no >= from && field.no <= to);
+        const group = fields.filter((field) => (field.no >= from && field.no <= to) || (title === "Identity" && field.key === "tender_category"));
+        if (title === "Identity") group.sort((a, b) => (a.key === "tender_category" ? -1 : b.key === "tender_category" ? 1 : a.no - b.no));
         return (
         <section key={title} className="panel" hidden={!group.length}>
           <header className="panel-head">
@@ -138,7 +139,7 @@ export function FieldEditor({
                   <label key={field.key} className={`field ${field.status === "CONFLICT" ? "conflict" : ""}`}>
                     <span className="field-label">
                       <span>
-                        {field.no}. {field.label}
+                        {field.key === "tender_category" ? field.label : `${field.no}. ${field.label}`}
                         {field.critical ? <em> Critical</em> : null}
                       </span>
                       <span className="mini">
