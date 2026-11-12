@@ -4,7 +4,7 @@ import { directoryConfigured, lastSync, syncSchedule } from "../services/refexon
 import type { Calendar } from "../utils/calendar";
 import { canEditFields, getCalendar, kickAutomation, readinessChecklist } from "../services/domain";
 import { OPEN_TASK } from "../utils/labels";
-import { loadDashboard, loadReports } from "../services/metrics";
+import { loadReports } from "../services/metrics";
 import { db } from "../db";
 import { publicUser } from "../middleware/auth";
 import { plannedOwners } from "../services/team";
@@ -57,31 +57,23 @@ views.get("/me", async (req, res) => {
   res.json({ user: publicUser(user), openTasks });
 });
 
-views.get("/dashboard", async (req, res) => {
-  const user = req.actor!;
+views.get("/dashboard", async (_req, res) => {
   await kickAutomation();
-  if (user.role === "GROUP_CEO") {
-    const [tenders, users, calendar] = await Promise.all([
-      db.tender.findMany({
-        include: {
-          fields: { orderBy: { fieldNo: "asc" } },
-          tasks: { where: { status: { in: OPEN_TASK } }, orderBy: { dueAt: "asc" } },
-          approvals: { orderBy: { createdAt: "desc" } },
-          emd: true,
-          bid: true,
-        },
-        orderBy: [{ bidSubmissionEnd: "asc" }],
-      }),
-      db.user.findMany(),
-      getCalendar(),
-    ]);
-    res.json({ kind: "executive", tenders, users: users.map(publicUser), calendar: calendarJson(calendar) });
-    return;
-  }
-  const data = await loadDashboard();
-  const mine = await db.workflowTask.findMany({ where: mineWhere(user.id), include: { tender: true }, orderBy: { dueAt: "asc" } });
-  const { cal, overdueTasks: _overdue, upcoming: _upcoming, recent: _recent, ...rest } = data;
-  res.json({ kind: "pipeline", ...rest, calendar: calendarJson(cal), mine });
+  const [tenders, users, calendar] = await Promise.all([
+    db.tender.findMany({
+      include: {
+        fields: { orderBy: { fieldNo: "asc" } },
+        tasks: { where: { status: { in: OPEN_TASK } }, orderBy: { dueAt: "asc" } },
+        approvals: { orderBy: { createdAt: "desc" } },
+        emd: true,
+        bid: true,
+      },
+      orderBy: [{ bidSubmissionEnd: "asc" }],
+    }),
+    db.user.findMany(),
+    getCalendar(),
+  ]);
+  res.json({ kind: "executive", tenders, users: users.map(publicUser), calendar: calendarJson(calendar) });
 });
 
 views.get("/worklist", async (req, res) => {
