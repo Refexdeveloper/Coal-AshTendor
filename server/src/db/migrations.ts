@@ -23,6 +23,7 @@ const ADDED_COLUMNS: Record<string, [string, string][]> = {
     ["maxPages", "INTEGER NOT NULL DEFAULT 30"],
     ["maxImports", "INTEGER NOT NULL DEFAULT 25"],
   ],
+  WorkflowTask: [["reminder1hSent", "BOOLEAN NOT NULL DEFAULT false"]],
   NotificationLog: [
     ["deliveredTo", "VARCHAR(191) NOT NULL DEFAULT ''"],
     ["messageId", "VARCHAR(255) NOT NULL DEFAULT ''"],

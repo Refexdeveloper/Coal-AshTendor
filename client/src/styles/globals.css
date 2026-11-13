@@ -185,7 +185,7 @@ p { margin: 0; }
   box-shadow: var(--shadow);
   animation: fadeUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
-.panel { overflow: hidden; box-shadow: var(--shadow-lg); }
+.panel { overflow: hidden; box-shadow: var(--shadow-lg); animation-name: riseIn; }
 .panel::before {
   content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
   background: linear-gradient(90deg, #3a3532, #a8a29e 50%, #ea580c);
@@ -541,13 +541,14 @@ pre { white-space: pre-wrap; font-size: 0.85rem; }
 
 .task-title { margin-top: 8px; }
 .task-help { font-size: 0.86rem; color: var(--ink-2); background: #faf8f6; border: 1px solid var(--line-soft); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
-.step-pop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 24px; background: rgba(28, 25, 23, 0.45); }
-.step-pop-card { width: min(480px, 100%); padding: 18px; border-radius: 16px; background: #fff; box-shadow: 0 24px 60px -24px rgba(28, 25, 23, 0.55); }
+.step-pop { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(28, 25, 23, 0.45); }
+.step-pop-card { width: min(480px, 100%); max-height: calc(100vh - 48px); overflow: auto; padding: 20px; border-radius: 16px; background: #fff; box-shadow: 0 24px 60px -24px rgba(28, 25, 23, 0.55); }
 .step-pop-card header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .step-pop-card h3 { margin: 0; font-size: 1.05rem; }
+.step-pop-card .form-grid { grid-template-columns: minmax(0, 1fr); }
 .step-pop-x { width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; font-size: 1.3rem; line-height: 1; cursor: pointer; color: #64748b; }
 .step-pop-x:hover { background: #f1f5f9; }
-.step-pop-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.step-pop-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .task-note { font-size: 0.86rem; border-left: 3px solid var(--ember-bright); padding: 6px 12px; margin-bottom: 12px; background: var(--ember-soft); border-radius: 0 10px 10px 0; }
 .task.mine { border-left: 4px solid var(--ember-bright); }
 .manage summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -698,8 +699,8 @@ pre { white-space: pre-wrap; font-size: 0.85rem; }
 .fact b { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .fact-extra { font-size: 0.78rem; }
 
-.tab-body { animation: tabIn 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-@keyframes tabIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.tab-body { animation: riseIn 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes riseIn { from { opacity: 0; } to { opacity: 1; } }
 
 .track-item { opacity: 0; animation: stepIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; animation-delay: calc(0.3s + var(--s, 0) * 0.12s); }
 @keyframes stepIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
@@ -713,9 +714,9 @@ pre { white-space: pre-wrap; font-size: 0.85rem; }
 @keyframes dotPop { from { transform: scale(0.3); } to { transform: scale(1); } }
 .track-item.parallel.reached { border-color: #f3c7a5; background: linear-gradient(180deg, #fffaf6, #fff); }
 
-.task { animation: taskIn 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(0.35s + var(--r, 0) * 0.1s); }
-@keyframes taskIn { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
-.task.mine { animation: taskIn 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both, mineGlow 2.6s ease-in-out 1.2s infinite; }
+.task { animation: riseIn 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(0.35s + var(--r, 0) * 0.1s); }
+.task.mine { animation: riseIn 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both, mineGlow 2.6s ease-in-out 1.2s infinite; }
+.panel.task { overflow: visible; }
 @keyframes mineGlow {
   0%, 100% { box-shadow: var(--shadow-lg), 0 0 0 0 rgba(234, 88, 12, 0); }
   50% { box-shadow: var(--shadow-lg), 0 0 0 4px rgba(234, 88, 12, 0.14); }

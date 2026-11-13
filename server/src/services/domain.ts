@@ -932,6 +932,7 @@ export async function completeCosting(
         slaMinutes: plan.slaMinutes,
         reminder50Sent: false,
         reminder75Sent: false,
+        reminder1hSent: false,
         breachSent: false,
         breachLevel2Sent: false,
       },
@@ -1211,6 +1212,7 @@ export async function sendBack(actor: Actor, taskId: string, remark: string) {
       baseAt: new Date(),
       reminder50Sent: false,
       reminder75Sent: false,
+      reminder1hSent: false,
       breachSent: false,
       breachLevel2Sent: false,
     };
@@ -2054,6 +2056,19 @@ export async function processAutomation() {
           tenderId: task.tenderId,
           taskId: task.id,
           event: "SLA_REMINDER_75",
+          addresses: await emailsFor(parseIds(task.assigneeIds)),
+          extra: { taskTitle: task.title, dueAt: formatWhen(task.dueAt, calendar.timeZone) },
+        });
+      }
+    }
+    const untilDue = task.dueAt.getTime() - now.getTime();
+    if (untilDue > 0 && untilDue <= 60 * 60 * 1000 && !task.reminder1hSent) {
+      const claimed = await db.workflowTask.updateMany({ where: { id: task.id, reminder1hSent: false }, data: { reminder1hSent: true } });
+      if (claimed.count === 1) {
+        await notifyAddresses({
+          tenderId: task.tenderId,
+          taskId: task.id,
+          event: "SLA_REMINDER_1H",
           addresses: await emailsFor(parseIds(task.assigneeIds)),
           extra: { taskTitle: task.title, dueAt: formatWhen(task.dueAt, calendar.timeZone) },
         });

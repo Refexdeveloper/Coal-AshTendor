@@ -1,10 +1,11 @@
 import type { CSSProperties } from "react";
 import { BID, COSTING, EMD, labelOf } from "@client/lib/labels";
 import type { ApprovalRecord, PublicUser, WorkflowTask } from "@client/lib/types";
+import { formatWhen } from "@client/utils/calendar";
 
 export type StepState = "done" | "current" | "failed" | "todo" | "skipped";
 type SubStep = { title: string; who: string; state: StepState };
-type Step = { key: string; title: string; note: string; state: StepState; subs?: SubStep[] };
+type Step = { key: string; title: string; note: string; state: StepState; overdue?: boolean; subs?: SubStep[] };
 
 type Crew = {
   names: Map<string, string>;
@@ -70,12 +71,32 @@ function actorsFor(crew: Crew, stages: string[]) {
   };
 }
 
+function clockLate(ms: number) {
+  const mins = Math.max(1, Math.round(ms / 60000));
+  const days = Math.floor(mins / 1440);
+  const hours = Math.floor((mins % 1440) / 60);
+  const rest = mins % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${rest}m`;
+  return `${rest}m`;
+}
+
+/** Due time and how long past it, for a step that slipped. Not a rejection. */
+function lateLabel(crew: Crew, stages: string[], timeZone: string) {
+  const tasks = crew.tasks.filter((task) => stages.includes(task.stage) && task.status !== "CANCELLED" && task.dueAt);
+  const open = tasks.filter((task) => OPEN.has(task.status));
+  const task = (open.length ? open : tasks).sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0))[0];
+  if (!task?.dueAt) return "Overdue";
+  const late = Date.now() - task.dueAt.getTime();
+  const who = join(parseIds(task.assigneeIds).map((id) => crew.names.get(id) ?? ""));
+  const when = formatWhen(task.dueAt, timeZone);
+  const how = late > 0 ? `Overdue by ${clockLate(late)}` : "Due within the hour";
+  return [how, `due ${when}`, who ? `with ${who}` : ""].filter(Boolean).join(" · ");
+}
+
 /** Approved stages name who approved. The open stage names who has it now. Later stages name who will take them. */
 function mention(state: StepState, actors: ReturnType<typeof actorsFor>, planned: string, approval: boolean) {
-  if (state === "failed") {
-    const who = actors.rejectedBy || actors.with || planned;
-    return who ? `Rejected by ${actors.rejectedBy || who}` : "";
-  }
+  if (state === "failed") return actors.rejectedBy ? `Rejected by ${actors.rejectedBy}` : "";
   if (state === "done") {
     if (actors.approvedBy) return `Approved by ${actors.approvedBy}`;
     if (actors.doneBy) return approval ? `Approved by ${actors.doneBy}` : `By ${actors.doneBy}`;
@@ -117,16 +138,18 @@ const EMD_AT: Record<string, { done: number; failed?: boolean }> = {
 
 function subStepsFor(
   rows: { title: string; stages: string[]; planned: string; approval?: boolean }[],
-  at: { done: number; failed?: boolean } | undefined,
+  at: { done: number; failed?: boolean; overdue?: boolean } | undefined,
   active: boolean,
   halted: boolean,
   crew: Crew,
+  timeZone: string,
 ): SubStep[] {
   const done = at?.done ?? 0;
   return rows.map((row, i) => {
     const state: StepState =
       i < done ? "done" : i === done && active ? (at?.failed ? "failed" : "current") : halted ? "skipped" : "todo";
-    return { title: row.title, state, who: mention(state, actorsFor(crew, row.stages), row.planned, Boolean(row.approval)) };
+    const who = at?.overdue && state === "failed" ? lateLabel(crew, row.stages, timeZone) : mention(state, actorsFor(crew, row.stages), row.planned, Boolean(row.approval));
+    return { title: row.title, state, who };
   });
 }
 
@@ -141,7 +164,7 @@ type TrackInput = {
 const SUBMITTED = ["BID_EVIDENCE_PENDING", "BID_EVIDENCE_RECORDED", "WON", "LOST"];
 
 /** Works out where a tender sits in the BRD lifecycle; costing and EMD are returned as one parallel pair. */
-export function stagesFor(t: TrackInput, crew: Crew): (Step | [Step, Step])[] {
+export function stagesFor(t: TrackInput, crew: Crew, timeZone = "Asia/Kolkata"): (Step | [Step, Step])[] {
   const validated = !["UPLOADED", "OCR_PROCESSING", "DATA_VALIDATION_REQUIRED"].includes(t.overallStatus);
   const rejected = t.relevanceStatus === "REJECTED";
   const approved = t.relevanceStatus === "APPROVED";
@@ -201,13 +224,15 @@ export function stagesFor(t: TrackInput, crew: Crew): (Step | [Step, Step])[] {
           approved && !halted,
           halted,
           crew,
+          timeZone,
         ),
       },
       {
         key: "emd",
         title: "EMD",
-        note: approved ? labelOf(EMD, t.emdStatus) : "Starts after approval",
+        note: !approved ? "Starts after approval" : t.emdStatus === "OVERDUE" ? lateLabel(crew, ["EMD_BG", "EMD_ISB", "EMD_EXEMPTION", "EMD_OTHER"], timeZone) : labelOf(EMD, t.emdStatus),
         state: after(approved, emdDone, t.emdStatus === "OVERDUE"),
+        overdue: t.emdStatus === "OVERDUE",
         subs: subStepsFor(
           [
             { title: "Requirement check", stages: ["EMD_CLARIFICATION"], planned: crew.planned("EMD_CLARIFICATION") },
@@ -215,10 +240,11 @@ export function stagesFor(t: TrackInput, crew: Crew): (Step | [Step, Step])[] {
             { title: "Second verification", stages: ["EMD_BG", "EMD_ISB", "EMD_EXEMPTION", "EMD_OTHER"], planned: instrument },
             { title: "Completed", stages: ["EMD_BG", "EMD_ISB", "EMD_EXEMPTION", "EMD_OTHER"], planned: instrument },
           ],
-          EMD_AT[t.emdStatus],
+          { ...EMD_AT[t.emdStatus], overdue: t.emdStatus === "OVERDUE" },
           approved && !halted,
           halted,
           crew,
+          timeZone,
         ),
       },
     ],
@@ -262,8 +288,10 @@ function mergePair([a, b]: [Step, Step]): Step {
           : "todo";
   const subs = [...(a.subs ?? []), ...(b.subs ?? [])];
   const done = subs.filter((sub) => sub.state === "done").length;
-  const note = state === "todo" || state === "skipped" ? a.note : `${done} of ${subs.length} sub-steps done`;
-  return { key: "branches", title: "Costing & EMD", note, state };
+  const overdue = Boolean(a.overdue || b.overdue);
+  const time = a.overdue ? a.note : b.overdue ? b.note : "";
+  const note = state === "todo" || state === "skipped" ? a.note : overdue ? time : `${done} of ${subs.length} sub-steps done`;
+  return { key: "branches", title: "Costing & EMD", note, state, overdue };
 }
 
 function BranchCard({ step }: { step: Step }) {
@@ -305,12 +333,14 @@ export function StageTrack({
   tender,
   users,
   plan,
+  timeZone = "Asia/Kolkata",
 }: {
   tender: TrackInput & { tasks: WorkflowTask[]; approvals: ApprovalRecord[]; costings: { stage: string; createdById: string }[]; createdById: string; submitterId: string | null; emdType: string };
   users: PublicUser[];
   plan?: StagePlan;
+  timeZone?: string;
 }) {
-  const steps = stagesFor(tender, crewFrom(users, tender, plan));
+  const steps = stagesFor(tender, crewFrom(users, tender, plan), timeZone);
   const pair = steps.find((step): step is [Step, Step] => Array.isArray(step));
   const rail = steps.map((step) => (Array.isArray(step) ? mergePair(step) : step));
   const subs = pair ? pair.flatMap((step) => step.subs ?? []) : [];
@@ -327,7 +357,7 @@ export function StageTrack({
     <div className="journey">
       <header className="journey-head">
         <div className="journey-now">
-          <span className="eyebrow">{finished ? "Workflow complete" : focus.state === "failed" ? "Workflow stopped at" : "Now at"}</span>
+          <span className="eyebrow">{finished ? "Workflow complete" : focus.overdue ? "Overdue at" : focus.state === "failed" ? "Workflow stopped at" : "Now at"}</span>
           <h2>{focus.title}</h2>
           {focus.note ? <p>{focus.note}</p> : null}
         </div>

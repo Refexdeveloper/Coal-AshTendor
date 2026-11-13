@@ -169,6 +169,7 @@ CREATE TABLE `WorkflowTask` (
   `baseAt` DATETIME(3) NOT NULL,
   `reminder50Sent` BOOLEAN NOT NULL DEFAULT false,
   `reminder75Sent` BOOLEAN NOT NULL DEFAULT false,
+  `reminder1hSent` BOOLEAN NOT NULL DEFAULT false,
   `breachSent` BOOLEAN NOT NULL DEFAULT false,
   `breachLevel2Sent` BOOLEAN NOT NULL DEFAULT false,
   `wasOverdue` BOOLEAN NOT NULL DEFAULT false,

@@ -28,6 +28,7 @@ export interface WorkflowTask {
   baseAt: Date;
   reminder50Sent: boolean;
   reminder75Sent: boolean;
+  reminder1hSent: boolean;
   breachSent: boolean;
   breachLevel2Sent: boolean;
   wasOverdue: boolean;
@@ -111,6 +112,7 @@ const BOOLEAN_COLUMNS = new Set([
   "critical",
   "reminder50Sent",
   "reminder75Sent",
+  "reminder1hSent",
   "breachSent",
   "breachLevel2Sent",
   "wasOverdue",

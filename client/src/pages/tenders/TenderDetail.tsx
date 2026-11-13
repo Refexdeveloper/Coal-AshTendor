@@ -327,7 +327,7 @@ export default function TenderPage() {
       ) : null}
 
       <section className="panel track-panel journey-panel">
-        <StageTrack tender={tender} users={users} plan={data.plan} />
+        <StageTrack tender={tender} users={users} plan={data.plan} timeZone={tz} />
       </section>
 
       <section className="facts">

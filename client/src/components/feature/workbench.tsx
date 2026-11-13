@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ROLES, STAGE_HELP, TASK } from "@client/lib/labels";
 import { BidWizard, DeptReview, RelevanceReview } from "./review-forms";
 import { AmountInput, BoundForm, FilePick, type TaskContext } from "./task-kit";
@@ -52,7 +53,7 @@ function StepPopup({ title, onClose, children }: { title: string; onClose: () =>
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  return (
+  return createPortal(
     <div className="step-pop" role="presentation" onClick={onClose}>
       <div className="step-pop-card" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
         <header>
@@ -63,7 +64,8 @@ function StepPopup({ title, onClose, children }: { title: string; onClose: () =>
         </header>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -21,6 +21,11 @@ export const TEMPLATES: { event: string; subject: string; body: string }[] = [
     body: "Hello {{recipientName}},\n\n{{taskTitle}} for {{projectName}} ({{recordId}}) has used 75% of its working-time SLA.\nDue: {{dueAt}}\n\n{{link}}",
   },
   {
+    event: "SLA_REMINDER_1H",
+    subject: "{{recordId}} due within 1 hour: {{taskTitle}}",
+    body: "Hello {{recipientName}},\n\n{{taskTitle}} for {{projectName}} ({{recordId}}) is due within the next hour.\nDue: {{dueAt}}\n\n{{link}}",
+  },
+  {
     event: "SLA_BREACH",
     subject: "{{recordId}} overdue: {{taskTitle}}",
     body: "Hello {{recipientName}},\n\n{{taskTitle}} for {{projectName}} ({{recordId}}) is past its SLA.\nDue: {{dueAt}}\n\n{{link}}",
