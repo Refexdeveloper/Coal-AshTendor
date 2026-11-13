@@ -185,6 +185,7 @@ export default function TenderPage() {
           : `· ${formatDuration(businessMinutesBetween(now, task.dueAt, calendar), day)} working time left`,
       comments: task.comments,
       assignees: assigned(task.assigneeIds).map((userId) => names.get(userId) ?? "Unknown").join(", "),
+      assigneeIds: assigned(task.assigneeIds),
     }))
     .sort((a, b) => Number(b.mine) - Number(a.mine));
   const mineCount = openTasks.filter((task) => task.mine).length;
@@ -363,7 +364,7 @@ export default function TenderPage() {
       {tab === "stages" ? (
         <div className="stack">
           {canSendBack && openTasks.length ? (
-            <TaskCards tenderId={tender.id} tasks={openTasks} bgRequiresBoth={data.bgRequiresBoth} canAuthorize={false} canSendBack ctx={ctx} emd={emdDraft} />
+            <TaskCards tenderId={tender.id} tasks={openTasks} bgRequiresBoth={data.bgRequiresBoth} canAuthorize={false} canSendBack canAssign={canSendBack} users={users} ctx={ctx} emd={emdDraft} />
           ) : null}
           <StageHistory tender={tender} users={users} calendar={calendar} plan={data.plan} />
         </div>
@@ -380,6 +381,8 @@ export default function TenderPage() {
               bgRequiresBoth={data.bgRequiresBoth}
               canAuthorize={actor.role === "ADMIN" || actor.role === "DEPT_HEAD"}
               canSendBack={canSendBack}
+              canAssign={canSendBack}
+              users={users}
               ctx={ctx}
               emd={emdDraft}
             />
@@ -595,6 +598,8 @@ export default function TenderPage() {
             bgRequiresBoth={data.bgRequiresBoth}
             canAuthorize={actor.role === "ADMIN" || actor.role === "DEPT_HEAD"}
             canSendBack={canSendBack}
+            canAssign={canSendBack}
+            users={users}
             ctx={ctx}
             emd={emdDraft}
           />

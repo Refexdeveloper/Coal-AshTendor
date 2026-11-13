@@ -270,6 +270,7 @@ export default function PdfViewer({ src, name, onLink }: { src: string; name: st
                 active={hitPages[hit] === i + 1}
                 root={scroller}
                 onLink={onLink}
+                onJump={goTo}
               />
             ))
           ) : null}
@@ -299,7 +300,18 @@ function Tool({ label, onClick, disabled, children }: { label: string; onClick: 
 }
 
 /** One page: a sized placeholder that draws itself (canvas plus selectable text) once it nears the viewport. */
-type HotLink = { url: string; left: number; top: number; width: number; height: number };
+/** A clickable area on the page: a web link (url) or a jump to another page of the same file (page). */
+type HotLink = { url: string; page?: number; left: number; top: number; width: number; height: number };
+
+/** Web links only; javascript: and file links in a PDF are never followed. */
+const safeUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" || url.protocol === "mailto:" ? url.href : "";
+  } catch {
+    return /^www\./i.test(value) ? `https://${value}` : "";
+  }
+};
 
 function PdfPage({
   pdf,
@@ -311,6 +323,7 @@ function PdfPage({
   active,
   root,
   onLink,
+  onJump,
 }: {
   pdf: PDFDocumentProxy;
   number: number;
@@ -321,6 +334,7 @@ function PdfPage({
   active: boolean;
   root: React.RefObject<HTMLDivElement | null>;
   onLink?: (url: string) => void;
+  onJump?: (page: number) => void;
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -364,13 +378,26 @@ function PdfPage({
       textBox.current.replaceChildren();
       textLayer = new TextLayer({ textContentSource: p.streamTextContent(), container: textBox.current, viewport });
       await textLayer.render().catch(() => undefined);
-      const annotations = (await p.getAnnotations().catch(() => [])) as { subtype?: string; url?: string; unsafeUrl?: string; rect?: number[] }[];
+      const annotations = (await p.getAnnotations().catch(() => [])) as { subtype?: string; url?: string; unsafeUrl?: string; dest?: unknown; rect?: number[] }[];
       const boxes: HotLink[] = [];
       for (const ann of annotations) {
-        const url = ann.url || ann.unsafeUrl;
-        if (ann.subtype !== "Link" || !url || !ann.rect) continue;
+        if (ann.subtype !== "Link" || !ann.rect) continue;
+        const url = safeUrl(ann.url || ann.unsafeUrl || "");
+        let target: number | undefined;
+        if (!url && ann.dest) {
+          // A link to another page of this file: a named destination or [pageRef, …].
+          try {
+            const dest = typeof ann.dest === "string" ? await pdf.getDestination(ann.dest) : (ann.dest as unknown[]);
+            const ref = dest?.[0];
+            if (typeof ref === "number") target = ref + 1;
+            else if (ref && typeof ref === "object") target = (await pdf.getPageIndex(ref as Parameters<PDFDocumentProxy["getPageIndex"]>[0])) + 1;
+          } catch {
+            /* an unreadable destination stays unclickable */
+          }
+        }
+        if (!url && !target) continue;
         const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(ann.rect);
-        boxes.push({ url, left: Math.min(x1, x2), top: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) });
+        boxes.push({ url, page: target, left: Math.min(x1, x2), top: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) });
       }
       if (!cancelled) {
         setLinks(boxes);
@@ -405,22 +432,32 @@ function PdfPage({
     >
       <canvas ref={canvas} style={{ width, height }} />
       <div ref={textBox} className="textLayer" />
-      {onLink && links.length ? (
+      {links.length ? (
         <div className="pdfv-links">
-          {links.map((box, index) => (
-            <button
-              key={`${box.url}-${index}`}
-              type="button"
-              className="pdfv-link"
-              style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
-              title="Open this document here"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onLink(box.url);
-              }}
-            />
-          ))}
+          {links.map((box, index) => {
+            const style = { left: box.left, top: box.top, width: box.width, height: box.height };
+            if (!box.url)
+              return (
+                <button key={`page-${box.page}-${index}`} type="button" className="pdfv-link" style={style} title={`Go to page ${box.page}`} onClick={() => box.page && onJump?.(box.page)} />
+              );
+            // Pages that can show the linked file themselves (the GeM watch) take it; elsewhere it opens in a new tab.
+            return onLink ? (
+              <button
+                key={`${box.url}-${index}`}
+                type="button"
+                className="pdfv-link"
+                style={style}
+                title="Open this document here"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onLink(box.url);
+                }}
+              />
+            ) : (
+              <a key={`${box.url}-${index}`} className="pdfv-link" style={style} href={box.url} target="_blank" rel="noopener noreferrer" title={`Open ${box.url}`} />
+            );
+          })}
         </div>
       ) : null}
       {drawn ? null : <span className="pdfv-page-loading">Page {number}</span>}

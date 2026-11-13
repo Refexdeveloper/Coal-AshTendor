@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { ROLES, STAGE_HELP, TASK } from "@client/lib/labels";
 import { BidWizard, DeptReview, RelevanceReview } from "./review-forms";
 import { AmountInput, BoundForm, FilePick, type TaskContext } from "./task-kit";
@@ -28,6 +28,7 @@ export type WorkTask = {
   remaining: string;
   comments: string;
   assignees: string;
+  assigneeIds: string[];
 };
 
 type EmdDraft = {
@@ -43,21 +44,58 @@ type EmdDraft = {
 
 const FIRST_STEP = new Set(["DATA_VALIDATION", "OCR_EXCEPTION"]);
 
-function SendBack({ tenderId, taskId }: { tenderId: string; taskId: string }) {
+function StepPopup({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
-    <BoundForm>
-      <h3 className="wide">Send back</h3>
-      <p className="muted wide">Sends this step to the previous owner. They receive an email that includes the remark.</p>
-      <input type="hidden" name="tenderId" value={tenderId} />
-      <input type="hidden" name="taskId" value={taskId} />
-      <label className="wide">
-        Remark
-        <textarea name="notes" rows={3} required placeholder="Why this step is being sent back" />
-      </label>
-      <Submit name="intent" value="send-back" variant="ghost">
+    <div className="step-pop" role="presentation" onClick={onClose}>
+      <div className="step-pop-card" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
+        <header>
+          <h3>{title}</h3>
+          <button type="button" className="step-pop-x" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </header>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SendBack({ tenderId, taskId }: { tenderId: string; taskId: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className="btn ghost" onClick={() => setOpen(true)}>
         ↺ Send back
-      </Submit>
-    </BoundForm>
+      </button>
+      {open ? (
+        <StepPopup title="Send back" onClose={() => setOpen(false)}>
+          <BoundForm>
+            <p className="muted wide">This step goes to the previous owner. The remark is included in the email.</p>
+            <input type="hidden" name="tenderId" value={tenderId} />
+            <input type="hidden" name="taskId" value={taskId} />
+            <label className="wide">
+              Remark
+              <textarea name="notes" rows={4} required minLength={3} placeholder="Why this step is being sent back" autoFocus />
+            </label>
+            <span className="step-pop-actions">
+              <button type="button" className="btn ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+              <Submit name="intent" value="send-back">
+                Send back
+              </Submit>
+            </span>
+          </BoundForm>
+        </StepPopup>
+      ) : null}
+    </>
   );
 }
 
@@ -68,6 +106,8 @@ export function TaskCards({
   canAuthorize,
   bgRequiresBoth,
   canSendBack = false,
+  canAssign = false,
+  users = [],
   ctx,
 }: {
   tenderId: string;
@@ -76,6 +116,8 @@ export function TaskCards({
   canAuthorize: boolean;
   bgRequiresBoth: boolean;
   canSendBack?: boolean;
+  canAssign?: boolean;
+  users?: { id: string; name: string; role: string; active?: boolean }[];
   ctx: TaskContext;
 }) {
   if (!tasks.length) return <p className="panel empty">No open tasks on this tender.</p>;
@@ -108,6 +150,9 @@ export function TaskCards({
           ) : (
             <p className="muted">Waiting on {task.assignees}.</p>
           )}
+          {canAssign || task.mine ? (
+            <AssignStep tenderId={tenderId} taskId={task.id} users={users} assigneeIds={task.assigneeIds} />
+          ) : null}
           {task.mine || canSendBack ? (FIRST_STEP.has(task.stage) ? null : <SendBack tenderId={tenderId} taskId={task.id} />) : null}
         </article>
       ))}
@@ -367,6 +412,61 @@ function LineForm({ tenderId, businessLine }: { tenderId: string; businessLine: 
         Save business line
       </Submit>
     </BoundForm>
+  );
+}
+
+function AssignStep({
+  tenderId,
+  taskId,
+  users,
+  assigneeIds,
+}: {
+  tenderId: string;
+  taskId: string;
+  users: { id: string; name: string; role: string; active?: boolean }[];
+  assigneeIds: string[];
+}) {
+  const people = users.filter((user) => user.active !== false).slice().sort((a, b) => a.name.localeCompare(b.name));
+  const [open, setOpen] = useState(false);
+  if (!people.length) return null;
+  return (
+    <>
+      <button type="button" className="btn ghost" onClick={() => setOpen(true)}>
+        Assign
+      </button>
+      {open ? (
+        <StepPopup title="Assign this step" onClose={() => setOpen(false)}>
+          <BoundForm>
+            <p className="muted wide">The person you choose gets this step, and the remark is included in the email.</p>
+            <input type="hidden" name="tenderId" value={tenderId} />
+            <input type="hidden" name="taskId" value={taskId} />
+            <label className="wide">
+              Assign to
+              <select name="assigneeId" defaultValue={assigneeIds.length === 1 ? assigneeIds[0] : ""} required autoFocus>
+                <option value="">Choose a person</option>
+                {people.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name} · {ROLES[user.role] ?? user.role}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="wide">
+              Remark
+              <textarea name="notes" rows={4} required minLength={3} placeholder="Why this step is being assigned" />
+            </label>
+            <span className="step-pop-actions">
+              <button type="button" className="btn ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+              <Submit name="intent" value="assign-task">
+                Assign
+              </Submit>
+            </span>
+          </BoundForm>
+        </StepPopup>
+      ) : null}
+    </>
   );
 }
 

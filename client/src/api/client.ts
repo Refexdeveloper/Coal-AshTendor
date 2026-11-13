@@ -42,10 +42,10 @@ export class ApiError extends Error {
 
 function toSignIn() {
   const path = window.location.pathname;
-  if (path.startsWith("/login")) return;
+  if (path.startsWith("/login") || path === "/admin/login") return;
   if (path.startsWith("/admin")) {
     const next = `${path}${window.location.search}`;
-    window.location.assign(`/login?admin=1&next=${encodeURIComponent(next)}`);
+    window.location.assign(`/admin/login?next=${encodeURIComponent(next)}`);
     return;
   }
   window.location.assign("/auth/refexone/launch");

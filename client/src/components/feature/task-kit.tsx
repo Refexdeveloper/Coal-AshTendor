@@ -47,6 +47,7 @@ const SUCCESS: Record<string, { message: string; celebrate?: boolean }> = {
   bid: { message: "Bid submission recorded.", celebrate: true },
   exception: { message: "Exception closed." },
   "assign-submitter": { message: "Bid submitter assigned." },
+  "assign-task": { message: "Assigned with your remark. That person has been emailed." },
   close: { message: "Tender closed without bidding." },
   outcome: { message: "Outcome recorded." },
   "add-docs": { message: "Documents uploaded." },

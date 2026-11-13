@@ -19,7 +19,7 @@ authRouter.post("/login", multer().none(), async (req, res) => {
 
 function signInPage(title: string, message: string) {
   const text = message.replace(/[&<>]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[char] || char);
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title></head><body style="font-family:sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem"><h1>${title}</h1><p>${text}</p><p><a href="/login?admin=1">Administrator sign-in</a></p></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title></head><body style="font-family:sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem"><h1>${title}</h1><p>${text}</p></body></html>`;
 }
 
 /** Refex One posts the signed assertion here. The browser is then sent into the app with a session cookie. */

@@ -52,7 +52,7 @@ export function createApp() {
         .status(503)
         .type("html")
         .send(
-          `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Refex One</title></head><body style="font-family:sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem"><h1>Refex One sign-in is not ready</h1><p>This server still needs:</p><ul>${missing}</ul><p>Copy the signing certificate from the Coal &amp; Ash SAML app's settings in Refex One, paste it into server/src/services/refexone.ts, and redeploy.</p><p><a href="/login?admin=1">Administrator sign-in</a></p></body></html>`,
+          `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Refex One</title></head><body style="font-family:sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem"><h1>Refex One sign-in is not ready</h1><p>This server still needs:</p><ul>${missing}</ul><p>Copy the signing certificate from the Coal &amp; Ash SAML app's settings in Refex One, paste it into server/src/services/refexone.ts, and redeploy.</p></body></html>`,
         );
       return;
     }
@@ -60,7 +60,7 @@ export function createApp() {
       res.redirect(await refexOneLoginUrl(req, safeNext(req.query.next)));
     } catch (error) {
       console.error(error);
-      res.status(502).type("html").send("Refex One could not be opened. Use administrator sign-in.");
+      res.status(502).type("html").send("Refex One could not be opened.");
     }
   });
   app.use("/api", files);

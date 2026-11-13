@@ -1662,6 +1662,30 @@ export async function setBusinessLine(actor: Actor, tenderId: string, value: str
   await audit(db, { tenderId, actor, action: "Changed business line", entity: "Tender", detail: `${tender.businessLine === "COAL" ? "Coal" : "Ash"} → ${line === "COAL" ? "Coal" : "Ash"}` });
 }
 
+const ASSIGN_ROLES = ["ADMIN", "COORDINATOR", "REVIEWER", "DEPT_HEAD", "GROUP_CEO"];
+
+/** Hands an open step to one person, with the remark in the email. */
+export async function assignTask(actor: Actor, taskId: string, userId: string, remark: string) {
+  const note = remark.trim();
+  if (note.length < 3) throw new WorkflowError("Enter a remark before assigning this step.");
+  const task = await db.workflowTask.findUnique({ where: { id: taskId }, include: { tender: true } });
+  if (!task || !OPEN_TASK.includes(task.status)) throw new WorkflowError("This step is already closed.");
+  if (CLOSED_OVERALL.includes(task.tender.overallStatus)) throw new WorkflowError("This tender is closed.");
+  const holder = parseIds(task.assigneeIds).includes(actor.id);
+  if (!holder && !ASSIGN_ROLES.includes(actor.role)) throw new WorkflowError("You cannot assign this step.");
+  const person = await db.user.findFirst({ where: { id: userId, active: true } });
+  if (!person) throw new WorkflowError("Choose a person.");
+  const assigneeIds = JSON.stringify([person.id]);
+  await db.workflowTask.update({ where: { id: task.id }, data: { assigneeIds, comments: note } });
+  if (task.stage === "BID_SUBMISSION") {
+    await db.tender.update({ where: { id: task.tenderId }, data: { submitterId: person.id } });
+    await db.bidSubmission.updateMany({ where: { tenderId: task.tenderId }, data: { submitterId: person.id } });
+  }
+  await audit(db, { tenderId: task.tenderId, actor, action: "Assigned task", entity: "WorkflowTask", detail: `${task.title} → ${person.name}. ${note}` });
+  const calendar = await getCalendar();
+  await notifyTasks(task.tenderId, [{ ...task, assigneeIds, comments: note }], calendar);
+}
+
 export async function assignSubmitter(actor: Actor, tenderId: string, submitterId: string) {
   if (!MANAGER_ROLES.includes(actor.role)) {
     throw new WorkflowError("You cannot assign the bid submitter.");

@@ -1,6 +1,6 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import AdminPage from "@client/pages/admin/Admin";
-import LoginPage from "@client/pages/Login";
+import LoginPage, { AdminLoginPage } from "@client/pages/Login";
 import AppLayout from "@client/layout/AppLayout";
 import NewTenderPage from "@client/pages/tenders/NewTender";
 import NotificationsPage from "@client/pages/Notifications";
@@ -22,6 +22,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/admin/login" element={<AdminLoginPage />} />
       <Route path="/tenders/:id/bg-letter" element={<BgLetterPage />} />
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
