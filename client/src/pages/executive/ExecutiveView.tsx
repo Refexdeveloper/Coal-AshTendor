@@ -80,21 +80,24 @@ const FILTER_KEYS = ["period", "basis", "q", "client", "emd", "owner", "portal",
 
 /** Business lines on the tender dashboard. A tender is counted in the first line its title or scope matches. */
 const LINES: { key: string; label: string }[] = [
-  { key: "ob", label: "OB" },
-  { key: "coal", label: "Coal" },
-  { key: "supply", label: "Supply of coal" },
+  { key: "dstn", label: "DSTN" },
+  { key: "lla", label: "LLA" },
+  { key: "rc", label: "RC" },
+  { key: "sale", label: "SALE" },
+  { key: "coal-transport", label: "Coal Transportation" },
   { key: "om", label: "O&M" },
-  { key: "ash", label: "Sale of Ash" },
-  { key: "auction", label: "Auction" },
+  { key: "supply", label: "Supply" },
+  { key: "ob", label: "OB" },
+  { key: "rail", label: "Rail" },
+  { key: "ea", label: "EA" },
+  { key: "rcr", label: "RCR" },
 ];
 
 const CATEGORY_KEY: Record<string, string> = {
-  OB: "ob",
-  Coal: "coal",
+  ...Object.fromEntries(LINES.map((item) => [item.label, item.key])),
   "Supply of coal": "supply",
-  "O&M": "om",
-  "Sale of Ash": "ash",
-  Auction: "auction",
+  "Sale of Ash": "sale",
+  Coal: "coal-transport",
 };
 
 function tenderLine(tender: { projectName: string; fields?: { fieldKey: string; correctedValue: string; extractedValue: string }[] }) {
@@ -107,11 +110,11 @@ function tenderLine(tender: { projectName: string; fields?: { fieldKey: string; 
   }
   const text = bits.join(" ");
   if (/\bsupply of coal\b|\bcoal supply\b/i.test(text)) return "supply";
-  if (/\bsale of (fly |pond |bottom )?ash\b|\bash sale\b/i.test(text)) return "ash";
+  if (/\bsale of (fly |pond |bottom )?ash\b|\bash sale\b/i.test(text)) return "sale";
   if (/\bo\s*&\s*m\b|\bo\s+and\s+m\b|operation(?:s)? (?:and|&) maintenance/i.test(text)) return "om";
-  if (/\bauction\b/i.test(text)) return "auction";
+  if (/\brail\b/i.test(text)) return "rail";
   if (/\boverburden\b|\bob removal\b|\bremoval of ob\b|\bob\b/i.test(text)) return "ob";
-  if (/\bcoal\b/i.test(text)) return "coal";
+  if (/\bcoal transport/i.test(text)) return "coal-transport";
   return "";
 }
 
