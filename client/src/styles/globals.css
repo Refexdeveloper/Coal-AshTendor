@@ -2684,3 +2684,18 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
 }
 .gem-chip.more { cursor: pointer; font: inherit; font-size: 0.78rem; font-weight: 700; background: #fff; color: var(--ember); border-style: dashed; }
 .gem-chip.more:hover { background: var(--ember-soft); }
+
+/* The dashboard grid never grows wider than the screen: a long row inside it scrolls instead of widening the page. */
+.dk { grid-template-columns: minmax(0, 1fr); }
+.dk > *, .dk-hero > * { min-width: 0; }
+.dk-hero > .line-switch { max-width: 100%; }
+@media (max-width: 860px) {
+  .dk-hero, .dk-hero:has(.line-switch) { flex-wrap: nowrap; align-items: stretch; }
+  .dk-hero .line-switch {
+    flex: none; width: 100%; flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent); mask-image: linear-gradient(90deg, #000 88%, transparent);
+  }
+  .dk-hero .line-switch::-webkit-scrollbar { display: none; }
+  .dk-hero .line-switch button { flex: none; scroll-snap-align: start; }
+}
