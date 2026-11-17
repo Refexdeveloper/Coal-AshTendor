@@ -2019,6 +2019,7 @@ export function kickAutomation() {
   void maybeScheduledSync();
   // The GeM bid watch runs on its own schedule; loaded lazily because it builds on this module.
   void import("./gem").then((gem) => gem.maybeScheduledGemScan()).catch((error) => console.error("GeM watch check failed", error));
+  void import("./site-watch").then((sites) => sites.maybeScheduledSiteScan()).catch((error) => console.error("Tender sites watch check failed", error));
   if (automation || Date.now() - lastAutomation < 15000) return;
   lastAutomation = Date.now();
   automation = processAutomation()

@@ -201,6 +201,33 @@ views.get("/portals", async (_req, res) => {
   const { clearStaleRuns, gemPortal, gemProgress, gemRunning } = await import("../services/gem");
   await clearStaleRuns().catch(() => undefined);
   const gem = await gemPortal();
+  const sw = await import("../services/site-watch");
+  await sw.clearStaleSiteRuns().catch(() => undefined);
+  const sitePortal = await sw.siteWatchPortal();
+  const [watchSites, allSiteTenders, siteRuns] = await Promise.all([
+    db.watchSite.findMany({ orderBy: { host: "asc" } }),
+    db.siteTender.findMany({ orderBy: { firstSeenAt: "desc" } }),
+    db.crawlerRun.findMany({ where: { portalId: sitePortal.id }, orderBy: { startedAt: "desc" }, take: 200 }),
+  ]);
+  // Totals and the keyword ranking cover every match ever found; the table itself gets the latest 500.
+  const keywordRank = new Map<string, { keyword: string; total: number; open: number; added: number; sites: Set<string> }>();
+  const statusCount: Record<string, number> = {};
+  for (const item of allSiteTenders) {
+    statusCount[item.status] = (statusCount[item.status] ?? 0) + 1;
+    if (item.status === "EXCLUDED") continue;
+    const entry = keywordRank.get(item.keyword) ?? { keyword: item.keyword, total: 0, open: 0, added: 0, sites: new Set<string>() };
+    entry.total += 1;
+    if (item.status === "NEW") entry.open += 1;
+    if (item.status === "IMPORTED") entry.added += 1;
+    entry.sites.add(item.siteId);
+    keywordRank.set(item.keyword, entry);
+  }
+  const siteStats = {
+    total: allSiteTenders.length,
+    byStatus: statusCount,
+    keywords: [...keywordRank.values()].sort((a, b) => b.total - a.total || a.keyword.localeCompare(b.keyword)).map(({ sites, ...rest }) => ({ ...rest, sites: sites.size })),
+  };
+  const siteTenders = allSiteTenders.slice(0, 500);
   const [portals, exceptions, calendar, gemRuns, gemBids] = await Promise.all([
     db.portal.findMany({ orderBy: { name: "asc" }, include: { runs: { orderBy: { startedAt: "desc" }, take: 1 } } }),
     db.crawlerException.findMany({ orderBy: { createdAt: "desc" }, take: 30 }),
@@ -208,14 +235,15 @@ views.get("/portals", async (_req, res) => {
     db.crawlerRun.findMany({ where: { portalId: gem.id }, orderBy: { startedAt: "desc" }, take: 10 }),
     db.gemBid.findMany({ orderBy: { firstSeenAt: "desc" }, take: 300 }),
   ]);
-  const tenderIds = gemBids.map((bid: { tenderId: string }) => bid.tenderId).filter(Boolean);
+  const tenderIds = [...gemBids, ...siteTenders].map((bid: { tenderId: string }) => bid.tenderId).filter(Boolean);
   const tenders = tenderIds.length ? await db.tender.findMany({ where: { id: { in: tenderIds } }, select: { id: true, recordId: true, overallStatus: true } }) : [];
   res.json({
-    portals: portals.filter((portal: { id: string }) => portal.id !== gem.id),
+    portals: portals.filter((portal: { id: string }) => portal.id !== gem.id && portal.id !== sitePortal.id),
     exceptions,
     calendar: calendarJson(calendar),
     // The raw GeM record is only needed to download the document, so it stays on the server.
     gem: { portal: gem, runs: gemRuns, bids: gemBids.map(({ raw: _raw, ...bid }: Record<string, unknown>) => bid), tenders, running: gemRunning(), progress: gemProgress() },
+    sites: { portal: sitePortal, sites: watchSites, tenders: siteTenders, runs: siteRuns, stats: siteStats, running: sw.siteWatchRunning(), progress: sw.siteWatchProgress() },
   });
 });
 

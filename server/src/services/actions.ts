@@ -610,6 +610,55 @@ export async function gemAction(actor: User, formData: FormData): Promise<Action
   }
 }
 
+export async function siteWatchAction(actor: User, formData: FormData): Promise<ActionState> {
+  const sites = await import("./site-watch");
+  const intent = String(formData.get("intent") || "");
+  try {
+    if (!["ADMIN", "COORDINATOR", "GROUP_CEO"].includes(actor.role)) throw new WorkflowError("Only an administrator, a coordinator, or the Group CEO can run the tender sites watch.");
+    const portal = await sites.siteWatchPortal();
+    if (intent === "settings") {
+      if (actor.role !== "ADMIN") throw new WorkflowError("Only an administrator can change the tender sites watch settings.");
+      const keywords = String(formData.get("keywords") || "").trim();
+      if (!keywords) throw new WorkflowError("Add at least one keyword.");
+      await db.portal.update({
+        where: { id: portal.id },
+        data: {
+          keywords,
+          excludeWords: String(formData.get("excludeWords") || "").trim(),
+          frequencyHours: Math.min(168, Math.max(1, Number(formData.get("frequencyHours")) || 12)),
+          enabled: formData.get("enabled") === "yes",
+        },
+      });
+      return { ok: "Tender sites watch settings saved." };
+    }
+    if (intent === "run" || intent === "run-site") {
+      if (sites.siteWatchRunning()) return { ok: "A pass is already running. Its results appear here as they are found." };
+      const siteId = intent === "run-site" ? String(formData.get("siteId") || "") : undefined;
+      void sites.runSiteWatch(siteId).catch((error) => console.error("Tender sites watch failed", error));
+      return { ok: siteId ? "Site pass started." : "Tender sites pass started. Matching tenders appear below as they are found." };
+    }
+    if (intent === "toggle-site") {
+      const site = await db.watchSite.findUnique({ where: { id: String(formData.get("siteId") || "") } });
+      if (!site) throw new WorkflowError("That site is not in the list.");
+      if (site.method === "MANUAL") throw new WorkflowError("This site has no list that can be read automatically.");
+      await db.watchSite.update({ where: { id: site.id }, data: { enabled: !site.enabled } });
+      return { ok: site.enabled ? `${site.host} paused.` : `${site.host} back on.` };
+    }
+    const tenderId = String(formData.get("siteTenderId") || "");
+    if (intent === "import") {
+      const result = await sites.importSiteTender(actor, tenderId);
+      return { ok: result.already ? "This tender was already registered." : `${result.recordId} created from the portal listing. Add its documents from the portal.`, tenderId: result.tenderId };
+    }
+    if (intent === "ignore" || intent === "restore") {
+      await db.siteTender.update({ where: { id: tenderId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "" } });
+      return { ok: intent === "ignore" ? "Tender ignored." : "Tender moved back to the review list." };
+    }
+    throw new WorkflowError("Unknown tender sites action.");
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 export async function ingestDiscoveredAction(actor: User, formData: FormData): Promise<ActionState> {
   try {
     if (actor.role !== "ADMIN" && actor.role !== "COORDINATOR") {

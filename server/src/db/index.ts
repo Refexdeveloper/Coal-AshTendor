@@ -77,6 +77,8 @@ const MODELS: Record<string, string> = {
   bgDocument: "BgDocument",
   gemBid: "GemBid",
   bondDocument: "BondDocument",
+  watchSite: "WatchSite",
+  siteTender: "SiteTender",
 };
 
 const RELATIONS: Record<string, Record<string, Relation>> = {
@@ -188,6 +190,8 @@ export interface Db {
   bgDocument: Model;
   gemBid: Model;
   bondDocument: Model;
+  watchSite: Model;
+  siteTender: Model;
   $transaction<T>(work: (tx: Db) => Promise<T>): Promise<T>;
   $transaction<T>(work: Lazy<T>[]): Promise<T[]>;
   $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Lazy<unknown>;

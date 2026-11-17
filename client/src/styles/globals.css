@@ -2699,3 +2699,68 @@ a.count-card:hover { transform: translateY(-3px); box-shadow: 0 14px 28px -14px 
   .dk-hero .line-switch::-webkit-scrollbar { display: none; }
   .dk-hero .line-switch button { flex: none; scroll-snap-align: start; }
 }
+
+/* Tender sites watch (Portals page) */
+.site-watch { margin-top: 18px; }
+.site-logo { background: linear-gradient(135deg, #0f766e, #155e75); font-size: 11px; letter-spacing: .04em; }
+.site-ids { display: block; margin-top: 4px; word-break: break-word; }
+.site-ids b { font-weight: 600; color: var(--ink, inherit); }
+.site-list > .table-wrap { margin-top: 10px; }
+.site-list td small { display: block; }
+.site-watch .gem-toolbar-end select { min-width: 0; max-width: 260px; }
+@media (max-width: 640px) {
+  .site-watch .gem-toolbar-end select { max-width: 100%; width: 100%; }
+}
+.site-list { margin-top: 18px; border: 1px solid var(--line, rgba(0,0,0,.08)); border-radius: 16px; padding: 14px; }
+.site-list-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.site-list-head h3 { margin: 0; font-size: 1rem; }
+.site-list-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.site-list-tools input[type="search"] { min-width: 200px; }
+.site-scroll { max-height: 460px; overflow: auto; overscroll-behavior: contain; }
+.site-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--surface-2, #f6f4f1); }
+.site-list .link-btn { background: none; border: 0; padding: 0; color: var(--ember-deep, #c2410c); cursor: pointer; font: inherit; text-decoration: underline; }
+@media (max-width: 640px) {
+  .site-list { padding: 10px; }
+  .site-list-tools, .site-list-tools input[type="search"] { width: 100%; min-width: 0; }
+  .site-scroll { max-height: 70vh; }
+}
+/* Keep the watch panels at screen width on phones: grid/flex children may not grow past the panel. */
+.gem-watch > *, .site-list > *, .site-list-head > * { min-width: 0; max-width: 100%; }
+.gem-watch { grid-template-columns: minmax(0, 1fr); }
+.site-list-tools .gem-tabs { flex-wrap: wrap; }
+
+/* Tender sites watch: summary cards, keyword / website ranking, search history */
+.site-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.site-card { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); min-width: 0; }
+.site-card small { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; opacity: 0.7; }
+.site-card b { font-size: 24px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.site-card b i { font-style: normal; font-size: 15px; opacity: 0.6; }
+.site-card span { font-size: 12px; }
+.site-card.accent { background: var(--ember-soft); border-color: var(--ember); box-shadow: inset 3px 0 0 var(--ember); }
+.site-rank-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; }
+.site-rank { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.site-rank-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.site-rank-head h3 { margin: 0; font-size: 15px; }
+.site-rank ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.site-rank li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; grid-template-areas: "no bar count" "no bar note"; column-gap: 8px; align-items: center; }
+.site-rank li > b { grid-area: count; text-align: right; font-variant-numeric: tabular-nums; }
+.site-rank li > small { grid-area: note; text-align: right; font-size: 11px; white-space: nowrap; }
+.site-rank-no { grid-area: no; font-size: 12px; font-weight: 700; opacity: 0.55; text-align: center; }
+.site-rank-bar { grid-area: bar; display: flex; flex-direction: column; gap: 3px; background: none; border: 0; padding: 2px 0; text-align: left; cursor: pointer; color: inherit; font: inherit; min-width: 0; }
+.site-rank-label { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site-rank-bar:hover .site-rank-label { text-decoration: underline; }
+.site-rank-track { display: block; height: 7px; border-radius: 4px; background: rgba(127, 127, 127, 0.14); overflow: hidden; }
+.site-rank-track i { display: block; height: 100%; border-radius: 4px; background: var(--ember); }
+.site-rank > .link-btn { margin-top: 8px; }
+.site-rank-none { margin-top: 8px; font-size: 13px; }
+.site-rank-none p { margin: 4px 0 0; font-size: 12px; }
+.site-history .site-scroll { max-height: 360px; }
+.site-history td { white-space: nowrap; }
+.site-history td:last-child { white-space: normal; min-width: 220px; }
+.site-cards > *, .site-rank-grid > * { min-width: 0; }
+@media (max-width: 760px) {
+  .site-rank-grid { grid-template-columns: minmax(0, 1fr); }
+  .site-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .site-card { padding: 10px 12px; }
+  .site-card b { font-size: 20px; }
+}

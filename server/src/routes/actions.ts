@@ -36,6 +36,7 @@ const ACTIONS: Record<string, Action> = {
   "update-guarantee": actions.updateGuaranteeAction,
   "upload-bg-documents": actions.uploadBgDocumentsAction,
   gem: actions.gemAction,
+  "site-watch": actions.siteWatchAction,
   "upload-bond-documents": actions.uploadBondDocumentsAction,
 };
 

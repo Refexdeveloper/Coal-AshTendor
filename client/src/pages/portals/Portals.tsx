@@ -6,6 +6,7 @@ import { LoadFailed, Loading } from "@client/components/base/loading";
 import { useNoticeAction } from "@client/components/feature/notice-action";
 import { IngestForm } from "@client/components/feature/ingest-form";
 import { GemWatch, type GemData } from "./GemWatch";
+import { SiteWatch, type SitesData } from "./SiteWatch";
 
 const KINDS = [
   "Portal unavailable",
@@ -20,14 +21,14 @@ const KINDS = [
   "Changed bid submission deadline",
 ];
 
-type Data = { portals: Portal[]; exceptions: CrawlerException[]; calendar: CalendarJson; gem: GemData };
+type Data = { portals: Portal[]; exceptions: CrawlerException[]; calendar: CalendarJson; gem: GemData; sites?: SitesData };
 
 export default function PortalsPage() {
   const actor = useActor();
   const { query, run } = useNoticeAction("/portals");
   const { data, error, reload } = useApi<Data>("/portals");
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
-  const { portals, exceptions, calendar, gem } = data;
+  const { portals, exceptions, calendar, gem, sites } = data;
   const admin = actor.role === "ADMIN" || actor.role === "COORDINATOR" || actor.role === "GROUP_CEO";
   return (
     <>
@@ -35,13 +36,14 @@ export default function PortalsPage() {
         <div>
           <h1>Portals</h1>
           <p>
-            GeM bids are fetched automatically below and become tenders in the same workflow. Other portals are listed for reference until their access and document download are confirmed. Failures stay in the exception queue instead of disappearing.
+            GeM bids and the tender websites from the master list are searched with the sourcing keywords below; matches become tenders in the same workflow. Failures stay in the exception queue instead of disappearing.
           </p>
         </div>
       </header>
       {query.notice ? <p className="banner good">{query.notice}</p> : null}
       {query.error ? <p className="banner bad">{query.error}</p> : null}
       <GemWatch gem={gem} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit={actor.role === "ADMIN"} canKeywords={actor.role === "ADMIN" || actor.role === "GROUP_CEO"} canRun={admin} />
+      {sites ? <SiteWatch data={sites} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit={actor.role === "ADMIN"} canRun={admin} /> : null}
       <h2 className="section-title">Other portals</h2>
       <div className="table-wrap">
         <table>
