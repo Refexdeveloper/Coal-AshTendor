@@ -370,9 +370,7 @@ export async function saveTemplateAction(actor: User, formData: FormData): Promi
   return { ok: "Email template saved" };
 }
 
-export async function savePortalAction(actor: User, formData: FormData): Promise<ActionState> {
-  const denied = adminOnly(actor);
-  if (denied) return denied;
+export async function savePortalAction(_actor: User, formData: FormData): Promise<ActionState> {
   const name = String(formData.get("name") || "").trim();
   const url = String(formData.get("url") || "").trim();
   if (!name || !url) return { error: "Portal name and URL are required" };
@@ -391,18 +389,14 @@ export async function savePortalAction(actor: User, formData: FormData): Promise
   return { ok: "Portal saved. Scanning stays off until access is validated." };
 }
 
-export async function togglePortalAction(actor: User, formData: FormData): Promise<ActionState> {
-  const denied = adminOnly(actor);
-  if (denied) return denied;
+export async function togglePortalAction(_actor: User, formData: FormData): Promise<ActionState> {
   const portal = await db.portal.findUnique({ where: { id: String(formData.get("id") || "") } });
   if (!portal) return { error: "Portal not found" };
   await db.portal.update({ where: { id: portal.id }, data: { enabled: !portal.enabled } });
   return { ok: "Portal updated" };
 }
 
-export async function logExceptionAction(actor: User, formData: FormData): Promise<ActionState> {
-  const denied = adminOnly(actor);
-  if (denied) return denied;
+export async function logExceptionAction(_actor: User, formData: FormData): Promise<ActionState> {
   const portalId = String(formData.get("portalId") || "");
   const kind = String(formData.get("kind") || "").trim();
   const detail = String(formData.get("detail") || "").trim();
@@ -546,15 +540,13 @@ export async function uploadBondDocumentsAction(actor: User, formData: FormData)
   }
 }
 
-/** GeM bid watch: settings (admin), a manual run, and importing or ignoring a found bid (admin or coordinator). */
+/** GeM bid watch: settings, a manual run, and importing or ignoring a found bid. Any signed-in user. */
 export async function gemAction(actor: User, formData: FormData): Promise<ActionState> {
   const gem = await import("./gem");
   const intent = String(formData.get("intent") || "");
   try {
-    if (!["ADMIN", "COORDINATOR", "GROUP_CEO"].includes(actor.role)) throw new WorkflowError("Only an administrator, a coordinator, or the Group CEO can run the GeM watch.");
     const portal = await gem.gemPortal();
     if (intent === "settings") {
-      if (actor.role !== "ADMIN") throw new WorkflowError("Only an administrator can change the GeM watch settings.");
       const keywords = String(formData.get("keywords") || "").trim();
       if (!keywords) throw new WorkflowError("Add at least one keyword.");
       await db.portal.update({
@@ -572,7 +564,6 @@ export async function gemAction(actor: User, formData: FormData): Promise<Action
       return { ok: "GeM watch settings saved." };
     }
     if (intent === "add-keyword" || intent === "remove-keyword") {
-      if (actor.role !== "ADMIN" && actor.role !== "GROUP_CEO") throw new WorkflowError("Only an administrator or the Group CEO can change the GeM keywords.");
       const word = String(formData.get("keyword") || "").trim();
       if (!word) throw new WorkflowError("Type a keyword.");
       const current: string[] = String(portal.keywords)
@@ -614,10 +605,8 @@ export async function siteWatchAction(actor: User, formData: FormData): Promise<
   const sites = await import("./site-watch");
   const intent = String(formData.get("intent") || "");
   try {
-    if (!["ADMIN", "COORDINATOR", "GROUP_CEO"].includes(actor.role)) throw new WorkflowError("Only an administrator, a coordinator, or the Group CEO can run the tender sites watch.");
     const portal = await sites.siteWatchPortal();
     if (intent === "settings") {
-      if (actor.role !== "ADMIN") throw new WorkflowError("Only an administrator can change the tender sites watch settings.");
       const keywords = String(formData.get("keywords") || "").trim();
       if (!keywords) throw new WorkflowError("Add at least one keyword.");
       await db.portal.update({
@@ -661,9 +650,6 @@ export async function siteWatchAction(actor: User, formData: FormData): Promise<
 
 export async function ingestDiscoveredAction(actor: User, formData: FormData): Promise<ActionState> {
   try {
-    if (actor.role !== "ADMIN" && actor.role !== "COORDINATOR") {
-      throw new WorkflowError("Only an administrator or coordinator can register a discovered tender.");
-    }
     const result = await domain.createTender(actor, {
       projectName: String(formData.get("projectName") || ""),
       clientName: String(formData.get("clientName") || ""),

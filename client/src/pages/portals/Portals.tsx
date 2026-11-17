@@ -1,6 +1,5 @@
 import { formatWhen } from "@client/utils/calendar";
 import { useApi } from "@client/api/client";
-import { useActor } from "@client/api/session";
 import type { CalendarJson, CrawlerException, Portal } from "@client/lib/types";
 import { LoadFailed, Loading } from "@client/components/base/loading";
 import { useNoticeAction } from "@client/components/feature/notice-action";
@@ -24,12 +23,10 @@ const KINDS = [
 type Data = { portals: Portal[]; exceptions: CrawlerException[]; calendar: CalendarJson; gem: GemData; sites?: SitesData };
 
 export default function PortalsPage() {
-  const actor = useActor();
   const { query, run } = useNoticeAction("/portals");
   const { data, error, reload } = useApi<Data>("/portals");
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
   const { portals, exceptions, calendar, gem, sites } = data;
-  const admin = actor.role === "ADMIN" || actor.role === "COORDINATOR" || actor.role === "GROUP_CEO";
   return (
     <>
       <header className="page-head">
@@ -42,8 +39,8 @@ export default function PortalsPage() {
       </header>
       {query.notice ? <p className="banner good">{query.notice}</p> : null}
       {query.error ? <p className="banner bad">{query.error}</p> : null}
-      <GemWatch gem={gem} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit={actor.role === "ADMIN"} canKeywords={actor.role === "ADMIN" || actor.role === "GROUP_CEO"} canRun={admin} />
-      {sites ? <SiteWatch data={sites} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit={actor.role === "ADMIN"} canRun={admin} /> : null}
+      <GemWatch gem={gem} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit canKeywords canRun />
+      {sites ? <SiteWatch data={sites} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit canRun /> : null}
       <h2 className="section-title">Other portals</h2>
       <div className="table-wrap">
         <table>
@@ -71,22 +68,19 @@ export default function PortalsPage() {
                   {portal.lastError ? <div>{portal.lastError}</div> : null}
                 </td>
                 <td>
-                  {actor.role === "ADMIN" ? (
-                    <form action={run("toggle-portal")}>
-                      <input type="hidden" name="id" value={portal.id} />
-                      <button className="btn ghost" type="submit">
-                        {portal.enabled ? "Disable" : "Enable"}
-                      </button>
-                    </form>
-                  ) : null}
+                  <form action={run("toggle-portal")}>
+                    <input type="hidden" name="id" value={portal.id} />
+                    <button className="btn ghost" type="submit">
+                      {portal.enabled ? "Disable" : "Enable"}
+                    </button>
+                  </form>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      {actor.role === "ADMIN" ? (
-        <form action={run("save-portal")} className="panel form-grid">
+      <form action={run("save-portal")} className="panel form-grid">
           <h2 className="wide">Add a portal</h2>
           <label>
             Name
@@ -115,10 +109,9 @@ export default function PortalsPage() {
           <button className="btn" type="submit">
             Save portal
           </button>
-        </form>
-      ) : null}
-      {admin ? <IngestForm portals={portals} /> : null}
-      {actor.role === "ADMIN" && portals[0] ? (
+      </form>
+      <IngestForm portals={portals} />
+      {portals[0] ? (
         <form action={run("log-exception")} className="panel form-grid">
           <h2 className="wide">Record an access exception</h2>
           <label>
