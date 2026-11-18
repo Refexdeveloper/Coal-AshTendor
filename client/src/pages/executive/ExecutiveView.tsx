@@ -11,6 +11,7 @@ import { CountUp } from "@client/components/feature/count-up";
 import { FxLink } from "@client/components/feature/fx-link";
 import type { CardFx } from "@client/components/feature/fx";
 import { PeriodPicker, inPeriod, resolvePeriod } from "@client/components/feature/period-picker";
+import { GemResults } from "@client/components/feature/gem-results";
 
 const EMD_DONE = ["COMPLETED", "SUBMITTED_EVIDENCE"];
 
@@ -99,6 +100,16 @@ const CATEGORY_KEY: Record<string, string> = {
   "Sale of Ash": "sale",
   Coal: "coal-transport",
 };
+
+/** The tender's own number from the notice: GeM ref, tender reference or tender ID, whichever was filled. */
+function tenderRef(tender: { fields?: { fieldKey: string; correctedValue: string; extractedValue: string }[] }) {
+  for (const key of ["gem_ref", "tender_ref", "tender_id"]) {
+    const field = tender.fields?.find((item) => item.fieldKey === key);
+    const value = (field?.correctedValue || field?.extractedValue || "").trim();
+    if (value && value !== NOT_FOUND) return value;
+  }
+  return "";
+}
 
 function tenderLine(tender: { projectName: string; fields?: { fieldKey: string; correctedValue: string; extractedValue: string }[] }) {
   const chosen = tender.fields?.find((field) => field.fieldKey === "tender_category");
@@ -208,6 +219,19 @@ function ago(date: Date, now: number) {
 }
 
 const dayFmt = (timeZone: string) => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone });
+const PAGE_SIZE = 10;
+
+function pageList(current: number, count: number) {
+  const wanted = [1, count, current - 1, current, current + 1].filter((n) => n >= 1 && n <= count);
+  const sorted = [...new Set(wanted)].sort((a, b) => a - b);
+  const out: (number | "…")[] = [];
+  for (const n of sorted) {
+    const prev = out[out.length - 1];
+    if (typeof prev === "number" && n - prev > 1) out.push("…");
+    out.push(n);
+  }
+  return out;
+}
 
 /** Group CEO view: the whole pipeline with every tender's workflow, commercials and all 44 fields on one page. */
 export type ExecutiveData = {
@@ -224,7 +248,8 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
   const names = new Map(users.map((item) => [item.id, item.name]));
   const now = Date.now();
   const [openRow, setOpenRow] = useState<string | null>(null);
-  const [allRows, setAllRows] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageFor, setPageFor] = useState("");
   const [allDeadlines, setAllDeadlines] = useState(false);
   const [allActivity, setAllActivity] = useState(false);
 
@@ -344,7 +369,20 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
         ? a.bidSubmissionEnd.getTime() - b.bidSubmissionEnd.getTime()
         : b.createdAt.getTime() - a.createdAt.getTime(),
     );
-  const shownRows = allRows ? rows : rows.slice(0, 8);
+  const filterKey = search.toString();
+  if (pageFor !== filterKey) {
+    setPageFor(filterKey);
+    setPage(1);
+  }
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const currentPage = pageFor !== filterKey ? 1 : Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const shownRows = rows.slice(pageStart, pageStart + PAGE_SIZE);
+  const goPage = (next: number) => {
+    setPage(next);
+    setOpenRow(null);
+    document.getElementById("recent-tenders")?.scrollIntoView({ block: "start" });
+  };
 
   // Activity is assembled from what the records already carry: receipt, decisions, EMD, bids and outcomes.
   type Activity = { at: Date; title: string; by: string; icon: string; tone: string; id: string };
@@ -612,141 +650,97 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
                 All tenders
               </Link>
             ) : null}
-            {rows.length > 8 ? (
-              <button type="button" className="dk-ghost" onClick={() => setAllRows((v) => !v)}>
-                {allRows ? "Show fewer" : `View all ${rows.length}`}
-              </button>
+            {pageCount > 1 ? (
+              <span className="dk-page-count">
+                Page {currentPage} of {pageCount}
+              </span>
             ) : null}
           </header>
-          <div className="dk-table-wrap">
-            <table className="dk-table">
-              <colgroup>
-                <col className="c-no" />
-                <col className="c-ref" />
-                <col className="c-title" />
-                <col className="c-date" />
-                <col className="c-date" />
-                <col className="c-client" />
-                <col className="c-value" />
-                <col className="c-status" />
-                <col className="c-act" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Tender reference</th>
-                  <th>Title</th>
-                  <th className="dk-th-date">Start date</th>
-                  <th className="dk-th-date">End date</th>
-                  <th>Client</th>
-                  <th className="num">Est. value</th>
-                  <th>Status</th>
-                  <th className="act">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shownRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="dk-empty">
-                      No tenders match these filters.
-                    </td>
-                  </tr>
-                ) : null}
-                {shownRows.map((tender, index) => {
-                  const [label, tone] = SHORT[tender.overallStatus] ?? [OVERALL[tender.overallStatus]?.label ?? tender.overallStatus, "gray"];
-                  const late = tender.tasks.some((task) => task.dueAt && task.dueAt.getTime() < now);
-                  const open = openRow === tender.id;
-                  return (
-                    <Fragment key={tender.id}>
-                      <tr className={`dk-row${open ? " is-open" : ""}${late ? " is-late" : ""}`} onClick={() => setOpenRow(open ? null : tender.id)} style={{ "--r": Math.min(index, 12) } as CSSProperties}>
-                        <td className="muted">{index + 1}</td>
-                        <td>
-                          <span className="dk-ref">{tender.recordId}</span>
-                        </td>
-                        <td className="dk-title">
-                          <span>{tender.projectName || "Untitled"}</span>
-                          {late ? <small className="text-bad">Overdue task</small> : null}
-                        </td>
-                        <td className="dk-date">{formatDay(tender.createdAt, tz)}</td>
-                        <td className="dk-date">{formatDay(tender.bidSubmissionEnd, tz)}</td>
-                        <td className="dk-client">{tender.clientName || "—"}</td>
-                        <td className="num">{inr(tender.estimatedValue)}</td>
-                        <td>
-                          <span className={`dk-pill ${tone}`}>{label}</span>
-                        </td>
-                        <td className="act" onClick={(event) => event.stopPropagation()}>
-                          <Link className="dk-icon-btn" to={`/tenders/${tender.id}`} title="Open the tender record" aria-label="Open the tender record">
-                            <Icon name="eye" />
-                          </Link>
-                          <button
-                            type="button"
-                            className={`dk-icon-btn${open ? " is-on" : ""}`}
-                            onClick={() => setOpenRow(open ? null : tender.id)}
-                            title={open ? "Hide details" : "Show workflow, commercials and all 44 fields"}
-                            aria-expanded={open}
-                          >
-                            <Icon name="chevron" />
-                          </button>
-                        </td>
-                      </tr>
-                      {open ? (
-                        <tr className="dk-detail-row">
-                          <td colSpan={9}>
-                            <TenderSummary tender={tender} names={names} tz={tz} now={now} />
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <ul className="dk-tender-cards">
-            {shownRows.length === 0 ? <li className="dk-empty">No tenders match these filters.</li> : null}
-            {shownRows.map((tender) => {
+          {shownRows.length === 0 ? <p className="dk-empty tc-empty">No tenders match these filters.</p> : null}
+          <ul className="tc-grid">
+            {shownRows.map((tender, index) => {
               const [label, tone] = SHORT[tender.overallStatus] ?? [OVERALL[tender.overallStatus]?.label ?? tender.overallStatus, "gray"];
               const late = tender.tasks.some((task) => task.dueAt && task.dueAt.getTime() < now);
               const open = openRow === tender.id;
+              const toggleRow = () => setOpenRow(open ? null : tender.id);
               return (
-                <li key={tender.id} className={`ceo-card${open ? " is-open" : ""}${late ? " is-late" : ""}`}>
-                  <button type="button" className="ceo-card-main" onClick={() => setOpenRow(open ? null : tender.id)} aria-expanded={open}>
-                    <span className="ceo-card-top">
-                      <span className="dk-ref">{tender.recordId}</span>
-                      <span className={`dk-pill ${tone}`}>{label}</span>
+                <Fragment key={tender.id}>
+                  <li className={`tc-card tone-${tone}${open ? " is-open" : ""}${late ? " is-late" : ""}`} style={{ "--r": Math.min(index, 12) } as CSSProperties}>
+                    <Link className="tc-main" to={`/tenders/${tender.id}`} title="Open the full tender record">
+                      <span className="tc-top">
+                        <span className="tc-no">{pageStart + index + 1}</span>
+                        <span className="tc-ref" title={`Tender reference · record ${tender.recordId}`}>
+                          {tenderRef(tender) || tender.recordId}
+                        </span>
+                        {tender.portalName ? <span className="tc-portal">{tender.portalName.replace(/\s*\(.*\)$/, "")}</span> : null}
+                        <span className={`dk-pill ${tone}`}>{label}</span>
+                      </span>
+                      <span className="tc-title" title={tender.projectName}>
+                        {tender.projectName || "Untitled"}
+                      </span>
+                      <span className="tc-client">{tender.clientName || "Client not set"}</span>
+                      <span className="tc-facts">
+                        <span>
+                          <small>Received</small>
+                          <b>{formatDay(tender.createdAt, tz)}</b>
+                        </span>
+                        <span>
+                          <small>Bid closes</small>
+                          <b>{formatDay(tender.bidSubmissionEnd, tz)}</b>
+                          <Countdown end={tender.bidSubmissionEnd} now={now} />
+                        </span>
+                        <span>
+                          <small>Est. value</small>
+                          <b>{inr(tender.estimatedValue)}</b>
+                        </span>
+                      </span>
+                      <StageTrack tender={tender} />
+                    </Link>
+                    <span className="tc-foot">
+                      {late ? <span className="tc-late">● Overdue task</span> : <span className="tc-owner">{tender.submitterId ? `Submitter: ${names.get(tender.submitterId) ?? "—"}` : "No submitter yet"}</span>}
+                      <span className="tc-actions">
+                        <Link to={`/tenders/${tender.id}`} className="tc-open" title="Open the tender record">
+                          <Icon name="eye" /> Open
+                        </Link>
+                        <button type="button" className={`tc-more${open ? " is-on" : ""}`} onClick={toggleRow} aria-expanded={open}>
+                          {open ? "Hide details" : "Details"} <Icon name="chevron" />
+                        </button>
+                      </span>
                     </span>
-                    <strong>{tender.projectName || "Untitled"}</strong>
-                    {late ? <small className="text-bad">Overdue task</small> : null}
-                    <dl className="ceo-card-facts">
-                      <div>
-                        <dt>Client</dt>
-                        <dd>{tender.clientName || "—"}</dd>
-                      </div>
-                      <div>
-                        <dt>Est. value</dt>
-                        <dd>{inr(tender.estimatedValue)}</dd>
-                      </div>
-                      <div>
-                        <dt>Start date</dt>
-                        <dd>{formatDay(tender.createdAt, tz)}</dd>
-                      </div>
-                      <div>
-                        <dt>End date</dt>
-                        <dd>{formatDay(tender.bidSubmissionEnd, tz)}</dd>
-                      </div>
-                    </dl>
-                  </button>
-                  <div className="ceo-card-actions">
-                    <Link to={`/tenders/${tender.id}`}>Open tender</Link>
-                    <button type="button" onClick={() => setOpenRow(open ? null : tender.id)}>
-                      {open ? "Hide details" : "Details"}
-                    </button>
-                  </div>
-                  {open ? <TenderSummary tender={tender} names={names} tz={tz} now={now} /> : null}
-                </li>
+                  </li>
+                  {open ? (
+                    <li className="tc-detail">
+                      <TenderSummary tender={tender} names={names} tz={tz} now={now} />
+                    </li>
+                  ) : null}
+                </Fragment>
               );
             })}
           </ul>
+          {pageCount > 1 ? (
+            <nav className="dk-pages" aria-label="Recent tenders pages">
+              <span>
+                {pageStart + 1}–{pageStart + shownRows.length} of {rows.length}
+              </span>
+              <button type="button" disabled={currentPage === 1} onClick={() => goPage(currentPage - 1)}>
+                Previous
+              </button>
+              {pageList(currentPage, pageCount).map((item, index) =>
+                item === "…" ? (
+                  <span key={`gap-${index}`} className="dk-page-gap">
+                    …
+                  </span>
+                ) : (
+                  <button key={item} type="button" className={item === currentPage ? "is-on" : ""} onClick={() => goPage(item)} aria-current={item === currentPage ? "page" : undefined}>
+                    {item}
+                  </button>
+                ),
+              )}
+              <button type="button" disabled={currentPage === pageCount} onClick={() => goPage(currentPage + 1)}>
+                Next
+              </button>
+            </nav>
+          ) : null}
         </section>
 
         <aside className="dk-side">
@@ -921,6 +915,43 @@ function BranchPanel({ branch, rows, names, tz, now, back }: { branch: "costing"
   );
 }
 
+/** Days left to the bid deadline, coloured by urgency. */
+function Countdown({ end, now }: { end: Date | null; now: number }) {
+  if (!end) return null;
+  const days = (end.getTime() - now) / 864e5;
+  if (days < 0) return <em className="tc-due closed">Closed</em>;
+  const text = days < 1 ? `${Math.max(1, Math.round(days * 24))} h left` : `${Math.round(days)} day${Math.round(days) === 1 ? "" : "s"} left`;
+  return <em className={`tc-due ${days < 2 ? "hot" : days < 7 ? "warm" : "cool"}`}>{text}</em>;
+}
+
+const TRACK: [string, Record<string, { label: string; tone: string }>, keyof Row][] = [
+  ["Relevance", RELEVANCE, "relevanceStatus"],
+  ["Costing", COSTING, "costingStatus"],
+  ["Approval", APPROVAL, "approvalStatus"],
+  ["EMD", EMD, "emdStatus"],
+  ["Bid", BID, "bidStatus"],
+];
+
+/** The five workflow steps as a progress track: done, in progress, stopped or not started. */
+function StageTrack({ tender }: { tender: Row }) {
+  const steps = TRACK.map(([name, map, key]) => {
+    const value = String(tender[key] ?? "");
+    const tone = map[value]?.tone ?? "neutral";
+    return { name, label: map[value]?.label ?? value, state: tone === "good" ? "done" : tone === "bad" ? "stop" : tone === "neutral" ? "todo" : "doing" };
+  });
+  const done = steps.filter((step) => step.state === "done").length;
+  return (
+    <span className="tc-track" aria-label={`${done} of ${steps.length} workflow steps done`}>
+      {steps.map((step) => (
+        <span key={step.name} className={`tc-step ${step.state}`} title={`${step.name}: ${step.label}`}>
+          <i />
+          <small>{step.name}</small>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 const labelText = (map: Record<string, { label: string }>, value: string) => map[value]?.label ?? value;
 
 function TenderSummary({ tender, names, tz, now }: { tender: Row; names: Map<string, string>; tz: string; now: number }) {
@@ -1013,6 +1044,8 @@ function TenderSummary({ tender, names, tz, now }: { tender: Row; names: Map<str
           </ul>
         </section>
       </div>
+
+      <GemResults tenderId={tender.id} />
 
       <div className="all-fields">
         <header>

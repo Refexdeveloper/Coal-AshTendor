@@ -197,11 +197,77 @@ views.get("/email-logs/:id", async (req, res) => {
   res.json({ ...row, attachments: row.attachments ? JSON.parse(row.attachments) : [] });
 });
 
+// GeM bid results (technical and financial evaluation) for a tender that carries a GeM bid number; null when it has none.
+views.get("/tenders/:id/gem-result", async (req, res) => {
+  const { gemResultFor } = await import("../services/gem-result");
+  try {
+    res.json(await gemResultFor(req.params.id, req.query.refresh === "1"));
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+views.get("/gem-bids/:id/result", async (req, res) => {
+  const { gemResultForNumber } = await import("../services/gem-result");
+  const bid = await db.gemBid.findUnique({ where: { id: req.params.id } });
+  if (!bid) {
+    res.status(404).json({ error: "GeM bid not found" });
+    return;
+  }
+  try {
+    res.json(await gemResultForNumber(bid.bidNumber, req.query.refresh === "1"));
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+views.get("/site-tenders/:id/details", async (req, res) => {
+  const { siteTenderDetails } = await import("../services/site-watch");
+  try {
+    res.json(await siteTenderDetails(req.params.id, req.query.refresh === "1"));
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? (error.name === "TimeoutError" ? "The portal did not answer in time." : error.message) : String(error) });
+  }
+});
+
+// Tender documents behind the portal's security code: start (shows the code image), unlock (the person's code), file.
+views.post("/site-tenders/:id/documents/start", async (req, res) => {
+  const { startTenderDocuments } = await import("../services/site-watch");
+  try {
+    res.json(await startTenderDocuments(req.params.id));
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? (error.name === "TimeoutError" ? "The portal did not answer in time." : error.message) : String(error) });
+  }
+});
+views.post("/site-tenders/:id/documents/unlock", async (req, res) => {
+  const { unlockTenderDocuments } = await import("../services/site-watch");
+  try {
+    res.json(await unlockTenderDocuments(req.params.id, String(req.body?.token ?? ""), String(req.body?.code ?? "").slice(0, 12)));
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+views.get("/site-tenders/:id/documents/:token/:index", async (req, res) => {
+  const { tenderDocument } = await import("../services/site-watch");
+  try {
+    const file = await tenderDocument(req.params.id, req.params.token, Number(req.params.index));
+    const safe = file.name.replace(/[^\w.\- ()]+/g, "_");
+    res.setHeader("Content-Type", file.type.split(";")[0] || "application/octet-stream");
+    res.setHeader("Content-Disposition", `${req.query.download === "1" ? "attachment" : "inline"}; filename="${safe}"`);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.send(file.body);
+  } catch (error) {
+    const captcha = (error as { captcha?: string }).captcha;
+    res.status(captcha ? 409 : 502).json({ error: error instanceof Error ? error.message : String(error), ...(captcha ? { captcha } : {}) });
+  }
+});
+
 views.get("/portals", async (_req, res) => {
   const { clearStaleRuns, gemPortal, gemProgress, gemRunning } = await import("../services/gem");
   await clearStaleRuns().catch(() => undefined);
   const gem = await gemPortal();
   const sw = await import("../services/site-watch");
+  const { SHEET_LINKS } = await import("../services/site-list");
   await sw.clearStaleSiteRuns().catch(() => undefined);
   const sitePortal = await sw.siteWatchPortal();
   const [watchSites, allSiteTenders, siteRuns] = await Promise.all([
@@ -243,7 +309,7 @@ views.get("/portals", async (_req, res) => {
     calendar: calendarJson(calendar),
     // The raw GeM record is only needed to download the document, so it stays on the server.
     gem: { portal: gem, runs: gemRuns, bids: gemBids.map(({ raw: _raw, ...bid }: Record<string, unknown>) => bid), tenders, running: gemRunning(), progress: gemProgress() },
-    sites: { portal: sitePortal, sites: watchSites, tenders: siteTenders, runs: siteRuns, stats: siteStats, running: sw.siteWatchRunning(), progress: sw.siteWatchProgress() },
+    sites: { portal: sitePortal, sites: watchSites, tenders: siteTenders, runs: siteRuns, stats: siteStats, links: SHEET_LINKS, running: sw.siteWatchRunning(), progress: sw.siteWatchProgress() },
   });
 });
 

@@ -2,6 +2,7 @@ import { Fragment, lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiUrl } from "@client/api/client";
 import { formatWhen } from "@client/utils/calendar";
+import { GemResults } from "@client/components/feature/gem-results";
 import type { Portal } from "@client/lib/types";
 
 const PdfViewer = lazy(() => import("@client/components/feature/pdf-viewer"));
@@ -452,7 +453,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                   </td>
                   <td className="gem-row-actions">
                     <button type="button" className={`btn ghost${open ? " is-on" : ""}`} onClick={() => setOpenId(open ? "" : bid.id)}>
-                      {open ? "Hide document" : "View document"}
+                      {open ? (closed ? "Hide results" : "Hide document") : closed ? "Results & document" : "View document"}
                     </button>
                     {tender ? (
                       <Link className="btn ghost" to={`/tenders/${tender.id}`}>
@@ -491,6 +492,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                 {open ? (
                   <tr className="gem-doc-row">
                     <td colSpan={7}>
+                      {closed ? <GemResults gemBidId={bid.id} /> : null}
                       <BidDocuments bid={bid} />
                     </td>
                   </tr>

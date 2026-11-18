@@ -17,6 +17,11 @@ const ADDED_COLUMNS: Record<string, [string, string][]> = {
     ["convertedToSd", "BOOLEAN NOT NULL DEFAULT false"],
   ],
   GemBid: [["links", "LONGTEXT NULL"]],
+  WatchSite: [["note", "VARCHAR(500) NOT NULL DEFAULT ''"]],
+  SiteTender: [
+    ["details", "LONGTEXT NULL"],
+    ["detailsAt", "DATETIME(3) NULL"],
+  ],
   Portal: [
     ["excludeWords", "TEXT NULL"],
     ["autoImport", "BOOLEAN NOT NULL DEFAULT true"],
