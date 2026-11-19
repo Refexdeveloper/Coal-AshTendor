@@ -5,7 +5,7 @@ import { useActor } from "@client/api/session";
 import type { CalendarJson, Tender, WorkflowTask } from "@client/lib/types";
 import { LoadFailed, Loading } from "@client/components/base/loading";
 import { businessMinutesBetween, dayLengthMinutes, formatDuration, formatWhen } from "@client/utils/calendar";
-import { STAGE, STAGE_HELP, TASK } from "@client/lib/labels";
+import { OVERALL, STAGE, STAGE_HELP, TASK } from "@client/lib/labels";
 import { Status } from "@client/components/base/pill";
 
 type Data = { tasks: (WorkflowTask & { tender: Tender })[]; calendar: CalendarJson };
@@ -66,33 +66,52 @@ export default function WorklistPage() {
               </div>
               <span className={`count-badge ${group.key === "overdue" ? "alert" : ""}`}>{items.length}</span>
             </header>
-            <ul className="list-rows">
-              {items.map(({ task, late, left }, index) => (
-                <li key={task.id} className={`list-row ${late ? "red" : group.tone}`} style={{ "--r": index } as CSSProperties}>
-                  <div className="grow">
-                    <div className="chips">
-                      <span className="pill info">{STAGE[task.stage] ?? task.title}</span>
-                      <Status map={TASK} value={task.status} />
-                    </div>
-                    <div className="title">
-                      <b>{task.tender.recordId}</b> · {task.tender.projectName || task.tender.clientName || "Untitled"}
-                    </div>
-                    <div className="meta">{STAGE_HELP[task.stage]}</div>
-                    <div className="meta">
-                      Due {formatWhen(task.dueAt, tz)} ·{" "}
-                      {!task.dueAt
-                        ? "uses the portal deadline"
-                        : late
-                          ? `overdue by ${formatDuration(businessMinutesBetween(task.dueAt, now, calendar), day)}`
-                          : `${formatDuration(left ?? 0, day)} working time left`}
-                      {task.tender.bidSubmissionEnd ? ` · bid deadline ${formatWhen(task.tender.bidSubmissionEnd, tz)}` : ""}
-                    </div>
-                  </div>
-                  <Link className="btn" to={`/tenders/${task.tenderId}${task.stage === "DATA_VALIDATION" ? "?tab=details" : ""}`}>
-                    Open task
-                  </Link>
-                </li>
-              ))}
+            <ul className="tc-grid">
+              {items.map(({ task, late, left }, index) => {
+                const tender = task.tender;
+                const [label, tone] = [OVERALL[tender.overallStatus]?.label ?? tender.overallStatus, late ? "red" : group.key === "today" ? "amber" : "blue"];
+                const dueText = !task.dueAt
+                  ? "Uses the portal deadline"
+                  : late
+                    ? `Overdue by ${formatDuration(businessMinutesBetween(task.dueAt, now, calendar), day)}`
+                    : `${formatDuration(left ?? 0, day)} working time left`;
+                return (
+                  <li key={task.id} className={`tc-card tone-${tone}${late ? " is-late" : ""}`} style={{ "--r": index } as CSSProperties}>
+                    <Link className="tc-main" to={`/tenders/${task.tenderId}?tab=overview&task=${task.id}`} title="Open the full record and the tasks overview">
+                      <span className="tc-top">
+                        <span className="tc-no">{index + 1}</span>
+                        <span className="tc-ref">{tender.recordId}</span>
+                        <span className="pill info">{STAGE[task.stage] ?? task.title}</span>
+                        <span className={`dk-pill ${tone}`}>{label}</span>
+                      </span>
+                      <span className="tc-title">{tender.projectName || tender.clientName || "Untitled"}</span>
+                      <span className="tc-client">{tender.clientName || "Client not set"}</span>
+                      <span className="tc-facts">
+                        <span>
+                          <small>Your task</small>
+                          <b><Status map={TASK} value={task.status} /></b>
+                        </span>
+                        <span>
+                          <small>Due</small>
+                          <b>{formatWhen(task.dueAt, tz)}</b>
+                        </span>
+                        <span>
+                          <small>Bid closes</small>
+                          <b>{formatWhen(tender.bidSubmissionEnd, tz)}</b>
+                        </span>
+                      </span>
+                      {STAGE_HELP[task.stage] ? <span className="muted">{STAGE_HELP[task.stage]}</span> : null}
+                      <span className="muted">{dueText}</span>
+                    </Link>
+                    <span className="tc-foot">
+                      <span className={late ? "tc-late" : "tc-owner"}>{late ? "● Overdue" : "Open the full report"}</span>
+                      <Link to={`/tenders/${task.tenderId}?tab=overview&task=${task.id}`} className="tc-open">
+                        Open full report
+                      </Link>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         );

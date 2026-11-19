@@ -67,6 +67,7 @@ const TABS = [
 /** The Group CEO reads the tender rather than works it: a brief, the stage-by-stage history and the files. */
 const CEO_TABS = [
   ["brief", "Executive brief"],
+  ["overview", "Tasks"],
   ["stages", "Stage-wise history"],
   ["documents", "Documents"],
 ] as const;
@@ -164,6 +165,11 @@ export default function TenderPage() {
   const actor = useActor();
   const { data, error, reload } = useApi<Data>(`/tenders/${encodeURIComponent(id)}`);
   const readingOcr = Boolean(data?.tender.ocrStatus === "PROCESSING" || data?.tender.documents.some((document) => document.ocrJson?.trim() === "PENDING"));
+  const focusTask = search.get("task");
+  useEffect(() => {
+    if (!data || !focusTask) return;
+    document.getElementById(`task-${focusTask}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [data, focusTask]);
   useEffect(() => {
     if (!readingOcr) return;
     const timer = window.setInterval(() => void reload(), 3000);
@@ -286,7 +292,7 @@ export default function TenderPage() {
       }
     : null;
   const tabBadge: Record<string, number> = {
-    overview: openTasks.filter((task) => !task.stage.startsWith("EMD_")).length,
+    overview: openTasks.length,
     details: attention,
     documents: tender.documents.length,
     stages: tender.approvals.length,
@@ -403,14 +409,15 @@ export default function TenderPage() {
         </div>
       ) : null}
       {tab === "overview" ? (
+        <div className="stack">
         <div className="overview">
           <div className="stack">
             <h2 className="section-title">
-              Open tasks {openTasks.some((task) => task.mine && !task.stage.startsWith("EMD_")) ? <span className="count-badge">{openTasks.filter((task) => task.mine && !task.stage.startsWith("EMD_")).length} for you</span> : null}
+              Open tasks {mineCount ? <span className="count-badge">{mineCount} for you</span> : null}
             </h2>
             <TaskCards
               tenderId={tender.id}
-              tasks={openTasks.filter((task) => !task.stage.startsWith("EMD_"))}
+              tasks={openTasks}
               bgRequiresBoth={data.bgRequiresBoth}
               canAuthorize={actor.role === "ADMIN" || actor.role === "DEPT_HEAD"}
               canSendBack={canSendBack}
@@ -478,6 +485,57 @@ export default function TenderPage() {
               </dl>
             </section>
           </aside>
+        </div>
+        <section className="panel">
+          <header className="panel-head">
+            <div>
+              <h2>Tasks overview</h2>
+              <p className="muted">Every step on this tender, including finished ones. Open a card from My worklist and it lands on that step.</p>
+            </div>
+            <span className="count-badge">{tender.tasks.length}</span>
+          </header>
+          <ul className="tc-grid">
+            {[...tender.tasks]
+              .sort((a, b) => Number(WORKABLE.includes(b.status)) - Number(WORKABLE.includes(a.status)) || a.createdAt.getTime() - b.createdAt.getTime())
+              .map((task, index) => {
+                const open = WORKABLE.includes(task.status);
+                const late = Boolean(open && task.dueAt && task.dueAt < now);
+                const owners = assigned(task.assigneeIds).map((userId) => names.get(userId) ?? "Unknown").join(", ");
+                const tone = late ? "red" : task.status === "COMPLETED" ? "green" : open ? "blue" : "gray";
+                return (
+                  <li key={task.id} id={open ? undefined : `task-${task.id}`} className={`tc-card tone-${tone}${focusTask === task.id ? " is-open" : ""}`} style={{ "--r": index } as CSSProperties}>
+                    <div className="tc-main">
+                      <span className="tc-top">
+                        <span className="tc-no">{index + 1}</span>
+                        <span className="tc-ref">{STAGE[task.stage] ?? task.stage}</span>
+                        <Status map={TASK} value={task.status === "CANCELLED" && open ? "IN_PROGRESS" : task.status} />
+                      </span>
+                      <span className="tc-title">{task.title}</span>
+                      <span className="tc-client">{owners || "No owner assigned"}</span>
+                      <span className="tc-facts">
+                        <span>
+                          <small>Due</small>
+                          <b>{formatWhen(task.dueAt, tz)}</b>
+                        </span>
+                        <span>
+                          <small>Done</small>
+                          <b>{task.completedAt ? formatWhen(task.completedAt, tz) : "—"}</b>
+                        </span>
+                        <span>
+                          <small>Decision</small>
+                          <b>{task.decision ? DECISION[task.decision] ?? task.decision : "—"}</b>
+                        </span>
+                      </span>
+                      {task.completedById ? <span className="muted">Completed by {names.get(task.completedById) ?? "Unknown"}</span> : null}
+                      {late ? <span className="tc-late">● Overdue{task.dueAt ? ` · due ${formatWhen(task.dueAt, tz)}` : ""}</span> : null}
+                      {task.wasOverdue && task.completedAt ? <span className="muted">Finished after the SLA</span> : null}
+                      {task.comments ? <span className="muted">{task.comments}</span> : null}
+                    </div>
+                  </li>
+                );
+              })}
+          </ul>
+        </section>
         </div>
       ) : null}
 

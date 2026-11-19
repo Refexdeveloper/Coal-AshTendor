@@ -130,7 +130,7 @@ export function TaskCards({
   return (
     <div className="stack">
       {tasks.map((task, index) => (
-        <article key={task.id} className={`panel task ${task.mine ? "mine" : ""}`} style={{ "--r": index } as CSSProperties}>
+        <article id={`task-${task.id}`} key={task.id} className={`panel task ${task.mine ? "mine" : ""}`} style={{ "--r": index } as CSSProperties}>
           <header className="panel-head">
             <div>
               <div className="chips">
