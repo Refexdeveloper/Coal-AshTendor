@@ -40,7 +40,8 @@ const SUCCESS: Record<string, { message: string; celebrate?: boolean }> = {
   "dept-approve": { message: "Final costing approved.", celebrate: true },
   "dept-return": { message: "Costing returned for revision." },
   "dept-reject": { message: "Final costing rejected. A business decision task was created." },
-  "emd-save": { message: "EMD progress saved." },
+  "emd-save": { message: "EMD progress saved. Amount, stamp and files are stored." },
+  "remove-emd-doc": { message: "File removed." },
   "emd-complete": { message: "EMD marked prepared and verified.", celebrate: true },
   "bg-request": { message: "BG letter details saved. Open the letter to print or download it." },
   "emd-clarify": { message: "Letter details and documents saved. The EMD task was created." },
@@ -51,6 +52,7 @@ const SUCCESS: Record<string, { message: string; celebrate?: boolean }> = {
   close: { message: "Tender closed without bidding." },
   outcome: { message: "Outcome recorded." },
   "add-docs": { message: "Documents uploaded." },
+  "remove-doc": { message: "Document deleted." },
 };
 
 /** Form bound to the task action; shows a toast (and confetti for approvals) when it succeeds. */
@@ -75,7 +77,7 @@ export function BoundForm({ children, className = "form-grid" }: { children: Rea
   );
 }
 
-/** File input with a friendly drop area that shows the chosen file's name. */
+/** File input with a friendly drop area. Chosen files stay listed, and each one can be removed before saving. */
 export function FilePick({
   name,
   label,
@@ -94,35 +96,64 @@ export function FilePick({
   accept?: string;
   onPicked?: (names: string[]) => void;
 }) {
-  const [names, setNames] = useState<string[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [over, setOver] = useState(false);
+  const apply = (next: File[]) => {
+    setFiles(next);
+    const input = inputRef.current;
+    if (input) {
+      const data = new DataTransfer();
+      for (const file of next) data.items.add(file);
+      input.files = data.files;
+    }
+    onPicked?.(next.map((file) => file.name));
+  };
+  const add = (list: FileList | null) => {
+    const picked = [...(list ?? [])];
+    if (inputRef.current) inputRef.current.value = "";
+    if (!picked.length) return;
+    const same = (file: File, other: File) => file.name === other.name && file.size === other.size && file.lastModified === other.lastModified;
+    apply(multiple ? [...files, ...picked.filter((file) => !files.some((have) => same(have, file)))] : picked.slice(0, 1));
+  };
   return (
-    <label
-      className={`filepick wide ${names.length ? "has-file" : ""} ${over ? "over" : ""}`}
-      onDragOver={() => setOver(true)}
-      onDragLeave={() => setOver(false)}
-      onDrop={() => setOver(false)}
-    >
-      <span className="filepick-icon" aria-hidden>
-        {names.length ? "✓" : "⇪"}
-      </span>
-      <span className="filepick-copy">
-        <strong>{names.length ? names.join(", ") : label}</strong>
-        <small>{names.length ? "Click to choose a different file" : hint ?? "Click to choose, or drop a file here. Excel, PDF, image or text. Excel files are visible only to the Group CEO."}</small>
-      </span>
-      <input
-        name={name}
-        type="file"
-        multiple={multiple}
-        required={required}
-        accept={accept || undefined}
-        onChange={(event) => {
-          const picked = [...(event.target.files ?? [])].map((file) => file.name);
-          setNames(picked);
-          onPicked?.(picked);
-        }}
-      />
-    </label>
+    <div className="filepick-wrap wide">
+      <label
+        className={`filepick ${files.length ? "has-file" : ""} ${over ? "over" : ""}`}
+        onDragOver={() => setOver(true)}
+        onDragLeave={() => setOver(false)}
+        onDrop={() => setOver(false)}
+      >
+        <span className="filepick-icon" aria-hidden>
+          {files.length ? "✓" : "⇪"}
+        </span>
+        <span className="filepick-copy">
+          <strong>{files.length ? `${files.length} file${files.length === 1 ? "" : "s"} ready` : label}</strong>
+          <small>{files.length ? (multiple ? "Choose more, or remove one below" : "Remove it below, or choose a different file") : hint ?? "Click to choose, or drop a file here. Excel, PDF, image or text. Excel files are visible only to the Group CEO."}</small>
+        </span>
+        <input
+          ref={inputRef}
+          name={name}
+          type="file"
+          multiple={multiple}
+          required={required && files.length === 0}
+          accept={accept || undefined}
+          onChange={(event) => add(event.target.files)}
+        />
+      </label>
+      {files.length ? (
+        <ul className="filepick-list">
+          {files.map((file, index) => (
+            <li key={`${file.name}-${file.size}-${file.lastModified}`}>
+              <span>{file.name}</span>
+              <button type="button" onClick={() => apply(files.filter((_, at) => at !== index))}>
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 

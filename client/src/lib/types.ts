@@ -109,6 +109,7 @@ export type EmdRecord = {
   tenderId: string;
   instrumentType: string;
   amount: string;
+  stampAmount?: string;
   beneficiary: string;
   referenceNumber: string;
   preparationStatus: string;

@@ -216,6 +216,7 @@ CREATE TABLE `EmdRecord` (
   `tenderId` VARCHAR(191) NOT NULL,
   `instrumentType` VARCHAR(191) NOT NULL,
   `amount` TEXT NOT NULL DEFAULT (''),
+  `stampAmount` TEXT NOT NULL DEFAULT (''),
   `beneficiary` TEXT NOT NULL DEFAULT (''),
   `referenceNumber` TEXT NOT NULL DEFAULT (''),
   `preparationStatus` VARCHAR(191) NOT NULL DEFAULT 'NOT_STARTED',

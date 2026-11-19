@@ -192,6 +192,9 @@ export const CLOSED_OVERALL = [
 
 export const OPEN_TASK = ["NOT_STARTED", "IN_PROGRESS", "OVERDUE", "RETURNED_FOR_REVISION", "BLOCKED"];
 
+/** Open tasks, plus tasks cancelled only because the tender was finished. Those can still be done. */
+export const WORKABLE = [...OPEN_TASK, "CANCELLED"];
+
 export function labelOf(map: Record<string, { label: string }>, key: string) {
   return map[key]?.label ?? key;
 }

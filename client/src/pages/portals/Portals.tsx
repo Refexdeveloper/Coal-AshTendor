@@ -40,7 +40,7 @@ export default function PortalsPage() {
       {query.notice ? <p className="banner good">{query.notice}</p> : null}
       {query.error ? <p className="banner bad">{query.error}</p> : null}
       <GemWatch gem={gem} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit canKeywords canRun />
-      {sites ? <SiteWatch data={sites} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit canRun /> : null}
+      {sites ? <SiteWatch data={sites} gem={gem} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit canRun /> : null}
       <h2 className="section-title">Other portals</h2>
       <div className="table-wrap">
         <table>

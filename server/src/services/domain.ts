@@ -5,7 +5,7 @@ import { effectiveValue, extractFields, parseDateTime, parseInr, type FieldHit, 
 import { NOT_FOUND, TENDER_FIELDS } from "../utils/fields";
 import { allowedUpload, deleteStored, pagesFromBuffer, sha256, storeFile } from "./files";
 import { extractUploadedFile, overlayHits } from "./ocr";
-import { CLOSED_OVERALL, CREATOR_ROLES, EDITOR_ROLES, MANAGER_ROLES, OPEN_TASK } from "../utils/labels";
+import { CLOSED_OVERALL, CREATOR_ROLES, EDITOR_ROLES, MANAGER_ROLES, OPEN_TASK, WORKABLE } from "../utils/labels";
 import { BUSINESS_LINES, detectLine, ownersFor, type BusinessLine } from "./team";
 import { emailsFor, isStepAction, mailOcrResult, notifyAddresses, notifyStepMoved } from "./notify";
 
@@ -77,11 +77,22 @@ function parseIds(value: string) {
   }
 }
 
-function assertOpen(actor: Actor, task: { assigneeIds: string; status: string }) {
+async function assertOpen(actor: Actor, task: { id: string; assigneeIds: string; status: string }) {
   if (!parseIds(task.assigneeIds).includes(actor.id)) {
     throw new WorkflowError("This task is assigned to someone else.");
   }
+  if (task.status === "CANCELLED") {
+    await reopenTask(task);
+    return;
+  }
   if (!OPEN_TASK.includes(task.status)) throw new WorkflowError("This task is already closed.");
+}
+
+/** A finished tender used to cancel its tasks. Put one back to in progress so it can be saved. */
+async function reopenTask(task: { id: string; status: string }) {
+  if (task.status !== "CANCELLED") return;
+  await db.workflowTask.update({ where: { id: task.id }, data: { status: "IN_PROGRESS" } });
+  task.status = "IN_PROGRESS";
 }
 
 async function audit(
@@ -172,7 +183,7 @@ async function createTask(
   },
 ) {
   const existing = await tx.workflowTask.findFirst({
-    where: { tenderId: options.tenderId, stage: options.stage, status: { in: OPEN_TASK } },
+    where: { tenderId: options.tenderId, stage: options.stage, status: { in: WORKABLE } },
   });
   if (existing) return { task: existing, created: false };
   const uniqueAssignees = [...new Set(options.assigneeIds)];
@@ -621,7 +632,7 @@ export async function canEditFields(actor: Actor, tenderId: string) {
   if (canEdit(actor)) return true;
   const [task, tender] = await Promise.all([
     db.workflowTask.findFirst({
-      where: { tenderId, status: { in: OPEN_TASK }, assigneeIds: { contains: `"${actor.id}"` } },
+      where: { tenderId, status: { in: WORKABLE }, assigneeIds: { contains: `"${actor.id}"` } },
     }),
     db.tender.findUnique({ where: { id: tenderId }, select: { submitterId: true, overallStatus: true } }),
   ]);
@@ -642,7 +653,6 @@ export async function updateFields(actor: Actor, tenderId: string, values: Recor
   if (!tender) throw new WorkflowError("Tender not found.");
   const missed = tender.overallStatus === "NOT_BID_DEADLINE_MISSED";
   if (missed && actor.role !== "ADMIN") throw new WorkflowError("Only an administrator can extend a missed bid deadline.");
-  if (CLOSED_OVERALL.includes(tender.overallStatus) && !missed) throw new WorkflowError("Closed tenders keep their recorded fields.");
   if (!(await canEditFields(actor, tenderId))) throw new WorkflowError("Only the Tender Coordinator, a reviewer, the person on the current stage, or the bid submitter after validation is submitted can correct these fields.");
   const changes: string[] = [];
   for (const definition of TENDER_FIELDS) {
@@ -720,7 +730,7 @@ export async function submitForRelevance(actor: Actor, taskId: string, confirmed
   if (!confirmed) throw new WorkflowError("Confirm that you have reviewed the extracted fields.");
   const task = await db.workflowTask.findUnique({ where: { id: taskId }, include: { tender: { include: { fields: true } } } });
   if (!task || task.stage !== "DATA_VALIDATION") throw new WorkflowError("Validation task not found.");
-  assertOpen(actor, task);
+  await assertOpen(actor, task);
   const conflicts = task.tender.fields.filter((field: { validationStatus: string; label: string }) => field.validationStatus === "CONFLICT");
   if (conflicts.length) {
     throw new WorkflowError(`Resolve conflicting values before relevance review: ${conflicts.map((field: { label: string }) => field.label).join(", ")}.`);
@@ -780,7 +790,7 @@ export async function submitForRelevance(actor: Actor, taskId: string, confirmed
 export async function decideRelevance(actor: Actor, taskId: string, decision: "APPROVED" | "REJECTED", comments: string) {
   const task = await db.workflowTask.findUnique({ where: { id: taskId }, include: { tender: { include: { fields: true } } } });
   if (!task || task.stage !== "RELEVANCE") throw new WorkflowError("Relevance task not found.");
-  assertOpen(actor, task);
+  await assertOpen(actor, task);
   if (decision === "REJECTED" && comments.trim().length < 3) throw new WorkflowError("Rejection comments are required.");
   const calendar = await getCalendar();
   if (decision === "REJECTED") {
@@ -799,10 +809,6 @@ export async function decideRelevance(actor: Actor, taskId: string, decision: "A
           closedAt: new Date(),
           closureReason: comments.trim(),
         },
-      });
-      await tx.workflowTask.updateMany({
-        where: { tenderId: task.tenderId, status: { in: OPEN_TASK } },
-        data: { status: "CANCELLED" },
       });
       await tx.approvalRecord.create({
         data: { tenderId: task.tenderId, taskId: task.id, stage: "RELEVANCE", decision: "REJECTED", approverId: actor.id, comments: comments.trim() },
@@ -916,7 +922,7 @@ export async function completeCosting(
 ) {
   const task = await db.workflowTask.findUnique({ where: { id: taskId } });
   if (!task || !COSTING_DOC[task.stage]) throw new WorkflowError("Costing task not found.");
-  assertOpen(actor, task);
+  await assertOpen(actor, task);
   if (input.notes.trim().length < 3) throw new WorkflowError("Record the costing assumptions or the reason for return.");
   const calendar = await getCalendar();
   if (input.intent === "return") {
@@ -1028,7 +1034,7 @@ export async function decideDepartment(
 ) {
   const task = await db.workflowTask.findUnique({ where: { id: taskId } });
   if (!task || task.stage !== "DEPT_APPROVAL") throw new WorkflowError("Department approval task not found.");
-  assertOpen(actor, task);
+  await assertOpen(actor, task);
   if (decision !== "APPROVED" && comments.trim().length < 3) throw new WorkflowError("Comments are required when costing is rejected or returned.");
   const calendar = await getCalendar();
   const settings = await db.appSettings.findUnique({ where: { id: "default" } });
@@ -1181,7 +1187,8 @@ export async function sendBack(actor: Actor, taskId: string, remark: string) {
   if (note.length < 3) throw new WorkflowError("Enter a remark before sending this step back.");
   const task = await db.workflowTask.findUnique({ where: { id: taskId } });
   if (!task) throw new WorkflowError("That step was not found.");
-  if (!OPEN_TASK.includes(task.status)) throw new WorkflowError("This step is already closed.");
+  if (!WORKABLE.includes(task.status)) throw new WorkflowError("This step is already closed.");
+  await reopenTask(task);
   const assigned = parseIds(task.assigneeIds).includes(actor.id);
   if (!assigned && !SEND_BACK_ROLES.includes(actor.role)) throw new WorkflowError("Only the person on this step can send it back.");
   const prev = await previousStep(task);
@@ -1202,7 +1209,7 @@ export async function sendBack(actor: Actor, taskId: string, remark: string) {
     });
     if (closed.count !== 1) throw new WorkflowError("This step was already closed.");
     await tx.tender.update({ where: { id: task.tenderId }, data: statusFor(prev.stage) });
-    const open = await tx.workflowTask.findFirst({ where: { tenderId: task.tenderId, stage: prev.stage, status: { in: OPEN_TASK } } });
+    const open = await tx.workflowTask.findFirst({ where: { tenderId: task.tenderId, stage: prev.stage, status: { in: WORKABLE } } });
     const data = {
       status: "RETURNED_FOR_REVISION",
       comments: note,
@@ -1246,25 +1253,33 @@ export async function saveEmdProgress(
     authorityNote: string;
     submittedToAuthority: boolean;
     preparationStatus: string;
-    file?: { name: string; type: string; buffer: Buffer };
+    stampAmount: string;
+    files?: { name: string; type: string; buffer: Buffer }[];
   },
 ) {
   const task = await db.workflowTask.findUnique({ where: { id: taskId }, include: { tender: { include: { emd: true } } } });
   if (!task || task.branch !== "EMD" || task.stage === "EMD_CLARIFICATION") throw new WorkflowError("EMD task not found.");
-  assertOpen(actor, task);
+  await assertOpen(actor, task);
   const settings = await db.appSettings.findUnique({ where: { id: "default" } });
   let documentId = task.tender.emd?.documentId || "";
-  if (input.file) {
-    if (!allowedUpload(input.file.name, input.file.type)) throw new WorkflowError("Evidence must be a PDF, an Excel file, a text file, or an image.");
-    const storedPath = await storeFile(task.tenderId, input.file.name, input.file.buffer);
+  for (const file of input.files ?? []) {
+    if (!allowedUpload(file.name, file.type)) throw new WorkflowError("Evidence must be a PDF, an Excel file, a text file, or an image.");
+    if (file.buffer.length > 20 * 1024 * 1024) throw new WorkflowError(`${file.name} is larger than 20 MB.`);
+    const hash = sha256(file.buffer);
+    const existing = await db.tenderDocument.findFirst({ where: { tenderId: task.tenderId, sha256: hash, docType: "EMD_EVIDENCE" } });
+    if (existing) {
+      documentId = existing.id;
+      continue;
+    }
+    const storedPath = await storeFile(task.tenderId, file.name, file.buffer);
     const document = await db.tenderDocument.create({
       data: {
         tenderId: task.tenderId,
-        fileName: input.file.name,
+        fileName: file.name,
         storedPath,
-        mimeType: input.file.type || "application/octet-stream",
-        sizeBytes: input.file.buffer.length,
-        sha256: sha256(input.file.buffer),
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.buffer.length,
+        sha256: hash,
         docType: "EMD_EVIDENCE",
         uploadedById: actor.id,
       },
@@ -1298,19 +1313,17 @@ export async function saveEmdProgress(
     const actions = await db.taskAction.findMany({ where: { taskId: task.id, action: "COMPLETE" } });
     const done = new Set(actions.map((action) => action.userId));
     if (!parseIds(task.assigneeIds).every((id) => done.has(id))) {
-      await db.emdRecord.update({
-        where: { tenderId: task.tenderId },
-        data: {
-          amount: input.amount.trim(),
-          beneficiary: input.beneficiary.trim(),
-          referenceNumber: input.referenceNumber.trim(),
-          exemptionBasis: input.exemptionBasis.trim(),
-          notes: input.notes.trim(),
-          preparationStatus: "VERIFICATION_PENDING",
-          documentId,
-          submittedToAuthority: input.submittedToAuthority,
-          authorityNote: input.authorityNote.trim(),
-        },
+      await writeEmd(task.tenderId, task.stage, {
+        amount: input.amount.trim(),
+        stampAmount: input.stampAmount.trim(),
+        beneficiary: input.beneficiary.trim(),
+        referenceNumber: input.referenceNumber.trim(),
+        exemptionBasis: input.exemptionBasis.trim(),
+        notes: input.notes.trim(),
+        preparationStatus: "VERIFICATION_PENDING",
+        documentId,
+        submittedToAuthority: input.submittedToAuthority,
+        authorityNote: input.authorityNote.trim(),
       });
       await db.workflowTask.update({ where: { id: task.id }, data: { status: "IN_PROGRESS", comments: input.notes.trim() } });
       await db.tender.update({ where: { id: task.tenderId }, data: { emdStatus: "VERIFICATION_PENDING" } });
@@ -1324,21 +1337,19 @@ export async function saveEmdProgress(
     : input.submittedToAuthority
       ? "SUBMITTED_EVIDENCE"
       : "COMPLETED";
-  await db.emdRecord.update({
-    where: { tenderId: task.tenderId },
-    data: {
-      amount: input.amount.trim(),
-      beneficiary: input.beneficiary.trim(),
-      referenceNumber: input.referenceNumber.trim(),
-      exemptionBasis: input.exemptionBasis.trim(),
-      notes: input.notes.trim(),
-      preparationStatus: input.intent === "complete" ? "VERIFIED" : input.preparationStatus || "IN_PROGRESS",
-      documentId,
-      submittedToAuthority: input.submittedToAuthority,
-      authorityNote: input.authorityNote.trim(),
-      verifiedAt: input.intent === "complete" ? new Date() : undefined,
-      completedAt: input.intent === "complete" ? new Date() : undefined,
-    },
+  await writeEmd(task.tenderId, task.stage, {
+    amount: input.amount.trim(),
+    stampAmount: input.stampAmount.trim(),
+    beneficiary: input.beneficiary.trim(),
+    referenceNumber: input.referenceNumber.trim(),
+    exemptionBasis: input.exemptionBasis.trim(),
+    notes: input.notes.trim(),
+    preparationStatus: input.intent === "complete" ? "VERIFIED" : input.preparationStatus || "IN_PROGRESS",
+    documentId,
+    submittedToAuthority: input.submittedToAuthority,
+    authorityNote: input.authorityNote.trim(),
+    verifiedAt: input.intent === "complete" ? new Date() : undefined,
+    completedAt: input.intent === "complete" ? new Date() : undefined,
   });
   if (input.intent === "save") {
     await db.workflowTask.updateMany({
@@ -1389,9 +1400,49 @@ export const BG_REQUEST_KEYS = [
 
 const EMD_STAGES = ["EMD_CLARIFICATION", "EMD_BG", "EMD_ISB", "EMD_EXEMPTION", "EMD_OTHER"];
 
+const EMD_KIND: Record<string, string> = { EMD_BG: "BG", EMD_ISB: "ISB", EMD_EXEMPTION: "EXEMPTION", EMD_OTHER: "OTHER" };
+
+/** Creates the EMD row when the task was opened without one, then stores the latest fields. */
+async function writeEmd(tenderId: string, stage: string, data: Record<string, unknown>) {
+  await db.emdRecord.upsert({
+    where: { tenderId },
+    create: { tenderId, instrumentType: EMD_KIND[stage] || "OTHER", ...data },
+    update: data,
+  });
+}
+
+/** Deletes one stored file. Only an administrator can remove a tender document. */
+export async function removeDocument(actor: Actor, tenderId: string, documentId: string) {
+  if (actor.role !== "ADMIN") throw new WorkflowError("Only an administrator can delete a document.");
+  const document = await db.tenderDocument.findFirst({ where: { id: documentId, tenderId } });
+  if (!document) throw new WorkflowError("That file was not found on this tender.");
+  await db.tenderDocument.delete({ where: { id: document.id } });
+  if (document.storedPath) await deleteStored(document.storedPath).catch(() => undefined);
+  const emd = await db.emdRecord.findUnique({ where: { tenderId } });
+  if (emd?.documentId === document.id) await db.emdRecord.update({ where: { tenderId }, data: { documentId: "" } });
+  const bid = await db.bidSubmission.findUnique({ where: { tenderId } });
+  if (bid?.evidenceDocumentId === document.id) await db.bidSubmission.update({ where: { tenderId }, data: { evidenceDocumentId: "" } });
+  await db.costingRecord.updateMany({ where: { documentId: document.id }, data: { documentId: "" } });
+  await audit(db, { tenderId, actor, action: "Deleted document", entity: "TenderDocument", detail: document.fileName });
+}
+
+/** Removes one file the EMD owner uploaded on this tender. */
+export async function removeEmdDocument(actor: Actor, tenderId: string, documentId: string) {
+  await assertEmdWorker(actor, tenderId);
+  const document = await db.tenderDocument.findFirst({ where: { id: documentId, tenderId } });
+  if (!document || (document.docType !== "EMD_DOCUMENT" && document.docType !== "EMD_EVIDENCE")) {
+    throw new WorkflowError("That file is not on this EMD task.");
+  }
+  await db.tenderDocument.delete({ where: { id: document.id } });
+  if (document.storedPath) await deleteStored(document.storedPath).catch(() => undefined);
+  const emd = await db.emdRecord.findUnique({ where: { tenderId } });
+  if (emd?.documentId === document.id) await db.emdRecord.update({ where: { tenderId }, data: { documentId: "" } });
+  await audit(db, { tenderId, actor, action: "Removed EMD file", entity: "TenderDocument", detail: document.fileName });
+}
+
 async function assertEmdWorker(actor: Actor, tenderId: string) {
   const holder = await db.workflowTask.findFirst({
-    where: { tenderId, status: { in: OPEN_TASK }, assigneeIds: { contains: `"${actor.id}"` }, stage: { in: EMD_STAGES } },
+    where: { tenderId, status: { in: WORKABLE }, assigneeIds: { contains: `"${actor.id}"` }, stage: { in: EMD_STAGES } },
   });
   if (!holder && !MANAGER_ROLES.includes(actor.role)) throw new WorkflowError("Only the person on the EMD task can do this.");
 }
@@ -1503,7 +1554,7 @@ export async function saveBgRequest(actor: Actor, tenderId: string, input: Recor
 export async function resolveEmdClarification(actor: Actor, taskId: string, choice: string, comments: string) {
   const task = await db.workflowTask.findUnique({ where: { id: taskId } });
   if (!task || task.stage !== "EMD_CLARIFICATION") throw new WorkflowError("Clarification task not found.");
-  assertOpen(actor, task);
+  await assertOpen(actor, task);
   if (comments.trim().length < 3) throw new WorkflowError("Record why this EMD type was selected.");
   const kind = (["BG", "ISB", "EXEMPTION", "DD", "ONLINE", "OTHER"] as const).find((item) => item === choice);
   if (!kind) throw new WorkflowError("Choose an EMD type. The system will not assume one.");
@@ -1653,7 +1704,7 @@ export async function setBusinessLine(actor: Actor, tenderId: string, value: str
   const line = BUSINESS_LINES.find((item) => item === value);
   if (!line) throw new WorkflowError("Choose Ash or Coal.");
   const tender = await db.tender.findUnique({ where: { id: tenderId } });
-  if (!tender || CLOSED_OVERALL.includes(tender.overallStatus)) throw new WorkflowError("This tender is closed.");
+  if (!tender) throw new WorkflowError("Tender not found.");
   if (tender.businessLine === line) return;
   // A submitter picked for the old line follows the line; one chosen by hand stays.
   const before = (await ownersFor("BID_SUBMISSION", tender))[0];
@@ -1671,8 +1722,8 @@ export async function assignTask(actor: Actor, taskId: string, userId: string, r
   const note = remark.trim();
   if (note.length < 3) throw new WorkflowError("Enter a remark before assigning this step.");
   const task = await db.workflowTask.findUnique({ where: { id: taskId }, include: { tender: true } });
-  if (!task || !OPEN_TASK.includes(task.status)) throw new WorkflowError("This step is already closed.");
-  if (CLOSED_OVERALL.includes(task.tender.overallStatus)) throw new WorkflowError("This tender is closed.");
+  if (!task || !WORKABLE.includes(task.status)) throw new WorkflowError("This step is already closed.");
+  await reopenTask(task);
   const holder = parseIds(task.assigneeIds).includes(actor.id);
   if (!holder && !ASSIGN_ROLES.includes(actor.role)) throw new WorkflowError("You cannot assign this step.");
   const person = await db.user.findFirst({ where: { id: userId, active: true } });
@@ -1695,7 +1746,7 @@ export async function assignSubmitter(actor: Actor, tenderId: string, submitterI
   const submitter = await db.user.findFirst({ where: { id: submitterId, active: true } });
   if (!submitter) throw new WorkflowError("Choose an active user as the bid submitter.");
   const tender = await db.tender.findUnique({ where: { id: tenderId } });
-  if (!tender || CLOSED_OVERALL.includes(tender.overallStatus)) throw new WorkflowError("This tender cannot take a new submitter.");
+  if (!tender) throw new WorkflowError("Tender not found.");
   await db.tender.update({ where: { id: tenderId }, data: { submitterId } });
   await db.bidSubmission.upsert({
     where: { tenderId },
@@ -1720,12 +1771,10 @@ export async function recordBid(
 ) {
   const tender = await db.tender.findUnique({ where: { id: tenderId }, include: { bid: true } });
   if (!tender) throw new WorkflowError("Tender not found.");
-  if (["WON", "LOST", "CANCELLED", "REJECTED_CLOSED", "CLOSED_BUSINESS", "NOT_BID_DEADLINE_MISSED"].includes(tender.overallStatus)) {
-    throw new WorkflowError("This tender is already closed.");
-  }
   const task = await db.workflowTask.findFirst({
-    where: { tenderId, stage: "BID_SUBMISSION", status: { in: OPEN_TASK } },
+    where: { tenderId, stage: "BID_SUBMISSION", status: { in: WORKABLE } },
   });
+  if (task) await reopenTask(task);
   const assignee = task ? parseIds(task.assigneeIds).includes(actor.id) : tender.submitterId === actor.id;
   const authorizer = actor.role === "ADMIN" || actor.role === "DEPT_HEAD";
   const usingException = input.exceptionReason.trim().length > 0;
@@ -1831,7 +1880,6 @@ export async function closeBusiness(actor: Actor, tenderId: string, reason: stri
       where: { id: tenderId },
       data: { overallStatus: "CLOSED_BUSINESS", closureReason: reason.trim(), closedAt: new Date() },
     });
-    await tx.workflowTask.updateMany({ where: { tenderId, status: { in: OPEN_TASK } }, data: { status: "CANCELLED" } });
     await audit(tx, { tenderId, actor, action: "Closed without bidding", entity: "Tender", detail: reason.trim() });
   });
 }
@@ -1853,7 +1901,6 @@ export async function recordOutcome(actor: Actor, tenderId: string, outcome: "WO
         closureReason: tender.closureReason || notes.trim(),
       },
     });
-    await tx.workflowTask.updateMany({ where: { tenderId, status: { in: OPEN_TASK } }, data: { status: "CANCELLED" } });
     await audit(tx, { tenderId, actor, action: "Recorded outcome", entity: "Tender", detail: `${outcome}. ${notes.trim()}` });
   });
 }
@@ -1861,7 +1908,7 @@ export async function recordOutcome(actor: Actor, tenderId: string, outcome: "WO
 export async function completeException(actor: Actor, taskId: string, comments: string) {
   const task = await db.workflowTask.findUnique({ where: { id: taskId } });
   if (!task || task.stage !== "OCR_EXCEPTION") throw new WorkflowError("Exception task not found.");
-  assertOpen(actor, task);
+  await assertOpen(actor, task);
   if (comments.trim().length < 3) throw new WorkflowError("Record how the extraction failure was handled.");
   await db.workflowTask.updateMany({
     where: { id: task.id, status: { in: OPEN_TASK } },
@@ -1878,7 +1925,7 @@ export async function addDocuments(
 ) {
   if (!files.length) throw new WorkflowError("Choose a file to upload.");
   const tender = await db.tender.findUnique({ where: { id: tenderId } });
-  if (!tender || CLOSED_OVERALL.includes(tender.overallStatus)) throw new WorkflowError("Documents cannot be added to a closed tender.");
+  if (!tender) throw new WorkflowError("Tender not found.");
   if (!canEdit(actor) && actor.id !== tender.createdById) throw new WorkflowError("You cannot add documents to this tender.");
   for (const file of files) {
     if (file.buffer.length > 20 * 1024 * 1024) throw new WorkflowError(`${file.name} is larger than 20 MB.`);
@@ -1995,7 +2042,6 @@ async function markMissed(tenderId: string, source: string) {
         closureReason: "Bid submission deadline passed without a recorded submission.",
       },
     });
-    await tx.workflowTask.updateMany({ where: { tenderId, status: { in: OPEN_TASK } }, data: { status: "CANCELLED" } });
     await tx.bidSubmission.upsert({
       where: { tenderId },
       create: { tenderId, submitterId: tender.submitterId || "", status: "NOT_BID_DEADLINE_MISSED" },

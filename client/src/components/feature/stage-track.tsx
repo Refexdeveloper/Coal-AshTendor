@@ -133,7 +133,7 @@ const EMD_AT: Record<string, { done: number; failed?: boolean }> = {
   VERIFICATION_PENDING: { done: 2 },
   COMPLETED: { done: 4 },
   SUBMITTED_EVIDENCE: { done: 4 },
-  OVERDUE: { done: 1, failed: true },
+  OVERDUE: { done: 1 },
 };
 
 function subStepsFor(
@@ -148,7 +148,7 @@ function subStepsFor(
   return rows.map((row, i) => {
     const state: StepState =
       i < done ? "done" : i === done && active ? (at?.failed ? "failed" : "current") : halted ? "skipped" : "todo";
-    const who = at?.overdue && state === "failed" ? lateLabel(crew, row.stages, timeZone) : mention(state, actorsFor(crew, row.stages), row.planned, Boolean(row.approval));
+    const who = at?.overdue && (state === "current" || state === "failed") ? lateLabel(crew, row.stages, timeZone) : mention(state, actorsFor(crew, row.stages), row.planned, Boolean(row.approval));
     return { title: row.title, state, who };
   });
 }
@@ -231,7 +231,7 @@ export function stagesFor(t: TrackInput, crew: Crew, timeZone = "Asia/Kolkata"):
         key: "emd",
         title: "EMD",
         note: !approved ? "Starts after approval" : t.emdStatus === "OVERDUE" ? lateLabel(crew, ["EMD_BG", "EMD_ISB", "EMD_EXEMPTION", "EMD_OTHER"], timeZone) : labelOf(EMD, t.emdStatus),
-        state: after(approved, emdDone, t.emdStatus === "OVERDUE"),
+        state: after(approved, emdDone),
         overdue: t.emdStatus === "OVERDUE",
         subs: subStepsFor(
           [

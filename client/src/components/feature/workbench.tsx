@@ -6,7 +6,9 @@ import { AmountInput, BoundForm, FilePick, type TaskContext } from "./task-kit";
 import { Status } from "@client/components/base/pill";
 import { Submit } from "@client/components/base/submit";
 import { documentUrl } from "@client/api/client";
+import { taskAction } from "@client/api/actions";
 import { BgRequestFields, parseBgRequest } from "./bg-request";
+import { fxToast } from "./fx";
 
 const CHOICE: Record<string, string> = {
   "Bank Guarantee": "BG",
@@ -34,6 +36,7 @@ export type WorkTask = {
 
 type EmdDraft = {
   amount: string;
+  stampAmount: string;
   beneficiary: string;
   referenceNumber: string;
   exemptionBasis: string;
@@ -41,6 +44,7 @@ type EmdDraft = {
   authorityNote: string;
   submitted: boolean;
   bgRequest: string;
+  preparationStatus: string;
 };
 
 const FIRST_STEP = new Set(["DATA_VALIDATION", "OCR_EXCEPTION"]);
@@ -194,6 +198,46 @@ export function ManagePanel({
   );
 }
 
+function EmdFileList({ tenderId, taskId, docs }: { tenderId: string; taskId: string; docs: { id: string; name: string }[] }) {
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  if (!docs.length) return null;
+  return (
+    <div className="wide">
+      <p className="muted">Uploaded files</p>
+      {error ? <p className="banner bad">{error}</p> : null}
+      <ul className="filepick-list">
+        {docs.map((doc) => (
+          <li key={doc.id}>
+            <a href={documentUrl(doc.id)} target="_blank" rel="noreferrer">
+              {doc.name}
+            </a>
+            <button
+              type="button"
+              disabled={busy === doc.id}
+              onClick={async () => {
+                setBusy(doc.id);
+                setError("");
+                const data = new FormData();
+                data.set("intent", "remove-emd-doc");
+                data.set("tenderId", tenderId);
+                data.set("taskId", taskId);
+                data.set("documentId", doc.id);
+                const result = await taskAction(null, data);
+                setBusy("");
+                if (result?.error) setError(result.error);
+                else fxToast("File removed.");
+              }}
+            >
+              {busy === doc.id ? "Removing…" : "Remove"}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function TaskForm({
   task,
   tenderId,
@@ -303,24 +347,13 @@ function TaskForm({
     );
   }
   if (task.stage.startsWith("EMD_")) {
+    const savedProgress = emd?.preparationStatus === "Prepared" || emd?.preparationStatus === "PREPARED" ? "Prepared" : "In preparation";
+    const savedKey = [emd?.amount, emd?.stampAmount, emd?.referenceNumber, emd?.beneficiary, emd?.notes, emd?.authorityNote, emd?.preparationStatus, ctx.emdDocuments.map((doc) => doc.id).join(",")].join("|");
     return (
-      <BoundForm>
+      <BoundForm key={savedKey}>
         <input type="hidden" name="tenderId" value={tenderId} />
         <input type="hidden" name="taskId" value={task.id} />
-        {ctx.emdDocuments.length ? (
-          <div className="wide">
-            <p className="muted">EMD documents from the requirement check</p>
-            <ul className="doc-links">
-              {ctx.emdDocuments.map((doc) => (
-                <li key={doc.id}>
-                  <a href={documentUrl(doc.id)} target="_blank" rel="noreferrer">
-                    {doc.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
+        <EmdFileList tenderId={tenderId} taskId={task.id} docs={ctx.emdDocuments} />
         {task.stage === "EMD_BG" ? bgRequest : null}
         {task.stage === "EMD_BG" && bgRequiresBoth ? <p className="muted wide">Both Krishnananth S and Surya M must verify this guarantee.</p> : null}
         {task.stage === "EMD_EXEMPTION" ? (
@@ -331,6 +364,7 @@ function TaskForm({
         ) : (
           <>
             <AmountInput name="amount" label="EMD amount" defaultValue={emd?.amount || (ctx.emdFeeValue != null ? String(ctx.emdFeeValue) : "")} />
+            <AmountInput name="stampAmount" label="Stamp amount" defaultValue={emd?.stampAmount || ""} />
             <label>
               Beneficiary
               <input name="beneficiary" defaultValue={emd?.beneficiary || ctx.client} />
@@ -343,12 +377,12 @@ function TaskForm({
         )}
         <label>
           Progress (when saving)
-          <select name="preparationStatus" defaultValue="In preparation">
+          <select name="preparationStatus" defaultValue={savedProgress}>
             <option>In preparation</option>
             <option>Prepared</option>
           </select>
         </label>
-        <FilePick name="file" label="Evidence (required to complete)" hint="Scan of the instrument, bank letter or certificate" />
+        <FilePick name="files" multiple label="Evidence" hint="Choose one or more scans. Each file can be removed before you save." />
         <label className="wide">
           Notes
           <textarea name="notes" rows={2} defaultValue={emd?.notes} />

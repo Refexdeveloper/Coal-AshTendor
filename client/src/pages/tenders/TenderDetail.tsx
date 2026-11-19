@@ -1,7 +1,8 @@
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { lazy, Suspense, Fragment, useEffect, useActionState, type CSSProperties } from "react";
+import { lazy, Suspense, Fragment, useEffect, useActionState, useState, type CSSProperties } from "react";
 import { documentUrl, toCalendar, useApi } from "@client/api/client";
-import { convertEmdToSdAction } from "@client/api/actions";
+import { convertEmdToSdAction, taskAction } from "@client/api/actions";
+import { fxToast } from "@client/components/feature/fx";
 import type { ActionState } from "@client/api/action-state";
 import { Submit } from "@client/components/base/submit";
 import { useActor } from "@client/api/session";
@@ -28,6 +29,7 @@ import {
   APPROVAL,
   BID,
   CLOSED_OVERALL,
+  WORKABLE,
   COSTING,
   DECISION,
   DOC_TYPE,
@@ -36,7 +38,6 @@ import {
   EMD_PREP,
   EMD_TYPE,
   MANAGER_ROLES,
-  OPEN_TASK,
   OVERALL,
   RELEVANCE,
   STAGE,
@@ -91,6 +92,36 @@ type Data = {
 };
 
 const SD_EDITORS = ["ADMIN", "ACCOUNTS", "EMD_ISB", "COORDINATOR", "DEPT_HEAD", "GROUP_CEO", "REVIEWER"];
+
+function DeleteDocument({ tenderId, documentId, name }: { tenderId: string; documentId: string; name: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <>
+      <button
+        type="button"
+        className="btn ghost"
+        disabled={busy}
+        onClick={async () => {
+          if (!window.confirm(`Delete ${name}? This removes the file from the tender.`)) return;
+          setBusy(true);
+          setError("");
+          const data = new FormData();
+          data.set("intent", "remove-doc");
+          data.set("tenderId", tenderId);
+          data.set("documentId", documentId);
+          const result = await taskAction(null, data);
+          setBusy(false);
+          if (result?.error) setError(result.error);
+          else fxToast("Document deleted.");
+        }}
+      >
+        {busy ? "Deleting…" : "Delete"}
+      </button>
+      {error ? <small className="text-bad">{error}</small> : null}
+    </>
+  );
+}
 
 function ConvertToSd({ tenderId, amount, sdAmount, converted, canConvert, onDone }: { tenderId: string; amount: string; sdAmount: number | null; converted: boolean; canConvert: boolean; onDone: () => void }) {
   const [state, action] = useActionState(async (previous: ActionState, formData: FormData) => {
@@ -169,12 +200,12 @@ export default function TenderPage() {
   const bidSubmitted = ["BID_SUBMITTED_EVIDENCE_PENDING", "BID_SUBMITTED_EVIDENCE_RECORDED"].includes(tender.bidStatus);
   const assigned = (ids: string) => JSON.parse(ids) as string[];
   const openTasks = tender.tasks
-    .filter((task) => OPEN_TASK.includes(task.status))
+    .filter((task) => WORKABLE.includes(task.status))
     .map((task) => ({
       id: task.id,
       stage: task.stage,
       title: task.title,
-      status: task.status,
+      status: task.status === "CANCELLED" ? "IN_PROGRESS" : task.status,
       mine: assigned(task.assigneeIds).includes(actor.id),
       late: Boolean(task.dueAt && task.dueAt < now),
       due: formatWhen(task.dueAt, tz),
@@ -243,6 +274,7 @@ export default function TenderPage() {
   const emdDraft = tender.emd
     ? {
         amount: tender.emd.amount,
+        stampAmount: tender.emd.stampAmount ?? "",
         beneficiary: tender.emd.beneficiary,
         referenceNumber: tender.emd.referenceNumber,
         exemptionBasis: tender.emd.exemptionBasis,
@@ -250,6 +282,7 @@ export default function TenderPage() {
         authorityNote: tender.emd.authorityNote,
         submitted: tender.emd.submittedToAuthority,
         bgRequest: tender.emd.bgRequest ?? "",
+        preparationStatus: tender.emd.preparationStatus,
       }
     : null;
   const tabBadge: Record<string, number> = {
@@ -386,7 +419,7 @@ export default function TenderPage() {
               ctx={ctx}
               emd={emdDraft}
             />
-            {!closed && MANAGER_ROLES.includes(actor.role) ? (
+            {MANAGER_ROLES.includes(actor.role) ? (
               <ManagePanel
                 tenderId={tender.id}
                 users={users.map((user) => ({ id: user.id, name: user.name, role: user.role }))}
@@ -455,7 +488,7 @@ export default function TenderPage() {
             <FieldEditor
               tenderId={tender.id}
               fields={editorFields}
-              locked={(closed && !adminExtend) || !fieldEditor}
+              locked={!fieldEditor}
               validationTaskId={openTasks.find((task) => task.mine && task.stage === "DATA_VALIDATION")?.id ?? null}
               justUploaded={query.new === "1"}
             />
@@ -475,12 +508,13 @@ export default function TenderPage() {
                     <th>Type</th>
                     <th>Pages</th>
                     <th>Uploaded</th>
+                    {actor.role === "ADMIN" ? <th></th> : null}
                   </tr>
                 </thead>
                 <tbody>
                   {tender.documents.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="empty">
+                      <td colSpan={actor.role === "ADMIN" ? 5 : 4} className="empty">
                         No files stored.
                       </td>
                     </tr>
@@ -501,6 +535,11 @@ export default function TenderPage() {
                         {formatWhen(document.uploadedAt, tz)}
                         <div className="muted">{names.get(document.uploadedById) ?? "System"}</div>
                       </td>
+                      {actor.role === "ADMIN" ? (
+                        <td>
+                          <DeleteDocument tenderId={tender.id} documentId={document.id} name={document.fileName} />
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
@@ -519,7 +558,7 @@ export default function TenderPage() {
             <OcrResults documents={tender.documents} />
           </div>
           <aside>
-            {!closed && (EDITOR_ROLES.includes(actor.role) || actor.id === tender.createdById) ? (
+            {EDITOR_ROLES.includes(actor.role) || actor.id === tender.createdById ? (
               <section className="panel">
                 <UploadForm tenderId={tender.id} />
               </section>

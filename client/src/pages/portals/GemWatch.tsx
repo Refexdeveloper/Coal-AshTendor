@@ -227,7 +227,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
   const excludes = (portal.excludeWords || "").split(/[,\n;]+/).map((word) => word.trim()).filter(Boolean);
 
   return (
-    <section className="panel gem-watch">
+    <section className="panel gem-watch" id="gem-watch">
       <header className="gem-head">
         <span className="gem-logo" aria-hidden>
           GeM

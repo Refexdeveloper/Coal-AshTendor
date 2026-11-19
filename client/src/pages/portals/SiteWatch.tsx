@@ -1,8 +1,10 @@
-import { Fragment, lazy, Suspense, useEffect, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { formatWhen } from "@client/utils/calendar";
 import type { Portal } from "@client/lib/types";
 import { apiUrl } from "@client/api/client";
+import { downloadXlsx } from "@client/utils/xlsx";
+import type { GemData } from "@client/pages/portals/GemWatch";
 
 const PdfViewer = lazy(() => import("@client/components/feature/pdf-viewer"));
 
@@ -157,21 +159,23 @@ function duration(start: Date, end: Date | null) {
   return seconds >= 60 ? `${Math.floor(seconds / 60)} min ${seconds % 60} s` : `${seconds} s`;
 }
 
-/** Saves rows as a .csv file that Excel opens directly (the BOM keeps names like "Bhagalpur–Barauni" readable). */
-function downloadCsv(fileName: string, header: string[], rows: (string | number)[][]) {
-  const cell = (value: string | number) => {
-    const text = String(value ?? "");
-    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-  };
-  const csv = "\uFEFF" + [header, ...rows].map((row) => row.map(cell).join(",")).join("\r\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+/** Header rows get the blue style: a list's first row, and on the summary each heading row (the row after a blank one). */
+function headerRow(rows: (string | number)[][], index: number) {
+  if (rows[0]?.length > 1) return index === 0;
+  return index > 0 && rows[index].length > 1 && rows[index - 1].length === 0;
+}
+
+/** A real Excel workbook (.xlsx) with one worksheet per table; header rows are bold white on blue. */
+function downloadExcel(fileName: string, sheets: { name: string; rows: (string | number)[][] }[]) {
+  downloadXlsx(
+    fileName,
+    sheets.map((sheet) => ({
+      name: sheet.name,
+      rows: sheet.rows,
+      styles: sheet.rows.map((_, index) => (headerRow(sheet.rows, index) ? "h" : index === 0 && sheet.name === "Summary" ? "t" : "")),
+      freezeHeader: sheet.name !== "Summary",
+    })),
+  );
 }
 
 type TenderDetails = {
@@ -477,6 +481,7 @@ function portalLink(site: WatchSite | undefined, tender: SiteTender) {
  */
 export function SiteWatch({
   data,
+  gem,
   timeZone,
   run,
   reload,
@@ -484,6 +489,8 @@ export function SiteWatch({
   canRun,
 }: {
   data: SitesData;
+  /** The GeM bid watch, shown with the websites since gem.gov.in is one of the sheet's websites. */
+  gem?: GemData;
   timeZone: string;
   run: (name: string) => (formData: FormData) => Promise<void>;
   reload: () => void;
@@ -611,6 +618,15 @@ export function SiteWatch({
       acc[kind] = (acc[kind] ?? 0) + 1;
       return acc;
     }, {});
+  // GeM's own search (the GeM bid watch): its last finished pass and the bids it keeps.
+  const gemLast = gem?.runs.find((item) => item.status !== "RUNNING");
+  const gemLine = gemLast?.errorSummary.split("\n")[0] ?? "";
+  const gemChecked = Number(/([\d,]+) bids checked/.exec(gemLine)?.[1]?.replace(/,/g, "") ?? 0);
+  const gemMatched = Number(/([\d,]+) matching/.exec(gemLine)?.[1]?.replace(/,/g, "") ?? 0);
+  const gemReview = gem?.bids.filter((bid) => bid.status === "NEW").length ?? 0;
+  const gemImported = gem?.bids.filter((bid) => bid.status === "IMPORTED").length ?? 0;
+  const isGemSite = (site: WatchSite) => bare(site.host) === "gem.gov.in";
+  const toGem = () => document.getElementById("gem-watch")?.scrollIntoView({ behavior: "smooth", block: "start" });
   const autoLinks = links.filter((link) => inSiteTab(linkSite(link.host), "AUTO"));
   const matchedNow = read.reduce((sum, site) => sum + site.matched, 0);
   const categories = [...new Set([...links.map((link) => link.category), ...sites.map((site) => site.category)].filter(Boolean))]
@@ -662,77 +678,203 @@ export function SiteWatch({
           : site.enabled
             ? "Searched"
             : "Paused";
-  const download = () => {
-    const tabName = (SITE_TABS.find(([key]) => key === siteTab)?.[1] ?? "All").toLowerCase().replace(/\s+/g, "-");
-    const parts = [
-      siteView === "LINKS" ? "sheet-links" : "websites",
-      tabName,
-      category && category.toLowerCase().replace(/\s+/g, "-"),
-      repeatOnly && "repeated",
-      handFilter && HAND_KIND[handFilter]?.label.toLowerCase().replace(/\s+/g, "-"),
-    ]
-      .filter(Boolean)
-      .join("-");
-    const stamp = new Date().toISOString().slice(0, 10);
-    if (siteView === "LINKS") {
-      downloadCsv(
-        `${parts}-${stamp}.csv`,
-        ["Sheet row", "Title", "Link", "Classification", "Website", "Rows for this website", "Keyword search", "Matching tenders", "Tenders checked"],
-        listedLinks.map((link) => {
-          const site = linkSite(link.host);
-          const searched = site && site.method !== "MANUAL" && site.lastScanAt;
-          return [link.row, link.title, link.url, link.category, bare(link.host), sheetRows(link.host).join(" "), searchState(site), searched ? site.matched : "", searched ? site.checked : ""];
-        }),
-      );
-      return;
+  const siteStanding = (site: WatchSite) => {
+    if (site.method !== "MANUAL" && site.lastScanAt && site.lastStatus !== "FAILED") {
+      return { standing: "Working", reason: site.matched ? "Searched, keywords matched" : "Searched, no keyword match" };
     }
-    // Check by hand: just the website, its link and why it is checked by hand.
-    if (siteTab === "MANUAL") {
-      downloadCsv(
-        `${parts}-${stamp}.csv`,
-        ["Website", "Link", "Reason"],
-        listed.map((site) => {
-          const reason = handReason(site.note);
-          return [short(site.name), site.url, reason ? `${reason.label}: ${reason.text}` : ""];
-        }),
-      );
-      return;
-    }
-    downloadCsv(
-      `${parts}-${stamp}.csv`,
-      [
-        "Website",
-        "Names in the sheet",
-        "Link",
-        "Classification",
-        "How it is read",
-        "Keyword search",
-        "Last search",
-        "Matching tenders",
-        "Tenders checked",
-        "Organisation lists",
-        "Sheet rows",
-        "Problem / why checked by hand",
+    if (site.method !== "MANUAL" && site.lastStatus === "FAILED") return { standing: "Non-working", reason: "Search failed" };
+    if (site.method !== "MANUAL") return { standing: "Non-working", reason: "Not searched yet" };
+    return { standing: "Non-working", reason: handReason(site.note)?.label ?? "Check by hand" };
+  };
+  const workingSites = sites.filter((site) => siteStanding(site).standing === "Working");
+  const stamp = () => new Date().toISOString().slice(0, 10);
+  const siteLink = (site: WatchSite) => (site.method === "NIC" ? `${site.url}?page=FrontEndTendersByOrganisation&service=page` : site.url);
+  const SITE_HEAD = ["#", "Website", "Link", "Classification", "Working", "Status / reason", "How it is read", "Last search", "Matching tenders", "Tenders checked", "Organisation lists", "Sheet rows", "Detail"];
+  const siteRows = (list: WatchSite[]) =>
+    list
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((site, index) => {
+        const standing = siteStanding(site);
+        const reason = handReason(site.note);
+        const searched = site.lastScanAt && site.method !== "MANUAL";
+        return [
+          index + 1,
+          short(site.name),
+          siteLink(site),
+          site.category,
+          standing.standing,
+          standing.reason,
+          METHOD[site.method],
+          site.lastScanAt ? formatWhen(site.lastScanAt, timeZone) : "",
+          searched ? site.matched : "",
+          searched ? site.checked : "",
+          site.method === "NIC" && site.lastScanAt ? site.organisations : "",
+          sheetRows(site.host).join(" "),
+          site.method === "MANUAL" ? (reason?.text ?? "") : (site.lastError || "").split("\n")[0],
+        ] as (string | number)[];
+      });
+  const HAND_HEAD = ["#", "Website", "Link", "Classification", "Reason", "Detail"];
+  const handRows = (list: WatchSite[]) =>
+    list
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((site, index) => {
+        const reason = handReason(site.note);
+        return [index + 1, short(site.name), site.url, site.category, reason?.label ?? "Check by hand", reason?.text ?? ""] as (string | number)[];
+      });
+  /** The summary sheet: counts by status, by reason and by classification for the websites given. */
+  const pct = (part: number, whole: number) => (whole ? `${Math.round((part / whole) * 100)}%` : "");
+  const GEM_STATUS: Record<string, string> = { NEW: "To review", IMPORTED: "Imported", IGNORED: "Ignored", EXCLUDED: "Excluded", FAILED: "Failed" };
+  /** The summary sheet: total websites, automated and their outcome, check by hand with server not reachable first, GeM, and classification. */
+  const summarySheet = (title: string, list: WatchSite[], filters: string[] = [], withGem = false) => {
+    const auto = list.filter((site) => site.method !== "MANUAL");
+    const hand = list.filter((site) => site.method === "MANUAL");
+    const total = list.length;
+    const working = list.filter((site) => siteStanding(site).standing === "Working").length;
+    const failed = auto.filter((site) => site.lastStatus === "FAILED").length;
+    const noMatch = auto.filter((site) => site.lastScanAt && site.lastStatus !== "FAILED" && site.matched === 0).length;
+    const matched = auto.filter((site) => site.lastScanAt && site.lastStatus !== "FAILED" && site.matched > 0).length;
+    const notYet = auto.filter((site) => !site.lastScanAt).length;
+    const byKind = (kind: string) => hand.filter((site) => kindOf(site) === kind).length;
+    const kindOrder = ["DOWN", "LOGIN", "CAPTCHA", "SCRIPT", "NO_LIST", "COVERED"];
+    const cats = [...new Set(list.map((site) => site.category || "Uncategorised"))].sort().map((name) => {
+      const inCat = list.filter((site) => (site.category || "Uncategorised") === name);
+      return [
+        name,
+        inCat.length,
+        inCat.filter((site) => site.method !== "MANUAL").length,
+        inCat.filter((site) => site.method === "MANUAL").length,
+        inCat.filter((site) => site.method === "MANUAL" && kindOf(site) === "DOWN").length,
+        inCat.reduce((sum, site) => sum + (site.lastScanAt ? site.matched : 0), 0),
+      ] as (string | number)[];
+    });
+    const gemRows: (string | number)[][] =
+      withGem && gem
+        ? [
+            [],
+            ["GeM portal search", "Count", "", "Details sheet"],
+            ["GeM bids checked, last pass", gemChecked, "", ""],
+            ["Matching the keywords", gemMatched, "", ""],
+            ["Bids kept in the watch list", gem.bids.length, "", "GeM bids"],
+            ["  – To review", gemReview, "", "GeM bids"],
+            ["  – Imported as tenders", gemImported, "", "GeM bids"],
+            ["  – Excluded", gem.bids.filter((bid) => bid.status === "EXCLUDED").length, "", "GeM bids"],
+            ["  – Ignored", gem.bids.filter((bid) => bid.status === "IGNORED").length, "", "GeM bids"],
+            ["Last GeM pass", gemLast ? formatWhen(gemLast.startedAt, timeZone) : "Not run yet", "", ""],
+          ]
+        : [];
+    return {
+      name: "Summary",
+      rows: [
+        [title],
+        [`Downloaded ${formatWhen(new Date(), timeZone)}`],
+        ...(filters.length ? [[`Filters: ${filters.join(" · ")}`]] : []),
+        [],
+        ["Websites", "Count", "% of total", "Details sheet"],
+        ["Total websites", total, pct(total, total), "All websites"],
+        ["Automated (searched with keywords)", auto.length, pct(auto.length, total), "Automatic"],
+        ["  – Working (search answered)", working, pct(working, total), "Working"],
+        ["  – Keywords matched", matched, pct(matched, total), "Automatic"],
+        ["  – No keyword match", noMatch, pct(noMatch, total), "No results"],
+        ["  – Search failed", failed, pct(failed, total), "Search failed"],
+        ...(notYet ? [["  – Not searched yet", notYet, pct(notYet, total), "Automatic"] as (string | number)[]] : []),
+        ["Check by hand (not automated)", hand.length, pct(hand.length, total), "Check by hand"],
+        ...kindOrder
+          .filter((kind) => byKind(kind))
+          .map((kind) => [`  – ${kind === "DOWN" ? "Server / site not reachable" : HAND_KIND[kind].label}`, byKind(kind), pct(byKind(kind), total), HAND_KIND[kind].label] as (string | number)[]),
+        ["Matching tenders found, last pass", auto.reduce((sum, site) => sum + (site.lastScanAt ? site.matched : 0), 0), "", "Automatic"],
+        ...gemRows,
+        [],
+        ["Classification", "Websites", "Automated", "Check by hand", "Not reachable", "Matching tenders"],
+        ...cats,
       ],
-      listed.map((site) => [
-        short(site.name),
-        links
-          .filter((link) => bare(link.host) === bare(site.host))
-          .map((link) => link.title)
-          .filter((title, index, all) => all.indexOf(title) === index)
-          .join(" | ") || site.name,
-        site.method === "NIC" ? `${site.url}?page=FrontEndTendersByOrganisation&service=page` : site.url,
-        site.category,
-        METHOD[site.method],
-        searchState(site),
-        site.lastScanAt ? formatWhen(site.lastScanAt, timeZone) : "",
-        site.lastScanAt && site.method !== "MANUAL" ? site.matched : "",
-        site.lastScanAt && site.method !== "MANUAL" ? site.checked : "",
-        site.method === "NIC" && site.lastScanAt ? site.organisations : "",
-        sheetRows(site.host).join(" "),
-        site.method === "MANUAL" ? (handReason(site.note)?.text ?? "") : (site.lastError || "").split("\n")[0],
-      ]),
-    );
+    };
+  };
+  const downloadExcelAll = () => {
+    const hand = sites.filter((site) => site.method === "MANUAL");
+    const reasonSheets = ["DOWN", "LOGIN", "CAPTCHA", "SCRIPT", "NO_LIST", "COVERED"]
+      .map((kind) => ({ kind, list: hand.filter((site) => kindOf(site) === kind) }))
+      .filter((item) => item.list.length)
+      .map((item) => ({ name: HAND_KIND[item.kind].label, rows: [HAND_HEAD, ...handRows(item.list)] }));
+    const summary = summarySheet(`Tender websites: ${sites.length} websites from ${links.length} sheet rows`, sites, [], true);
+    summary.rows.push([], ["Master sheet", "Count"], ["Rows in the sheet", links.length], ["Websites on more than one row", repeatedHosts.length], ["Extra rows from repeats", extraRows]);
+    const gemSheet = gem
+      ? [
+          {
+            name: "GeM bids",
+            rows: [
+              ["#", "GeM bid", "Title", "Department", "Ministry", "Keyword", "Bid ends", "Status", "Tender", "Link"],
+              ...gem.bids.map((bid, index) => [
+                index + 1,
+                bid.bidNumber,
+                bid.title,
+                bid.department && bid.department !== "NA" ? bid.department : "",
+                bid.ministry,
+                bid.keyword,
+                bid.endAt ? formatWhen(bid.endAt, timeZone) : "",
+                GEM_STATUS[bid.status] ?? bid.status,
+                gem.tenders.find((tender) => tender.id === bid.tenderId)?.recordId ?? "",
+                `https://bidplus.gem.gov.in/showbidDocument/${bid.bidId}`,
+              ] as (string | number)[]),
+            ],
+          },
+        ]
+      : [];
+    downloadExcel(`websites-${sites.length}-${stamp()}.xlsx`, [
+      summary,
+      { name: "All websites", rows: [SITE_HEAD, ...siteRows(sites)] },
+      { name: "Automatic", rows: [SITE_HEAD, ...siteRows(automatic)] },
+      { name: "Working", rows: [SITE_HEAD, ...siteRows(workingSites)] },
+      { name: "Search failed", rows: [SITE_HEAD, ...siteRows(failedSites)] },
+      { name: "No results", rows: [SITE_HEAD, ...siteRows(emptySites)] },
+      { name: "Check by hand", rows: [HAND_HEAD, ...handRows(hand)] },
+      ...reasonSheets,
+      ...gemSheet,
+      {
+        name: "Sheet links",
+        rows: [
+          ["Sheet row", "Title", "Link", "Classification", "Website", "Rows for this website", "Search state"],
+          ...links.map((link, index) => [index + 1, link.title, link.url, link.category, bare(link.host), sheetRows(link.host).join(" "), searchState(linkSite(link.host))] as (string | number)[]),
+        ],
+      },
+    ]);
+  };
+  /** The list as shown (tab, reason, classification, repeats and search applied), with its own summary sheet. */
+  const download = () => {
+    const tabName = SITE_TABS.find(([key]) => key === siteTab)?.[1] ?? "All";
+    const filters = [
+      siteView === "LINKS" ? "Sheet links" : "By website",
+      tabName,
+      handFilter && HAND_KIND[handFilter]?.label,
+      category && `Classification: ${category}`,
+      repeatOnly && "Repeated websites only",
+      siteNeedle && `Search: "${siteQuery.trim()}"`,
+    ].filter(Boolean) as string[];
+    const file = filters.join("-").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    if (siteView === "LINKS") {
+      const shownSites = [...new Map(listedLinks.map((link) => [bare(link.host), linkSite(link.host)])).values()].filter(Boolean) as WatchSite[];
+      const summary = summarySheet(`${listedLinks.length} sheet rows for ${shownSites.length} websites`, shownSites, filters);
+      downloadExcel(`${file}-${stamp()}.xlsx`, [
+        summary,
+        {
+          name: "Sheet links",
+          rows: [
+            ["Sheet row", "Title", "Link", "Classification", "Website", "Rows for this website", "Search state", "Matching tenders", "Tenders checked"],
+            ...listedLinks.map((link) => {
+              const site = linkSite(link.host);
+              const searched = site && site.method !== "MANUAL" && site.lastScanAt;
+              return [link.row, link.title, link.url, link.category, bare(link.host), sheetRows(link.host).join(" "), searchState(site), searched ? site.matched : "", searched ? site.checked : ""] as (string | number)[];
+            }),
+          ],
+        },
+      ]);
+      return;
+    }
+    const summary = summarySheet(`${listed.length} websites`, listed, filters);
+    // Check by hand: just the website, its link and why it is checked by hand.
+    const list = siteTab === "MANUAL" ? { name: handFilter ? HAND_KIND[handFilter].label : "Check by hand", rows: [HAND_HEAD, ...handRows(listed)] } : { name: tabName === "All" ? "Websites" : tabName, rows: [SITE_HEAD, ...siteRows(listed)] };
+    downloadExcel(`${file}-${stamp()}.xlsx`, [summary, list]);
   };
 
   return (
@@ -979,7 +1121,7 @@ export function SiteWatch({
         </div>
       </div>
 
-      <div className="table-wrap flat">
+      <div className="table-wrap flat" id="site-results">
         <table className="gem-table">
           <thead>
             <tr>
@@ -1109,96 +1251,128 @@ export function SiteWatch({
               searched with the keywords; the rest have no list a program can read.
             </small>
           </div>
-        </div>
-        <div className="site-sheet-counts">
-          <div className="site-count">
-            <b>{links.length || "—"}</b>
-            <small>Links in the sheet</small>
-          </div>
-          <div className="site-count">
-            <b>{sites.length}</b>
-            <small>Separate websites</small>
-          </div>
-          <div className="site-count good">
-            <b>{automatic.length}</b>
-            <small>Searched with keywords</small>
-            <span className="muted">{autoLinks.length} sheet links</span>
-          </div>
-          <div className="site-count">
-            <b>{sites.length - automatic.length}</b>
-            <small>Check by hand</small>
-            <span className="muted">
-              {Object.entries(handCounts)
-                .map(([kind, count]) => `${count} ${HAND_KIND[kind]?.label.toLowerCase() ?? kind}`)
-                .join(" · ") || `${links.length - autoLinks.length} sheet links`}
+          <button type="button" className="sk-download" onClick={downloadExcelAll} title="Excel workbook: a summary of counts (total, automated, server not reachable, GeM…), then the full details of each list on its own sheet">
+            <span aria-hidden>⬇</span>
+            <span>
+              <b>Download Excel</b>
+              <small>Summary + full details · {sites.length} websites</small>
             </span>
-          </div>
-          <div className="site-count">
-            <b>{failedSites.length}</b>
-            <small>Search failed</small>
-            <span className="muted">{emptySites.length} searched, no match</span>
-          </div>
-          <div className="site-count accent">
-            <b>{fmt(matchedNow)}</b>
-            <small>Matching, last pass</small>
-            <span className="muted">of {fmt(totalChecked)} tenders</span>
-          </div>
+          </button>
+        </div>
+        <div className="sk-grid">
+          {(
+            [
+              { key: "links", icon: "🔗", tone: "slate", value: links.length || "—", label: "Links in the sheet", sub: `${extraRows} repeated rows`, view: "LINKS", tab: "ALL" },
+              { key: "sites", icon: "🌐", tone: "blue", value: sites.length, label: "Separate websites", sub: `${repeatedHosts.length} on several rows`, view: "SITES", tab: "ALL" },
+              { key: "auto", icon: "⚡", tone: "green", value: automatic.length, label: "Searched with keywords", sub: `${autoLinks.length} sheet links`, view: "SITES", tab: "AUTO" },
+              { key: "hand", icon: "✋", tone: "amber", value: sites.length - automatic.length, label: "Check by hand", sub: `${handCounts.DOWN ?? 0} not reachable · ${handCounts.LOGIN ?? 0} need a login`, view: "SITES", tab: "MANUAL" },
+              { key: "failed", icon: "⚠", tone: "red", value: failedSites.length, label: "Search failed", sub: "no answer in the last pass", view: "SITES", tab: "FAILED" },
+              { key: "empty", icon: "∅", tone: "violet", value: emptySites.length, label: "Searched, no match", sub: "no keyword in their tenders", view: "SITES", tab: "EMPTY" },
+              { key: "matched", icon: "🎯", tone: "ember", value: fmt(matchedNow), label: "Matching, last pass", sub: `of ${fmt(totalChecked)} tenders`, view: "", tab: "" },
+              ...(gem ? [{ key: "gem", icon: "🏛", tone: "teal", value: fmt(gemMatched), label: "GeM portal search", sub: `of ${fmt(gemChecked)} GeM bids · ${gemReview} to review`, view: "GEM", tab: "" }] : []),
+            ] as { key: string; icon: string; tone: string; value: string | number; label: string; sub: string; view: "" | "SITES" | "LINKS" | "GEM"; tab: string }[]
+          ).map((card) => {
+            const active = card.view !== "" && card.view !== "GEM" && siteView === card.view && siteTab === card.tab && !category && !repeatOnly && (card.key !== "links" || siteView === "LINKS");
+            return (
+              <button
+                key={card.key}
+                type="button"
+                className={`sk-card tone-${card.tone}${active ? " is-active" : ""}`}
+                aria-pressed={active}
+                title={card.view === "GEM" ? "Go to the GeM bid watch" : card.view ? `Show ${card.label.toLowerCase()} in the list below` : "Show the matching tenders"}
+                onClick={() => {
+                  if (card.view === "GEM") {
+                    toGem();
+                    return;
+                  }
+                  if (!card.view) {
+                    setTab("");
+                    setSiteFilter("");
+                    document.getElementById("site-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    return;
+                  }
+                  setSiteView(card.view);
+                  setSiteTab(card.tab);
+                  setHandKind("");
+                  setCategory("");
+                  setRepeatOnly(false);
+                  document.getElementById("site-browse")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              >
+                <span className="sk-icon" aria-hidden>
+                  {card.icon}
+                </span>
+                <b className="sk-value">{card.value}</b>
+                <span className="sk-label">{card.label}</span>
+                <small className="sk-sub">{card.sub}</small>
+                {card.key === "hand" && sites.length - automatic.length ? (
+                  <span className="sk-bar" aria-hidden>
+                    {Object.keys(HAND_KIND)
+                      .filter((kind) => handCounts[kind])
+                      .map((kind) => (
+                        <i key={kind} className={`k-${kind}`} style={{ flex: handCounts[kind] }} title={`${HAND_KIND[kind].label}: ${handCounts[kind]}`} />
+                      ))}
+                  </span>
+                ) : null}
+                <span className="sk-go" aria-hidden>
+                  {card.view === "GEM" ? `View GeM bids (${gemImported} imported) →` : card.view ? "View list →" : "View tenders →"}
+                </span>
+              </button>
+            );
+          })}
         </div>
         {categories.length ? (
-          <div className="table-wrap flat site-cat">
-            <table className="gem-table">
-              <thead>
-                <tr>
-                  <th>Classification</th>
-                  <th>Sheet links</th>
-                  <th>Websites</th>
-                  <th>Searched</th>
-                  <th>By hand</th>
-                  <th>Matching</th>
-                </tr>
-              </thead>
-              <tbody>
-                {categories.map((row) => (
-                  <tr key={row.name} className={category === row.name ? "active" : ""}>
-                    <td>
-                      <button type="button" className="link-btn" title="Show only this classification in the list below" onClick={() => setCategory(category === row.name ? "" : row.name)}>
-                        {row.name}
-                      </button>
-                    </td>
-                    <td>{row.links}</td>
-                    <td>{row.sites}</td>
-                    <td>{row.auto}</td>
-                    <td>{row.sites - row.auto}</td>
-                    <td>{row.matched ? <b>{row.matched}</b> : "0"}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td>
-                    <b>Total</b>
-                  </td>
-                  <td>
-                    <b>{links.length}</b>
-                  </td>
-                  <td>
-                    <b>{sites.length}</b>
-                  </td>
-                  <td>
-                    <b>{automatic.length}</b>
-                  </td>
-                  <td>
-                    <b>{sites.length - automatic.length}</b>
-                  </td>
-                  <td>
-                    <b>{matchedNow}</b>
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          <>
+            <h4 className="sk-heading">By classification</h4>
+            <div className="sk-cats">
+              {categories.map((row) => {
+                const active = category === row.name;
+                const autoShare = row.sites ? Math.round((row.auto / row.sites) * 100) : 0;
+                return (
+                  <button
+                    key={row.name}
+                    type="button"
+                    className={`sk-cat${active ? " is-active" : ""}`}
+                    aria-pressed={active}
+                    title={active ? "Show every classification again" : `Show only ${row.name} websites in the list below`}
+                    onClick={() => {
+                      setCategory(active ? "" : row.name);
+                      if (!active) document.getElementById("site-browse")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                  >
+                    <span className="sk-cat-head">
+                      <span className="sk-cat-name">{row.name}</span>
+                      <span className="sk-cat-match">{row.matched} matching</span>
+                    </span>
+                    <span className="sk-cat-nums">
+                      <span>
+                        <b>{row.sites}</b>
+                        <small>Sites</small>
+                      </span>
+                      <span>
+                        <b>{row.links}</b>
+                        <small>Links</small>
+                      </span>
+                      <span>
+                        <b>{row.auto}</b>
+                        <small>Auto</small>
+                      </span>
+                      <span>
+                        <b>{row.sites - row.auto}</b>
+                        <small>Hand</small>
+                      </span>
+                    </span>
+                    <span className="sk-split" aria-label={`${autoShare}% searched automatically`}>
+                      <i style={{ width: `${autoShare}%` }} />
+                    </span>
+                    <small className="sk-split-note">{autoShare}% searched automatically</small>
+                  </button>
+                );
+              })}
+            </div>
+          </>
         ) : null}
-        <div className="tabs gem-tabs site-view-tabs" role="tablist" aria-label="List">
+        <div className="tabs gem-tabs site-view-tabs" role="tablist" aria-label="List" id="site-browse">
           <button type="button" role="tab" aria-selected={siteView === "SITES"} className={`tab ${siteView === "SITES" ? "active" : ""}`} onClick={() => setSiteView("SITES")}>
             By website<span className="cnt">{sites.length}</span>
           </button>
@@ -1269,14 +1443,17 @@ export function SiteWatch({
               onChange={(event) => setSiteQuery(event.target.value)}
               aria-label="Search websites"
             />
+            <button type="button" className="btn" onClick={downloadExcelAll} title="Excel workbook: a summary sheet of counts, then every list on its own sheet">
+              ⬇ Excel · all {sites.length}
+            </button>
             <button
               type="button"
               className="btn ghost"
               onClick={download}
               disabled={siteView === "LINKS" ? !listedLinks.length : !listed.length}
-              title="Download the list as shown, with the tabs, classification and search applied"
+              title="Excel of the list as shown (tab, reason, classification and search applied), with a summary sheet"
             >
-              Download ({siteView === "LINKS" ? listedLinks.length : listed.length})
+              ⬇ Excel · shown {siteView === "LINKS" ? listedLinks.length : listed.length}
             </button>
           </div>
         </div>
@@ -1389,124 +1566,139 @@ export function SiteWatch({
             </table>
           </div>
         ) : (
-          <div className="table-wrap flat site-scroll">
-            <table className="gem-table">
-              <thead>
-                <tr>
-                  <th>Website</th>
-                  <th>Category</th>
-                  <th>How it is read</th>
-                  <th>Last pass</th>
-                  <th>Found</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {listed.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="empty">
-                      {siteTab === "FAILED" ? "No website failed its last search." : siteTab === "EMPTY" ? "Every searched website returned at least one match." : "No website matches that search."}
-                    </td>
-                  </tr>
-                ) : null}
-                {[...listed]
-                  .sort((a, b) => (a.method === "MANUAL" ? 1 : 0) - (b.method === "MANUAL" ? 1 : 0) || a.name.localeCompare(b.name))
-                  .map((site) => (
-                    <tr key={site.id}>
-                      <td>
-                        <a href={site.method === "NIC" ? `${site.url}?page=FrontEndTendersByOrganisation&service=page` : site.url} target="_blank" rel="noopener noreferrer">
-                          {short(site.name)}
-                        </a>
-                        <small className="muted">{site.host}</small>
-                        {sheetRows(site.host).length > 1 ? (
-                          <small
-                            className="site-repeat"
+          <>
+            {listed.length === 0 ? (
+              <p className="empty ws-empty">{siteTab === "FAILED" ? "No website failed its last search." : siteTab === "EMPTY" ? "Every searched website returned at least one match." : "No website matches that search."}</p>
+            ) : null}
+            <ul className="ws-grid">
+              {[...listed]
+                .sort((a, b) => (a.method === "MANUAL" ? 1 : 0) - (b.method === "MANUAL" ? 1 : 0) || a.name.localeCompare(b.name))
+                .map((site, index) => {
+                  const gemSite = Boolean(gem) && isGemSite(site);
+                  const reason = site.method === "MANUAL" && !gemSite ? handReason(site.note) : null;
+                  const failed = site.method !== "MANUAL" && site.lastStatus === "FAILED";
+                  const tone = gemSite ? "green" : reason ? (reason.kind === "DOWN" ? "red" : reason.kind === "COVERED" ? "green" : reason.kind === "LOGIN" || reason.kind === "CAPTCHA" ? "violet" : "amber") : failed ? "red" : !site.lastScanAt ? "gray" : site.matched ? "green" : "blue";
+                  const state = gemSite ? `${gemMatched} matching on GeM` : reason ? reason.label : failed ? "Search failed" : !site.lastScanAt ? "Not searched yet" : site.matched ? `${site.matched} matching` : "No matches";
+                  const href = site.method === "NIC" ? `${site.url}?page=FrontEndTendersByOrganisation&service=page` : site.url;
+                  const rows = sheetRows(site.host);
+                  return (
+                    <li key={site.id} className={`ws-card tone-${tone}`} style={{ "--r": Math.min(index, 14) } as CSSProperties}>
+                      <div className="ws-top">
+                        <span className="ws-avatar" aria-hidden>
+                          {short(site.name).replace(/^[^A-Za-z0-9]+/, "").charAt(0).toUpperCase() || "W"}
+                        </span>
+                        <span className="ws-chip">{site.category || "Uncategorised"}</span>
+                        <span className={`ws-state ${tone}`}>{state}</span>
+                      </div>
+                      <a className="ws-name" href={href} target="_blank" rel="noopener noreferrer" title={site.name}>
+                        {short(site.name)}
+                      </a>
+                      <span className="ws-host">
+                        {site.host}
+                        {rows.length > 1 ? (
+                          <em
+                            className="ws-repeat"
                             title={links
                               .filter((link) => bare(link.host) === bare(site.host))
                               .map((link) => link.title)
                               .join(" · ")}
                           >
-                            On {sheetRows(site.host).length} sheet rows
-                          </small>
+                            {rows.length} sheet rows
+                          </em>
                         ) : null}
-                      </td>
-                      <td>{site.category || "—"}</td>
-                      <td>
-                        {site.method === "MANUAL" && handReason(site.note) ? (
-                          <>
-                            <span className={`pill ${handReason(site.note)!.tone}`}>{handReason(site.note)!.label}</span>
-                            <small className="muted site-reason">{handReason(site.note)!.text}</small>
-                          </>
-                        ) : (
-                          METHOD[site.method]
-                        )}
-                        {site.method !== "MANUAL" && !site.enabled ? <small className="muted">paused</small> : null}
-                      </td>
-                      <td>
-                        {site.lastScanAt ? (
-                          <>
-                            <span className={`pill ${RUN_TONE[site.lastStatus] ?? "neutral"}`}>{site.lastStatus.toLowerCase()}</span>
-                            <small className="muted">{formatWhen(site.lastScanAt, timeZone)}</small>
-                          </>
-                        ) : site.method === "MANUAL" ? (
-                          "—"
-                        ) : (
-                          <span className="muted">Not read yet</span>
-                        )}
-                        {site.lastError ? <small className="muted gem-error">{site.lastError.split("\n")[0]}</small> : null}
-                      </td>
-                      <td>
-                        {site.lastScanAt ? (
-                          <>
-                            {site.matched ? (
-                              <button
-                                type="button"
-                                className="link-btn"
-                                title="Show this website's matching tenders above"
-                                onClick={() => {
-                                  setSiteFilter(site.id);
-                                  setTab("");
-                                }}
-                              >
-                                <b>{site.matched}</b> matching
-                              </button>
-                            ) : (
-                              <b>0 matching</b>
-                            )}{" "}
-                            of {site.checked} tenders
-                            {site.method === "NIC" ? <small className="muted">{site.organisations} organisations</small> : null}
-                          </>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="gem-row-actions">
+                      </span>
+                      {gemSite ? (
+                        <>
+                          <span className="ws-stats">
+                            <span className={gemMatched ? "hit" : ""}>
+                              <b>{gemMatched}</b>
+                              <small>Matching</small>
+                            </span>
+                            <span>
+                              <b>{gemChecked.toLocaleString("en-IN")}</b>
+                              <small>Checked</small>
+                            </span>
+                            <span>
+                              <b>{gemReview}</b>
+                              <small>To review</small>
+                            </span>
+                          </span>
+                          <span className="ws-meta">
+                            Automatic · GeM bid watch{gemLast ? ` · ${formatWhen(gemLast.startedAt, timeZone)}` : ""}
+                          </span>
+                        </>
+                      ) : reason ? (
+                        <p className="ws-reason">{reason.text}</p>
+                      ) : (
+                        <>
+                          <span className="ws-stats">
+                            <span className={site.matched ? "hit" : ""}>
+                              <b>{site.lastScanAt ? site.matched : "—"}</b>
+                              <small>Matching</small>
+                            </span>
+                            <span>
+                              <b>{site.lastScanAt ? site.checked.toLocaleString("en-IN") : "—"}</b>
+                              <small>Checked</small>
+                            </span>
+                            <span>
+                              <b>{site.method === "NIC" && site.lastScanAt ? site.organisations : "—"}</b>
+                              <small>Org. lists</small>
+                            </span>
+                          </span>
+                          <span className="ws-meta">
+                            {METHOD[site.method]}
+                            {!site.enabled ? " · paused" : ""}
+                            {site.lastScanAt ? ` · ${formatWhen(site.lastScanAt, timeZone)}` : ""}
+                          </span>
+                          {site.lastError ? <small className="ws-error">{site.lastError.split("\n")[0]}</small> : null}
+                        </>
+                      )}
+                      <div className="ws-foot">
+                        <a className="ws-btn" href={href} target="_blank" rel="noopener noreferrer">
+                          Visit ↗
+                        </a>
+                        {gemSite ? (
+                          <button type="button" className="ws-btn primary" title="Go to the GeM bid watch" onClick={toGem}>
+                            Show GeM bids
+                          </button>
+                        ) : null}
+                        {site.matched && site.lastScanAt ? (
+                          <button
+                            type="button"
+                            className="ws-btn primary"
+                            title="Show this website's matching tenders above"
+                            onClick={() => {
+                              setSiteFilter(site.id);
+                              setTab("");
+                            }}
+                          >
+                            Show {site.matched} tenders
+                          </button>
+                        ) : null}
                         {canRun && site.method !== "MANUAL" ? (
-                          <>
-                            <form action={run("site-watch")}>
-                              <input type="hidden" name="intent" value="run-site" />
-                              <input type="hidden" name="siteId" value={site.id} />
-                              <button className="btn ghost" type="submit" disabled={running || !site.enabled}>
-                                Search this site
-                              </button>
-                            </form>
-                            {canEdit ? (
-                              <form action={run("site-watch")}>
-                                <input type="hidden" name="intent" value="toggle-site" />
-                                <input type="hidden" name="siteId" value={site.id} />
-                                <button className="btn ghost" type="submit">
-                                  {site.enabled ? "Pause" : "Resume"}
-                                </button>
-                              </form>
-                            ) : null}
-                          </>
+                          <form action={run("site-watch")}>
+                            <input type="hidden" name="intent" value="run-site" />
+                            <input type="hidden" name="siteId" value={site.id} />
+                            <button className="ws-btn" type="submit" disabled={running || !site.enabled}>
+                              Search now
+                            </button>
+                          </form>
                         ) : null}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
+                        {canRun && canEdit && site.method !== "MANUAL" ? (
+                          <form action={run("site-watch")}>
+                            <input type="hidden" name="intent" value="toggle-site" />
+                            <input type="hidden" name="siteId" value={site.id} />
+                            <button className="ws-btn" type="submit">
+                              {site.enabled ? "Pause" : "Resume"}
+                            </button>
+                          </form>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+            </ul>
+          </>
         )}
       </div>
 

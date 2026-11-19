@@ -15,6 +15,7 @@ const ADDED_COLUMNS: Record<string, [string, string][]> = {
     ["refundReceived", "DOUBLE NULL"],
     ["sdAmount", "DOUBLE NULL"],
     ["convertedToSd", "BOOLEAN NOT NULL DEFAULT false"],
+    ["stampAmount", "TEXT NOT NULL DEFAULT ('')"],
   ],
   GemBid: [["links", "LONGTEXT NULL"]],
   WatchSite: [["note", "VARCHAR(500) NOT NULL DEFAULT ''"]],

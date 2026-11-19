@@ -3,7 +3,7 @@ import { ssoStatus } from "../services/refexone";
 import { directoryConfigured, lastSync, syncSchedule } from "../services/refexone-directory";
 import type { Calendar } from "../utils/calendar";
 import { canEditFields, getCalendar, kickAutomation, readinessChecklist } from "../services/domain";
-import { OPEN_TASK } from "../utils/labels";
+import { WORKABLE } from "../utils/labels";
 import { loadReports } from "../services/metrics";
 import { db } from "../db";
 import { publicUser } from "../middleware/auth";
@@ -20,7 +20,7 @@ export function calendarJson(calendar: Calendar) {
   return { ...calendar, workingDays: [...calendar.workingDays], holidays: [...calendar.holidays] };
 }
 
-const mineWhere = (userId: string) => ({ status: { in: OPEN_TASK }, assigneeIds: { contains: `"${userId}"` } });
+const mineWhere = (userId: string) => ({ status: { in: WORKABLE }, assigneeIds: { contains: `"${userId}"` } });
 
 function idList(raw: string) {
   try {
@@ -63,7 +63,7 @@ views.get("/dashboard", async (_req, res) => {
     db.tender.findMany({
       include: {
         fields: { orderBy: { fieldNo: "asc" } },
-        tasks: { where: { status: { in: OPEN_TASK } }, orderBy: { dueAt: "asc" } },
+        tasks: { where: { status: { in: WORKABLE } }, orderBy: { dueAt: "asc" } },
         approvals: { orderBy: { createdAt: "desc" } },
         emd: true,
         bid: true,
@@ -88,7 +88,7 @@ views.get("/worklist", async (req, res) => {
 views.get("/register", async (_req, res) => {
   await kickAutomation();
   const [tenders, users, calendar] = await Promise.all([
-    db.tender.findMany({ include: { tasks: { where: { status: { in: OPEN_TASK } }, orderBy: { dueAt: "asc" } }, bid: true }, orderBy: { updatedAt: "desc" } }),
+    db.tender.findMany({ include: { tasks: { where: { status: { in: WORKABLE } }, orderBy: { dueAt: "asc" } }, bid: true }, orderBy: { updatedAt: "desc" } }),
     db.user.findMany(),
     getCalendar(),
   ]);

@@ -129,9 +129,11 @@ export async function taskAction(actor: User, formData: FormData): Promise<Actio
       await domain.decideDepartment(actor, taskId, decision, notes, String(formData.get("returnStage") || "FINAL_COSTING"));
     } else if (intent === "emd-save" || intent === "emd-complete") {
       await saveEmdExtras(actor, tenderId, formData);
+      const evidence = [...(await filesFrom(formData, "files")), ...(file ? [file] : [])];
       await domain.saveEmdProgress(actor, taskId, {
         intent: intent === "emd-save" ? "save" : "complete",
         amount: String(formData.get("amount") || ""),
+        stampAmount: String(formData.get("stampAmount") || ""),
         beneficiary: String(formData.get("beneficiary") || ""),
         referenceNumber: String(formData.get("referenceNumber") || ""),
         exemptionBasis: String(formData.get("exemptionBasis") || ""),
@@ -139,8 +141,10 @@ export async function taskAction(actor: User, formData: FormData): Promise<Actio
         authorityNote: String(formData.get("authorityNote") || ""),
         submittedToAuthority: formData.get("submittedToAuthority") === "yes",
         preparationStatus: intent === "emd-complete" ? "Verified" : String(formData.get("preparationStatus") || ""),
-        file,
+        files: evidence,
       });
+    } else if (intent === "remove-emd-doc") {
+      await domain.removeEmdDocument(actor, tenderId, String(formData.get("documentId") || ""));
     } else if (intent === "bg-request") {
       await domain.saveBgRequest(actor, tenderId, Object.fromEntries(domain.BG_REQUEST_KEYS.map((key) => [key, String(formData.get(`bg_${key}`) || "")])));
     } else if (intent === "emd-clarify") {
@@ -168,6 +172,7 @@ export async function taskAction(actor: User, formData: FormData): Promise<Actio
       }
       await domain.recordOutcome(actor, tenderId, outcome, notes);
     } else if (intent === "add-docs") await domain.addDocuments(actor, tenderId, await filesFrom(formData, "files"), String(formData.get("docType") || "SUPPORTING"));
+    else if (intent === "remove-doc") await domain.removeDocument(actor, tenderId, String(formData.get("documentId") || ""));
     else throw new WorkflowError("Unknown action.");
     return { ok: "Saved." };
   } catch (error) {
