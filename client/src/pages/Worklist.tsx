@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import type { CSSProperties } from "react";
 import { useApi, toCalendar } from "@client/api/client";
 import { useActor } from "@client/api/session";
@@ -12,6 +12,8 @@ type Data = { tasks: (WorkflowTask & { tender: Tender })[]; calendar: CalendarJs
 
 export default function WorklistPage() {
   const actor = useActor();
+  const location = useLocation();
+  const from = `${location.pathname}${location.search}`;
   const { data, error, reload } = useApi<Data>("/worklist");
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
   const tasks = data.tasks;
@@ -77,7 +79,7 @@ export default function WorklistPage() {
                     : `${formatDuration(left ?? 0, day)} working time left`;
                 return (
                   <li key={task.id} className={`tc-card tone-${tone}${late ? " is-late" : ""}`} style={{ "--r": index } as CSSProperties}>
-                    <Link className="tc-main" to={`/tenders/${task.tenderId}?tab=overview&task=${task.id}`} title="Open the full record and the tasks overview">
+                    <Link className="tc-main" to={`/tenders/${task.tenderId}?tab=overview&task=${task.id}`} state={{ from }} title="Open the full record and the tasks overview">
                       <span className="tc-top">
                         <span className="tc-no">{index + 1}</span>
                         <span className="tc-ref">{tender.recordId}</span>
@@ -105,7 +107,7 @@ export default function WorklistPage() {
                     </Link>
                     <span className="tc-foot">
                       <span className={late ? "tc-late" : "tc-owner"}>{late ? "● Overdue" : "Open the full report"}</span>
-                      <Link to={`/tenders/${task.tenderId}?tab=overview&task=${task.id}`} className="tc-open">
+                      <Link to={`/tenders/${task.tenderId}?tab=overview&task=${task.id}`} state={{ from }} className="tc-open">
                         Open full report
                       </Link>
                     </span>

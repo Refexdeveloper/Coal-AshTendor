@@ -1,4 +1,4 @@
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { lazy, Suspense, Fragment, useEffect, useActionState, useState, type CSSProperties } from "react";
 import { documentUrl, toCalendar, useApi } from "@client/api/client";
 import { convertEmdToSdAction, taskAction } from "@client/api/actions";
@@ -159,6 +159,25 @@ function ConvertToSd({ tenderId, amount, sdAmount, converted, canConvert, onDone
   );
 }
 
+function TenderBack() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from;
+  return (
+    <button
+      type="button"
+      className="tender-back"
+      onClick={() => {
+        if (from) navigate(from);
+        else if ((window.history.state?.idx ?? 0) > 0) navigate(-1);
+        else navigate("/register");
+      }}
+    >
+      ← Back
+    </button>
+  );
+}
+
 export default function TenderPage() {
   const { id = "" } = useParams();
   const [search] = useSearchParams();
@@ -306,6 +325,7 @@ export default function TenderPage() {
           <i /><i /><i /><i /><i /><i /><i /><i /><i />
         </div>
         <div className="tender-hero-main">
+          <TenderBack />
           <p className="crumb">
             <Link to="/register">Tender register</Link> <span>/</span> {tender.recordId}
           </p>

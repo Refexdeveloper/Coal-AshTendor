@@ -16,6 +16,28 @@ export function AppShell({
   useEffect(() => {
     installRipple();
   }, []);
+  useEffect(() => {
+    const root = document.querySelector(".content");
+    if (!root) return;
+    const stamp = () => {
+      root.querySelectorAll("table").forEach((table) => {
+        if (table.closest(".bg-letter, .bg-request")) return;
+        const heads = [...table.querySelectorAll("thead th")].map((cell) => cell.textContent?.replace(/\s+/g, " ").trim() ?? "");
+        if (!heads.some(Boolean)) return;
+        table.querySelectorAll("tbody tr").forEach((row) => {
+          [...row.children].forEach((cell, index) => {
+            if (!(cell instanceof HTMLTableCellElement) || cell.tagName !== "TD") return;
+            const label = heads[index] ?? "";
+            if (cell.getAttribute("data-label") !== label) cell.setAttribute("data-label", label);
+          });
+        });
+      });
+    };
+    stamp();
+    const observer = new MutationObserver(stamp);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
   return (
     <div className="shell">
       <aside className="sidebar">
