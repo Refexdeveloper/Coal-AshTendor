@@ -1,4 +1,5 @@
-import { Fragment, lazy, Suspense, useEffect, useState, type CSSProperties } from "react";
+import { Fragment, lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { formatWhen } from "@client/utils/calendar";
 import type { Portal } from "@client/lib/types";
@@ -96,7 +97,7 @@ const SITE_TABS: [string, string][] = [
   ["ALL", "All"],
   ["FAILED", "Search failed"],
   ["EMPTY", "No results"],
-  ["AUTO", "Automatic"],
+  ["AUTO", "Searched with keywords"],
   ["MANUAL", "Check by hand"],
 ];
 const RUN_TONE: Record<string, string> = {
@@ -479,6 +480,16 @@ function portalLink(site: WatchSite | undefined, tender: SiteTender) {
  * The tender websites from the master sheet, searched with the sourcing keywords: the matching tenders with
  * Add as tender / Ignore, and the list of sites with how each one is read.
  */
+/**
+ * The master-sheet websites section is shown first on the Portals page: it is rendered into the page's
+ * #websites-top slot (same component, so its filters still drive the lists below), or in place when there is no slot.
+ */
+function TopSlot({ children }: { children: ReactNode }) {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => setSlot(document.getElementById("websites-top")), []);
+  return slot ? createPortal(children, slot) : <>{children}</>;
+}
+
 export function SiteWatch({
   data,
   gem,
@@ -539,6 +550,14 @@ export function SiteWatch({
     .map((word) => word.trim())
     .filter(Boolean);
   const automatic = sites.filter((site) => site.method !== "MANUAL");
+  // Websites that need a login or a CAPTCHA are counted with the keyword-searched ones (they can be searched once access
+  // is given), not with "check by hand".
+  const ACCESS_KINDS = ["LOGIN", "CAPTCHA"];
+  const needsAccess = (site?: WatchSite) => Boolean(site && site.method === "MANUAL" && ACCESS_KINDS.includes(handReason(site.note)?.kind ?? ""));
+  const inKeywordGroup = (site: WatchSite) => site.method !== "MANUAL" || needsAccess(site);
+  const keywordSites = sites.filter(inKeywordGroup);
+  const handSites = sites.filter((site) => !inKeywordGroup(site));
+  const accessCount = keywordSites.length - automatic.length;
   const withMatches = [...new Set(tenders.map((item) => item.siteId))].map(siteOf).filter(Boolean) as WatchSite[];
   const last = runs[0];
   const read = automatic.filter((site) => site.lastScanAt);
@@ -587,16 +606,16 @@ export function SiteWatch({
     if (key === "ALL") return sites.length;
     if (key === "FAILED") return failedSites.length;
     if (key === "EMPTY") return emptySites.length;
-    if (key === "AUTO") return automatic.length;
-    return sites.length - automatic.length;
+    if (key === "AUTO") return keywordSites.length;
+    return handSites.length;
   };
   const siteNeedle = siteQuery.trim().toLowerCase();
   const inSiteTab = (site: WatchSite | undefined, key: string) => {
     if (!site) return key === "ALL" || key === "MANUAL";
     if (key === "FAILED") return site.method !== "MANUAL" && site.lastStatus === "FAILED";
     if (key === "EMPTY") return site.method !== "MANUAL" && Boolean(site.lastScanAt) && site.lastStatus !== "FAILED" && site.matched === 0;
-    if (key === "AUTO") return site.method !== "MANUAL";
-    if (key === "MANUAL") return site.method === "MANUAL";
+    if (key === "AUTO") return inKeywordGroup(site);
+    if (key === "MANUAL") return !inKeywordGroup(site);
     return true;
   };
   // Every row of the master sheet (several rows can share one website), tied to the website it is searched as.
@@ -636,15 +655,16 @@ export function SiteWatch({
         name,
         links: links.filter((link) => link.category === name).length,
         sites: inCategory.length,
-        auto: inCategory.filter((site) => site.method !== "MANUAL").length,
+        auto: inCategory.filter(inKeywordGroup).length,
         matched: inCategory.reduce((sum, site) => sum + (site.lastScanAt ? site.matched : 0), 0),
       };
     })
     .sort((a, b) => b.links - a.links);
   // Under "Check by hand": narrow to one reason (not reachable, needs a login, covered by a searched portal, …).
-  const handFilter = siteTab === "MANUAL" ? handKind : "";
+  const handFilter = siteTab === "MANUAL" || (siteTab === "AUTO" && ACCESS_KINDS.includes(handKind)) ? handKind : "";
   const kindOf = (site: WatchSite | undefined) => (!site || site.method === "MANUAL" ? (handReason(site?.note)?.kind ?? "OTHER") : "");
   const handTabs = Object.keys(HAND_KIND)
+    .filter((kind) => (siteTab === "AUTO" ? ACCESS_KINDS.includes(kind) : !ACCESS_KINDS.includes(kind)))
     .map((kind) => ({
       kind,
       label: HAND_KIND[kind].label,
@@ -728,8 +748,10 @@ export function SiteWatch({
   const GEM_STATUS: Record<string, string> = { NEW: "To review", IMPORTED: "Imported", IGNORED: "Ignored", EXCLUDED: "Excluded", FAILED: "Failed" };
   /** The summary sheet: total websites, automated and their outcome, check by hand with server not reachable first, GeM, and classification. */
   const summarySheet = (title: string, list: WatchSite[], filters: string[] = [], withGem = false) => {
+    const keyword = list.filter(inKeywordGroup);
     const auto = list.filter((site) => site.method !== "MANUAL");
-    const hand = list.filter((site) => site.method === "MANUAL");
+    const hand = list.filter((site) => !inKeywordGroup(site));
+    const access = list.filter(needsAccess);
     const total = list.length;
     const working = list.filter((site) => siteStanding(site).standing === "Working").length;
     const failed = auto.filter((site) => site.lastStatus === "FAILED").length;
@@ -737,14 +759,14 @@ export function SiteWatch({
     const matched = auto.filter((site) => site.lastScanAt && site.lastStatus !== "FAILED" && site.matched > 0).length;
     const notYet = auto.filter((site) => !site.lastScanAt).length;
     const byKind = (kind: string) => hand.filter((site) => kindOf(site) === kind).length;
-    const kindOrder = ["DOWN", "LOGIN", "CAPTCHA", "SCRIPT", "NO_LIST", "COVERED"];
+    const kindOrder = ["DOWN", "SCRIPT", "NO_LIST", "COVERED"];
     const cats = [...new Set(list.map((site) => site.category || "Uncategorised"))].sort().map((name) => {
       const inCat = list.filter((site) => (site.category || "Uncategorised") === name);
       return [
         name,
         inCat.length,
-        inCat.filter((site) => site.method !== "MANUAL").length,
-        inCat.filter((site) => site.method === "MANUAL").length,
+        inCat.filter(inKeywordGroup).length,
+        inCat.filter((site) => !inKeywordGroup(site)).length,
         inCat.filter((site) => site.method === "MANUAL" && kindOf(site) === "DOWN").length,
         inCat.reduce((sum, site) => sum + (site.lastScanAt ? site.matched : 0), 0),
       ] as (string | number)[];
@@ -773,28 +795,32 @@ export function SiteWatch({
         [],
         ["Websites", "Count", "% of total", "Details sheet"],
         ["Total websites", total, pct(total, total), "All websites"],
-        ["Automated (searched with keywords)", auto.length, pct(auto.length, total), "Automatic"],
+        ["Searched with keywords", keyword.length, pct(keyword.length, total), "Searched with keywords"],
         ["  – Working (search answered)", working, pct(working, total), "Working"],
-        ["  – Keywords matched", matched, pct(matched, total), "Automatic"],
+        ["  – Keywords matched", matched, pct(matched, total), "Searched with keywords"],
         ["  – No keyword match", noMatch, pct(noMatch, total), "No results"],
         ["  – Search failed", failed, pct(failed, total), "Search failed"],
-        ...(notYet ? [["  – Not searched yet", notYet, pct(notYet, total), "Automatic"] as (string | number)[]] : []),
+        ...(notYet ? [["  – Not searched yet", notYet, pct(notYet, total), "Searched with keywords"] as (string | number)[]] : []),
+        ...ACCESS_KINDS.filter((kind) => access.some((site) => kindOf(site) === kind)).map((kind) => {
+          const count = access.filter((site) => kindOf(site) === kind).length;
+          return [`  – ${kind === "LOGIN" ? "Need login credentials" : "Need a CAPTCHA"}`, count, pct(count, total), HAND_KIND[kind].label] as (string | number)[];
+        }),
         ["Check by hand (not automated)", hand.length, pct(hand.length, total), "Check by hand"],
         ...kindOrder
           .filter((kind) => byKind(kind))
           .map((kind) => [`  – ${kind === "DOWN" ? "Server / site not reachable" : HAND_KIND[kind].label}`, byKind(kind), pct(byKind(kind), total), HAND_KIND[kind].label] as (string | number)[]),
-        ["Matching tenders found, last pass", auto.reduce((sum, site) => sum + (site.lastScanAt ? site.matched : 0), 0), "", "Automatic"],
+        ["Matching tenders found, last pass", auto.reduce((sum, site) => sum + (site.lastScanAt ? site.matched : 0), 0), "", "Searched with keywords"],
         ...gemRows,
         [],
-        ["Classification", "Websites", "Automated", "Check by hand", "Not reachable", "Matching tenders"],
+        ["Classification", "Websites", "Searched with keywords", "Check by hand", "Not reachable", "Matching tenders"],
         ...cats,
       ],
     };
   };
   const downloadExcelAll = () => {
-    const hand = sites.filter((site) => site.method === "MANUAL");
+    const hand = handSites;
     const reasonSheets = ["DOWN", "LOGIN", "CAPTCHA", "SCRIPT", "NO_LIST", "COVERED"]
-      .map((kind) => ({ kind, list: hand.filter((site) => kindOf(site) === kind) }))
+      .map((kind) => ({ kind, list: sites.filter((site) => site.method === "MANUAL" && kindOf(site) === kind) }))
       .filter((item) => item.list.length)
       .map((item) => ({ name: HAND_KIND[item.kind].label, rows: [HAND_HEAD, ...handRows(item.list)] }));
     const summary = summarySheet(`Tender websites: ${sites.length} websites from ${links.length} sheet rows`, sites, [], true);
@@ -824,7 +850,7 @@ export function SiteWatch({
     downloadExcel(`websites-${sites.length}-${stamp()}.xlsx`, [
       summary,
       { name: "All websites", rows: [SITE_HEAD, ...siteRows(sites)] },
-      { name: "Automatic", rows: [SITE_HEAD, ...siteRows(automatic)] },
+      { name: "Searched with keywords", rows: [SITE_HEAD, ...siteRows(keywordSites)] },
       { name: "Working", rows: [SITE_HEAD, ...siteRows(workingSites)] },
       { name: "Search failed", rows: [SITE_HEAD, ...siteRows(failedSites)] },
       { name: "No results", rows: [SITE_HEAD, ...siteRows(emptySites)] },
@@ -1241,13 +1267,15 @@ export function SiteWatch({
         </table>
       </div>
 
+      <TopSlot>
+        <section className="panel gem-watch site-watch site-top" aria-label="Websites from the master sheet">
       <div className="site-list">
         <div className="site-list-head">
           <div>
             <h3>Websites from the master sheet</h3>
             <small className="muted">
               {links.length || sites.length} rows in the sheet point to {sites.length} separate websites: {repeatedHosts.length} websites are listed more than once under different names{" "}
-              {mostRepeated ? ` (for example ${links[mostRepeated[0] - 1]?.title} is on ${mostRepeated.length} rows)` : ""}, which adds {extraRows} repeated rows. {automatic.length} websites are
+              {mostRepeated ? ` (for example ${links[mostRepeated[0] - 1]?.title} is on ${mostRepeated.length} rows)` : ""}, which adds {extraRows} repeated rows. {keywordSites.length} websites are
               searched with the keywords; the rest have no list a program can read.
             </small>
           </div>
@@ -1262,25 +1290,32 @@ export function SiteWatch({
         <div className="sk-grid">
           {(
             [
-              { key: "links", icon: "🔗", tone: "slate", value: links.length || "—", label: "Links in the sheet", sub: `${extraRows} repeated rows`, view: "LINKS", tab: "ALL" },
               { key: "sites", icon: "🌐", tone: "blue", value: sites.length, label: "Separate websites", sub: `${repeatedHosts.length} on several rows`, view: "SITES", tab: "ALL" },
-              { key: "auto", icon: "⚡", tone: "green", value: automatic.length, label: "Searched with keywords", sub: `${autoLinks.length} sheet links`, view: "SITES", tab: "AUTO" },
-              { key: "hand", icon: "✋", tone: "amber", value: sites.length - automatic.length, label: "Check by hand", sub: `${handCounts.DOWN ?? 0} not reachable · ${handCounts.LOGIN ?? 0} need a login`, view: "SITES", tab: "MANUAL" },
-              { key: "failed", icon: "⚠", tone: "red", value: failedSites.length, label: "Search failed", sub: "no answer in the last pass", view: "SITES", tab: "FAILED" },
-              { key: "empty", icon: "∅", tone: "violet", value: emptySites.length, label: "Searched, no match", sub: "no keyword in their tenders", view: "SITES", tab: "EMPTY" },
+              { key: "auto", icon: "⚡", tone: "green", value: keywordSites.length, label: "Searched with keywords", sub: `${automatic.length} searched now${accessCount ? ` + ${accessCount} need access` : ""}`, view: "SITES", tab: "AUTO" },
+              ...(
+                [
+                  ["DOWN", "🔌", "red", "Site not reachable", "the site did not answer or refused"],
+                  ["SCRIPT", "🧱", "amber", "List built by script", "page loads its list with script"],
+                  ["NO_LIST", "📭", "slate", "No tender list", "no tender page on the site"],
+                  ["COVERED", "🔁", "green", "Covered by a searched portal", "tenders found on another portal"],
+                ] as const
+              )
+                .filter(([kind]) => handCounts[kind])
+                .map(([kind, icon, tone, label, sub]) => ({ key: `hand-${kind}`, icon, tone, value: handCounts[kind], label, sub, view: "SITES" as const, tab: "MANUAL", kind })),
               { key: "matched", icon: "🎯", tone: "ember", value: fmt(matchedNow), label: "Matching, last pass", sub: `of ${fmt(totalChecked)} tenders`, view: "", tab: "" },
               ...(gem ? [{ key: "gem", icon: "🏛", tone: "teal", value: fmt(gemMatched), label: "GeM portal search", sub: `of ${fmt(gemChecked)} GeM bids · ${gemReview} to review`, view: "GEM", tab: "" }] : []),
-            ] as { key: string; icon: string; tone: string; value: string | number; label: string; sub: string; view: "" | "SITES" | "LINKS" | "GEM"; tab: string }[]
+            ] as { key: string; icon: string; tone: string; value: string | number; label: string; sub: string; view: "" | "SITES" | "LINKS" | "GEM"; tab: string; kind?: string }[]
           ).map((card) => {
-            const active = card.view !== "" && card.view !== "GEM" && siteView === card.view && siteTab === card.tab && !category && !repeatOnly && (card.key !== "links" || siteView === "LINKS");
-            return (
-              <button
-                key={card.key}
-                type="button"
-                className={`sk-card tone-${card.tone}${active ? " is-active" : ""}`}
-                aria-pressed={active}
-                title={card.view === "GEM" ? "Go to the GeM bid watch" : card.view ? `Show ${card.label.toLowerCase()} in the list below` : "Show the matching tenders"}
-                onClick={() => {
+            const active = card.view !== "" && card.view !== "GEM" && siteView === card.view && siteTab === card.tab && (card.kind ? handKind === card.kind : !handKind) && !category && !repeatOnly && (card.key !== "links" || siteView === "LINKS");
+            const showReason = (kind: string) => {
+              setSiteView("SITES");
+              setSiteTab(ACCESS_KINDS.includes(kind) ? "AUTO" : "MANUAL");
+              setHandKind(kind);
+              setCategory("");
+              setRepeatOnly(false);
+              document.getElementById("site-browse")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            };
+            const open = () => {
                   if (card.view === "GEM") {
                     toGem();
                     return;
@@ -1293,10 +1328,25 @@ export function SiteWatch({
                   }
                   setSiteView(card.view);
                   setSiteTab(card.tab);
-                  setHandKind("");
+                  setHandKind(card.kind ?? "");
                   setCategory("");
                   setRepeatOnly(false);
                   document.getElementById("site-browse")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            };
+            return (
+              <div
+                key={card.key}
+                role="button"
+                tabIndex={0}
+                className={`sk-card tone-${card.tone}${active ? " is-active" : ""}`}
+                aria-pressed={active}
+                title={card.view === "GEM" ? "Go to the GeM bid watch" : card.view ? `Show ${card.label.toLowerCase()} in the list below` : "Show the matching tenders"}
+                onClick={open}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    open();
+                  }
                 }}
               >
                 <span className="sk-icon" aria-hidden>
@@ -1305,19 +1355,31 @@ export function SiteWatch({
                 <b className="sk-value">{card.value}</b>
                 <span className="sk-label">{card.label}</span>
                 <small className="sk-sub">{card.sub}</small>
-                {card.key === "hand" && sites.length - automatic.length ? (
-                  <span className="sk-bar" aria-hidden>
-                    {Object.keys(HAND_KIND)
+                {card.key === "auto" && (handCounts.LOGIN || handCounts.CAPTCHA) ? (
+                  <span className="sk-chips">
+                    <small>Need access:</small>
+                    {(["LOGIN", "CAPTCHA"] as const)
                       .filter((kind) => handCounts[kind])
                       .map((kind) => (
-                        <i key={kind} className={`k-${kind}`} style={{ flex: handCounts[kind] }} title={`${HAND_KIND[kind].label}: ${handCounts[kind]}`} />
+                        <button
+                          key={kind}
+                          type="button"
+                          className={`sk-chip${siteTab === "AUTO" && handKind === kind ? " is-on" : ""}`}
+                          title={`Show the ${handCounts[kind]} websites that ${kind === "LOGIN" ? "need login credentials" : "need a CAPTCHA"}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            showReason(kind);
+                          }}
+                        >
+                          {kind === "LOGIN" ? "🔑" : "🧩"} {handCounts[kind]} {kind === "LOGIN" ? "login" : "CAPTCHA"}
+                        </button>
                       ))}
                   </span>
                 ) : null}
                 <span className="sk-go" aria-hidden>
                   {card.view === "GEM" ? `View GeM bids (${gemImported} imported) →` : card.view ? "View list →" : "View tenders →"}
                 </span>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -1414,7 +1476,7 @@ export function SiteWatch({
                 ? "These websites did not answer, so nothing was read."
                 : siteTab === "EMPTY"
                   ? "These websites were searched and none of the keywords matched."
-                  : `${automatic.length} searched automatically · ${failedSites.length} failed · ${emptySites.length} with no matches · ${sites.length - automatic.length} to check by hand`}
+                  : `${keywordSites.length} searched with keywords (${automatic.length} now, ${accessCount} need access) · ${failedSites.length} failed · ${emptySites.length} with no matches · ${handSites.length} to check by hand`}
             </small>
           </div>
           <div className="site-list-tools">
@@ -1457,11 +1519,20 @@ export function SiteWatch({
             </button>
           </div>
         </div>
-        {siteTab === "MANUAL" && handTabs.length ? (
+        {(siteTab === "MANUAL" || siteTab === "AUTO") && handTabs.length ? (
           <div className="site-reason-tabs" role="group" aria-label="Why the website is checked by hand">
-            <small className="muted">Why:</small>
+            <small className="muted">{siteTab === "AUTO" ? "Needs access:" : "Why:"}</small>
             <button type="button" className={`tab ${!handKind ? "active" : ""}`} aria-pressed={!handKind} onClick={() => setHandKind("")}>
-              All reasons<span className="cnt">{siteView === "LINKS" ? handTabs.reduce((sum, row) => sum + row.links, 0) : handTabs.reduce((sum, row) => sum + row.sites, 0)}</span>
+              {siteTab === "AUTO" ? "All" : "All reasons"}
+              <span className="cnt">
+                {siteTab === "AUTO"
+                  ? siteView === "LINKS"
+                    ? links.filter((link) => inSiteTab(linkSite(link.host), "AUTO")).length
+                    : keywordSites.length
+                  : siteView === "LINKS"
+                    ? handTabs.reduce((sum, row) => sum + row.links, 0)
+                    : handTabs.reduce((sum, row) => sum + row.sites, 0)}
+              </span>
             </button>
             {handTabs.map((row) => (
               <button
@@ -1701,6 +1772,8 @@ export function SiteWatch({
           </>
         )}
       </div>
+        </section>
+      </TopSlot>
 
       <div className="site-list site-history">
         <div className="site-list-head">

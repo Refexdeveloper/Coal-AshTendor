@@ -90,7 +90,7 @@ function SendBack({ tenderId, taskId }: { tenderId: string; taskId: string }) {
               Remark
               <textarea name="notes" rows={4} required minLength={3} placeholder="Why this step is being sent back" autoFocus />
             </label>
-            <span className="step-pop-actions">
+            <span className="step-pop-actions wide">
               <button type="button" className="btn ghost" onClick={() => setOpen(false)}>
                 Cancel
               </button>
@@ -156,10 +156,14 @@ export function TaskCards({
           ) : (
             <p className="muted">Waiting on {task.assignees}.</p>
           )}
-          {canAssign || task.mine ? (
-            <AssignStep tenderId={tenderId} taskId={task.id} users={users} assigneeIds={task.assigneeIds} />
+          {canAssign || task.mine || ((task.mine || canSendBack) && !FIRST_STEP.has(task.stage)) ? (
+            <div className="task-actions">
+              {canAssign || task.mine ? (
+                <AssignStep tenderId={tenderId} taskId={task.id} users={users} assigneeIds={task.assigneeIds} />
+              ) : null}
+              {task.mine || canSendBack ? (FIRST_STEP.has(task.stage) ? null : <SendBack tenderId={tenderId} taskId={task.id} />) : null}
+            </div>
           ) : null}
-          {task.mine || canSendBack ? (FIRST_STEP.has(task.stage) ? null : <SendBack tenderId={tenderId} taskId={task.id} />) : null}
         </article>
       ))}
     </div>
@@ -491,7 +495,7 @@ function AssignStep({
               Remark
               <textarea name="notes" rows={4} required minLength={3} placeholder="Why this step is being assigned" />
             </label>
-            <span className="step-pop-actions">
+            <span className="step-pop-actions wide">
               <button type="button" className="btn ghost" onClick={() => setOpen(false)}>
                 Cancel
               </button>
