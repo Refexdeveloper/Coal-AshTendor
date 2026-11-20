@@ -107,13 +107,15 @@ const RUN_TONE: Record<string, string> = {
   RUNNING: "info",
   INTERRUPTED: "neutral",
 };
+/** Excel sheet names are limited to 31 characters, so the long reason names get a short sheet name. */
+const handSheet = (kind: string) => (kind === "SCRIPT" ? "Need clarification" : (HAND_KIND[kind]?.label ?? kind));
 const HAND_KIND: Record<string, { label: string; tone: string }> = {
-  COVERED: { label: "Covered by a searched portal", tone: "good" },
+  COVERED: { label: "Working but no tender list", tone: "good" },
   LOGIN: { label: "Needs a login", tone: "neutral" },
   CAPTCHA: { label: "Needs a CAPTCHA", tone: "neutral" },
-  SCRIPT: { label: "List built by script", tone: "neutral" },
+  SCRIPT: { label: "Working – Need clarification from portal", tone: "neutral" },
   DOWN: { label: "Site not reachable", tone: "bad" },
-  NO_LIST: { label: "No tender list", tone: "neutral" },
+  NO_LIST: { label: "URL not related to tender", tone: "neutral" },
 };
 /** Why a by-hand site is not read: its kind, the sentence, and for COVERED the portal that carries its tenders. */
 function handReason(note: string | undefined) {
@@ -552,7 +554,8 @@ export function SiteWatch({
   const automatic = sites.filter((site) => site.method !== "MANUAL");
   // Websites that need a login or a CAPTCHA are counted with the keyword-searched ones (they can be searched once access
   // is given), not with "check by hand".
-  const ACCESS_KINDS = ["LOGIN", "CAPTCHA"];
+  const ACCESS_KINDS = ["LOGIN", "CAPTCHA", "COVERED"];
+  const ACCESS_TEXT: Record<string, [string, string, string]> = { LOGIN: ["🔑", "login", "Need login credentials"], CAPTCHA: ["🧩", "CAPTCHA", "Need a CAPTCHA"], COVERED: ["🔁", "no tender list", "Working but no tender list"] };
   const needsAccess = (site?: WatchSite) => Boolean(site && site.method === "MANUAL" && ACCESS_KINDS.includes(handReason(site.note)?.kind ?? ""));
   const inKeywordGroup = (site: WatchSite) => site.method !== "MANUAL" || needsAccess(site);
   const keywordSites = sites.filter(inKeywordGroup);
@@ -660,7 +663,7 @@ export function SiteWatch({
       };
     })
     .sort((a, b) => b.links - a.links);
-  // Under "Check by hand": narrow to one reason (not reachable, needs a login, covered by a searched portal, …).
+  // Under "Check by hand": narrow to one reason (not reachable, need clarification, working but no tender list, …).
   const handFilter = siteTab === "MANUAL" || (siteTab === "AUTO" && ACCESS_KINDS.includes(handKind)) ? handKind : "";
   const kindOf = (site: WatchSite | undefined) => (!site || site.method === "MANUAL" ? (handReason(site?.note)?.kind ?? "OTHER") : "");
   const handTabs = Object.keys(HAND_KIND)
@@ -803,12 +806,12 @@ export function SiteWatch({
         ...(notYet ? [["  – Not searched yet", notYet, pct(notYet, total), "Searched with keywords"] as (string | number)[]] : []),
         ...ACCESS_KINDS.filter((kind) => access.some((site) => kindOf(site) === kind)).map((kind) => {
           const count = access.filter((site) => kindOf(site) === kind).length;
-          return [`  – ${kind === "LOGIN" ? "Need login credentials" : "Need a CAPTCHA"}`, count, pct(count, total), HAND_KIND[kind].label] as (string | number)[];
+          return [`  – ${ACCESS_TEXT[kind][2]}`, count, pct(count, total), handSheet(kind)] as (string | number)[];
         }),
         ["Check by hand (not automated)", hand.length, pct(hand.length, total), "Check by hand"],
         ...kindOrder
           .filter((kind) => byKind(kind))
-          .map((kind) => [`  – ${kind === "DOWN" ? "Server / site not reachable" : HAND_KIND[kind].label}`, byKind(kind), pct(byKind(kind), total), HAND_KIND[kind].label] as (string | number)[]),
+          .map((kind) => [`  – ${kind === "DOWN" ? "Server / site not reachable" : HAND_KIND[kind].label}`, byKind(kind), pct(byKind(kind), total), handSheet(kind)] as (string | number)[]),
         ["Matching tenders found, last pass", auto.reduce((sum, site) => sum + (site.lastScanAt ? site.matched : 0), 0), "", "Searched with keywords"],
         ...gemRows,
         [],
@@ -822,7 +825,7 @@ export function SiteWatch({
     const reasonSheets = ["DOWN", "LOGIN", "CAPTCHA", "SCRIPT", "NO_LIST", "COVERED"]
       .map((kind) => ({ kind, list: sites.filter((site) => site.method === "MANUAL" && kindOf(site) === kind) }))
       .filter((item) => item.list.length)
-      .map((item) => ({ name: HAND_KIND[item.kind].label, rows: [HAND_HEAD, ...handRows(item.list)] }));
+      .map((item) => ({ name: handSheet(item.kind), rows: [HAND_HEAD, ...handRows(item.list)] }));
     const summary = summarySheet(`Tender websites: ${sites.length} websites from ${links.length} sheet rows`, sites, [], true);
     summary.rows.push([], ["Master sheet", "Count"], ["Rows in the sheet", links.length], ["Websites on more than one row", repeatedHosts.length], ["Extra rows from repeats", extraRows]);
     const gemSheet = gem
@@ -899,7 +902,7 @@ export function SiteWatch({
     }
     const summary = summarySheet(`${listed.length} websites`, listed, filters);
     // Check by hand: just the website, its link and why it is checked by hand.
-    const list = siteTab === "MANUAL" ? { name: handFilter ? HAND_KIND[handFilter].label : "Check by hand", rows: [HAND_HEAD, ...handRows(listed)] } : { name: tabName === "All" ? "Websites" : tabName, rows: [SITE_HEAD, ...siteRows(listed)] };
+    const list = siteTab === "MANUAL" ? { name: handFilter ? handSheet(handFilter) : "Check by hand", rows: [HAND_HEAD, ...handRows(listed)] } : { name: tabName === "All" ? "Websites" : tabName, rows: [SITE_HEAD, ...siteRows(listed)] };
     downloadExcel(`${file}-${stamp()}.xlsx`, [summary, list]);
   };
 
@@ -1291,13 +1294,12 @@ export function SiteWatch({
           {(
             [
               { key: "sites", icon: "🌐", tone: "blue", value: sites.length, label: "Separate websites", sub: `${repeatedHosts.length} on several rows`, view: "SITES", tab: "ALL" },
-              { key: "auto", icon: "⚡", tone: "green", value: keywordSites.length, label: "Searched with keywords", sub: `${automatic.length} searched now${accessCount ? ` + ${accessCount} need access` : ""}`, view: "SITES", tab: "AUTO" },
+              { key: "auto", icon: "⚡", tone: "green", value: keywordSites.length, label: "Searched with keywords", sub: `${automatic.length} searched now${accessCount ? ` + ${accessCount} more` : ""}`, view: "SITES", tab: "AUTO" },
               ...(
                 [
                   ["DOWN", "🔌", "red", "Site not reachable", "the site did not answer or refused"],
-                  ["SCRIPT", "🧱", "amber", "List built by script", "page loads its list with script"],
-                  ["NO_LIST", "📭", "slate", "No tender list", "no tender page on the site"],
-                  ["COVERED", "🔁", "green", "Covered by a searched portal", "tenders found on another portal"],
+                  ["SCRIPT", "🧱", "amber", "Working – Need clarification from portal", "site works; ask the portal how to read its list"],
+                  ["NO_LIST", "📭", "slate", "URL not related to tender", "the link is not a tender page"],
                 ] as const
               )
                 .filter(([kind]) => handCounts[kind])
@@ -1355,23 +1357,23 @@ export function SiteWatch({
                 <b className="sk-value">{card.value}</b>
                 <span className="sk-label">{card.label}</span>
                 <small className="sk-sub">{card.sub}</small>
-                {card.key === "auto" && (handCounts.LOGIN || handCounts.CAPTCHA) ? (
-                  <span className="sk-chips">
-                    <small>Need access:</small>
-                    {(["LOGIN", "CAPTCHA"] as const)
+                {card.key === "auto" && accessCount ? (
+                  <span className="sk-chips wrap">
+                    <small>Also counted:</small>
+                    {ACCESS_KINDS
                       .filter((kind) => handCounts[kind])
                       .map((kind) => (
                         <button
                           key={kind}
                           type="button"
                           className={`sk-chip${siteTab === "AUTO" && handKind === kind ? " is-on" : ""}`}
-                          title={`Show the ${handCounts[kind]} websites that ${kind === "LOGIN" ? "need login credentials" : "need a CAPTCHA"}`}
+                          title={`Show the ${handCounts[kind]} websites: ${ACCESS_TEXT[kind][2].toLowerCase()}`}
                           onClick={(event) => {
                             event.stopPropagation();
                             showReason(kind);
                           }}
                         >
-                          {kind === "LOGIN" ? "🔑" : "🧩"} {handCounts[kind]} {kind === "LOGIN" ? "login" : "CAPTCHA"}
+                          {ACCESS_TEXT[kind][0]} {handCounts[kind]} {ACCESS_TEXT[kind][1]}
                         </button>
                       ))}
                   </span>
@@ -1476,7 +1478,7 @@ export function SiteWatch({
                 ? "These websites did not answer, so nothing was read."
                 : siteTab === "EMPTY"
                   ? "These websites were searched and none of the keywords matched."
-                  : `${keywordSites.length} searched with keywords (${automatic.length} now, ${accessCount} need access) · ${failedSites.length} failed · ${emptySites.length} with no matches · ${handSites.length} to check by hand`}
+                  : `${keywordSites.length} searched with keywords (${automatic.length} now, ${accessCount} more) · ${failedSites.length} failed · ${emptySites.length} with no matches · ${handSites.length} to check by hand`}
             </small>
           </div>
           <div className="site-list-tools">
@@ -1521,7 +1523,7 @@ export function SiteWatch({
         </div>
         {(siteTab === "MANUAL" || siteTab === "AUTO") && handTabs.length ? (
           <div className="site-reason-tabs" role="group" aria-label="Why the website is checked by hand">
-            <small className="muted">{siteTab === "AUTO" ? "Needs access:" : "Why:"}</small>
+            <small className="muted">{siteTab === "AUTO" ? "Also counted:" : "Why:"}</small>
             <button type="button" className={`tab ${!handKind ? "active" : ""}`} aria-pressed={!handKind} onClick={() => setHandKind("")}>
               {siteTab === "AUTO" ? "All" : "All reasons"}
               <span className="cnt">
