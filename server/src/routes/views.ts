@@ -95,6 +95,17 @@ views.get("/register", async (_req, res) => {
   res.json({ tenders, users: users.map(publicUser), calendar: calendarJson(calendar) });
 });
 
+/** Person-wise daily usage: who used the app on the day, and each person's tender tasks. Managers only. */
+const USAGE_ROLES = ["ADMIN", "GROUP_CEO", "DEPT_HEAD", "COORDINATOR"];
+views.get("/reports/users", async (req, res) => {
+  if (!USAGE_ROLES.includes(req.actor!.role)) {
+    res.status(403).json({ error: "Only administrators, the Group CEO, department heads and coordinators can see the usage report." });
+    return;
+  }
+  const { userReport } = await import("../services/user-activity");
+  res.json(await userReport(typeof req.query.day === "string" ? req.query.day : undefined));
+});
+
 views.get("/reports", async (_req, res) => {
   const { format: _format, ...report } = await loadReports();
   res.json(report);
@@ -288,9 +299,15 @@ views.get("/portals", async (_req, res) => {
     entry.sites.add(item.siteId);
     keywordRank.set(item.keyword, entry);
   }
+  // Tenders first found today (company time zone), for the "New tenders today" card.
+  const { dayKeyOf } = await import("../services/user-activity");
+  const zone = (await getCalendar()).timeZone;
+  const todayKey = dayKeyOf(new Date(), zone);
   const siteStats = {
     total: allSiteTenders.length,
     byStatus: statusCount,
+    newToday: allSiteTenders.filter((item: { firstSeenAt: Date }) => dayKeyOf(new Date(item.firstSeenAt), zone) === todayKey).length,
+    today: todayKey,
     keywords: [...keywordRank.values()].sort((a, b) => b.total - a.total || a.keyword.localeCompare(b.keyword)).map(({ sites, ...rest }) => ({ ...rest, sites: sites.size })),
   };
   const siteTenders = allSiteTenders.slice(0, 500);

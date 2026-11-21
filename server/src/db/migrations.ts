@@ -17,11 +17,23 @@ const ADDED_COLUMNS: Record<string, [string, string][]> = {
     ["convertedToSd", "BOOLEAN NOT NULL DEFAULT false"],
     ["stampAmount", "TEXT NOT NULL DEFAULT ('')"],
   ],
-  GemBid: [["links", "LONGTEXT NULL"]],
+  GemBid: [
+    ["links", "LONGTEXT NULL"],
+    ["ignoreReason", "VARCHAR(191) NOT NULL DEFAULT ''"],
+    ["ignoreComment", "TEXT NULL"],
+    ["ignoredById", "VARCHAR(191) NOT NULL DEFAULT ''"],
+    ["ignoredByName", "VARCHAR(191) NOT NULL DEFAULT ''"],
+    ["ignoredAt", "DATETIME(3) NULL"],
+  ],
   WatchSite: [["note", "VARCHAR(500) NOT NULL DEFAULT ''"]],
   SiteTender: [
     ["details", "LONGTEXT NULL"],
     ["detailsAt", "DATETIME(3) NULL"],
+    ["ignoreReason", "VARCHAR(191) NOT NULL DEFAULT ''"],
+    ["ignoreComment", "TEXT NULL"],
+    ["ignoredById", "VARCHAR(191) NOT NULL DEFAULT ''"],
+    ["ignoredByName", "VARCHAR(191) NOT NULL DEFAULT ''"],
+    ["ignoredAt", "DATETIME(3) NULL"],
   ],
   Portal: [
     ["excludeWords", "TEXT NULL"],
@@ -43,6 +55,19 @@ const ADDED_COLUMNS: Record<string, [string, string][]> = {
 
 /** Tables added after the first release, created when missing. */
 const ADDED_TABLES: string[] = [
+  `CREATE TABLE IF NOT EXISTS \`UserActivity\` (
+  \`id\` VARCHAR(191) NOT NULL,
+  \`userId\` VARCHAR(191) NOT NULL,
+  \`day\` VARCHAR(10) NOT NULL,
+  \`firstSeenAt\` DATETIME(3) NOT NULL,
+  \`lastSeenAt\` DATETIME(3) NOT NULL,
+  \`requests\` INT NOT NULL DEFAULT 0,
+  \`signIns\` INT NOT NULL DEFAULT 0,
+  \`lastMethod\` VARCHAR(16) NOT NULL DEFAULT '',
+  PRIMARY KEY (\`id\`),
+  UNIQUE KEY \`UserActivity_user_day_key\` (\`userId\`, \`day\`),
+  KEY \`UserActivity_day_idx\` (\`day\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
   `CREATE TABLE IF NOT EXISTS \`SuretyBond\` (
   \`id\` VARCHAR(191) NOT NULL,
   \`kind\` VARCHAR(32) NOT NULL,

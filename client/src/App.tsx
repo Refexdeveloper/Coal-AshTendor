@@ -9,6 +9,7 @@ import DashboardPage from "@client/pages/Dashboard";
 import PortalsPage from "@client/pages/portals/Portals";
 import RegisterPage from "@client/pages/Register";
 import ReportsPage from "@client/pages/Reports";
+import UserReportPage from "@client/pages/UserReport";
 import TenderPage from "@client/pages/tenders/TenderDetail";
 import BgLetterPage from "@client/pages/tenders/BgLetter";
 import WorklistPage from "@client/pages/Worklist";
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="guarantees" element={<GuaranteesPage />} />
         <Route path="guarantees/:id" element={<GuaranteeDetailPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="reports/users" element={<UserReportPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="email-logs" element={<EmailLogsPage />} />
         <Route path="portals" element={<PortalsPage />} />

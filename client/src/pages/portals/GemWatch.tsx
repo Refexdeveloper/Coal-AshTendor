@@ -3,12 +3,17 @@ import { Link } from "react-router-dom";
 import { apiUrl } from "@client/api/client";
 import { formatWhen } from "@client/utils/calendar";
 import { GemResults } from "@client/components/feature/gem-results";
+import { IgnoreForm, IgnoredNote } from "@client/components/feature/ignore-form";
 import type { Portal } from "@client/lib/types";
 
 const PdfViewer = lazy(() => import("@client/components/feature/pdf-viewer"));
 
 export type GemBid = {
   id: string;
+  ignoreReason?: string;
+  ignoreComment?: string | null;
+  ignoredByName?: string;
+  ignoredAt?: Date | string | null;
   bidId: string;
   bidNumber: string;
   title: string;
@@ -450,6 +455,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                   <td>
                     <span className={`pill ${STATUS[bid.status].tone}`}>{STATUS[bid.status].label}</span>
                     {bid.error ? <small className="muted gem-error">{bid.error}</small> : null}
+                    {bid.status === "IGNORED" ? <IgnoredNote item={bid} /> : null}
                   </td>
                   <td className="gem-row-actions">
                     <button type="button" className={`btn ghost${open ? " is-on" : ""}`} onClick={() => setOpenId(open ? "" : bid.id)}>
@@ -470,13 +476,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                       </form>
                     ) : null}
                     {canRun && bid.status === "NEW" ? (
-                      <form action={run("gem")}>
-                        <input type="hidden" name="intent" value="ignore" />
-                        <input type="hidden" name="bidId" value={bid.id} />
-                        <button className="btn ghost" type="submit">
-                          Ignore
-                        </button>
-                      </form>
+                      <IgnoreForm action={run("gem")} idName="bidId" id={bid.id} />
                     ) : null}
                     {canRun && bid.status === "IGNORED" ? (
                       <form action={run("gem")}>

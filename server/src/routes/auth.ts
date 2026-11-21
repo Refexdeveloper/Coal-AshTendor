@@ -4,6 +4,7 @@ import { db } from "../db";
 import { checkLogin } from "../services/actions";
 import { clearSession, publicUser, setSession } from "../middleware/auth";
 import { consumeRefexOne } from "../services/refexone";
+import { noteSignIn } from "../services/user-activity";
 
 export const authRouter = Router();
 
@@ -14,6 +15,7 @@ authRouter.post("/login", multer().none(), async (req, res) => {
     return;
   }
   await setSession(res, user.id);
+  await noteSignIn(user.id, "PASSWORD").catch((error) => console.error("Could not record sign-in", error));
   res.json({ ok: "Signed in" });
 });
 
@@ -32,6 +34,7 @@ authRouter.post("/refexone/saml/acs", async (req, res) => {
       return;
     }
     await setSession(res, result.userId);
+    await noteSignIn(result.userId, "REFEXONE").catch((error) => console.error("Could not record sign-in", error));
     res.redirect(result.next);
   } catch (error) {
     console.error(error);

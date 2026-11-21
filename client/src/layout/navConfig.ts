@@ -8,6 +8,7 @@ export const NAV: { href: string; label: string; icon: string; roles?: string[] 
   { href: "/tenders/new", label: "New tender", icon: "plus", roles: CREATOR_ROLES },
   { href: "/bonds", label: "ISB bonds", icon: "shield" },
   { href: "/guarantees", label: "Bank guarantees", icon: "bank" },
+  { href: "/reports/users", label: "User report", icon: "users", roles: ["ADMIN", "GROUP_CEO", "DEPT_HEAD", "COORDINATOR"] },
   { href: "/reports", label: "Reports", icon: "chart" },
   { href: "/notifications", label: "Notifications", icon: "bell" },
   { href: "/email-logs", label: "Email log", icon: "mail", roles: ["ADMIN"] },

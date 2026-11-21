@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { db, type User } from "../db";
 import { COOKIE, readSession, signSession } from "../utils/token";
 import { allowedOrigins } from "./cors";
+import { noteRequest } from "../services/user-activity";
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -24,6 +25,8 @@ export async function requireActor(req: Request, res: Response, next: NextFuncti
     return;
   }
   req.actor = user;
+  // Daily usage report: this person used the app today.
+  noteRequest(user.id).catch((error) => console.error("Could not record activity", error));
   next();
 }
 

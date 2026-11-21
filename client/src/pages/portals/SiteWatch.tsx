@@ -5,6 +5,7 @@ import { formatWhen } from "@client/utils/calendar";
 import type { Portal } from "@client/lib/types";
 import { apiUrl } from "@client/api/client";
 import { downloadXlsx } from "@client/utils/xlsx";
+import { IgnoreForm, IgnoredNote } from "@client/components/feature/ignore-form";
 import type { GemData } from "@client/pages/portals/GemWatch";
 
 const PdfViewer = lazy(() => import("@client/components/feature/pdf-viewer"));
@@ -28,6 +29,10 @@ export type WatchSite = {
 };
 export type SiteTender = {
   id: string;
+  ignoreReason?: string;
+  ignoreComment?: string | null;
+  ignoredByName?: string;
+  ignoredAt?: Date | string | null;
   siteId: string;
   portalTenderId: string;
   refNo: string;
@@ -57,6 +62,8 @@ export type SitesData = {
   stats?: {
     total: number;
     byStatus: Record<string, number>;
+    newToday?: number;
+    today?: string;
     keywords: {
       keyword: string;
       total: number;
@@ -97,7 +104,7 @@ const SITE_TABS: [string, string][] = [
   ["ALL", "All"],
   ["FAILED", "Search failed"],
   ["EMPTY", "No results"],
-  ["AUTO", "Searched with keywords"],
+  ["AUTO", "Working"],
   ["MANUAL", "Check by hand"],
 ];
 const RUN_TONE: Record<string, string> = {
@@ -108,12 +115,15 @@ const RUN_TONE: Record<string, string> = {
   INTERRUPTED: "neutral",
 };
 /** Excel sheet names are limited to 31 characters, so the long reason names get a short sheet name. */
-const handSheet = (kind: string) => (kind === "SCRIPT" ? "Need clarification" : (HAND_KIND[kind]?.label ?? kind));
+const handSheet = (kind: string) => HAND_KIND[kind]?.label ?? kind;
+/** "Not matching" groups two reasons: the site is not reachable, or its URL is not related to tenders. */
+const NOT_MATCHING = ["DOWN", "NO_LIST"];
+const kindMatches = (kind: string, filter: string) => (filter === "NOT_MATCHING" ? NOT_MATCHING.includes(kind) : kind === filter);
 const HAND_KIND: Record<string, { label: string; tone: string }> = {
   COVERED: { label: "Working but no tender list", tone: "good" },
   LOGIN: { label: "Needs a login", tone: "neutral" },
   CAPTCHA: { label: "Needs a CAPTCHA", tone: "neutral" },
-  SCRIPT: { label: "Working – Need clarification from portal", tone: "neutral" },
+  SCRIPT: { label: "In pending", tone: "neutral" },
   DOWN: { label: "Site not reachable", tone: "bad" },
   NO_LIST: { label: "URL not related to tender", tone: "neutral" },
 };
@@ -679,13 +689,13 @@ export function SiteWatch({
     .map((link, index) => ({ ...link, row: index + 1 }))
     .filter((link) => !repeatOnly || sheetRows(link.host).length > 1)
     .filter((link) => inSiteTab(linkSite(link.host), siteTab))
-    .filter((link) => !handFilter || kindOf(linkSite(link.host)) === handFilter)
+    .filter((link) => !handFilter || kindMatches(kindOf(linkSite(link.host)), handFilter))
     .filter((link) => !category || link.category === category)
     .filter((link) => !siteNeedle || [link.title, link.url, link.category].join(" ").toLowerCase().includes(siteNeedle));
   const listed = sites
     .filter((site) => !repeatOnly || sheetRows(site.host).length > 1)
     .filter((site) => inSiteTab(site, siteTab))
-    .filter((site) => !handFilter || kindOf(site) === handFilter)
+    .filter((site) => !handFilter || kindMatches(kindOf(site), handFilter))
     .filter((site) => !category || site.category === category)
     .filter((site) => !siteNeedle || [site.name, site.host, site.category].join(" ").toLowerCase().includes(siteNeedle));
 
@@ -798,8 +808,8 @@ export function SiteWatch({
         [],
         ["Websites", "Count", "% of total", "Details sheet"],
         ["Total websites", total, pct(total, total), "All websites"],
-        ["Searched with keywords", keyword.length, pct(keyword.length, total), "Searched with keywords"],
-        ["  – Working (search answered)", working, pct(working, total), "Working"],
+        ["Working (searched with keywords)", keyword.length, pct(keyword.length, total), "Searched with keywords"],
+        ["  – Search answered", working, pct(working, total), "Search answered"],
         ["  – Keywords matched", matched, pct(matched, total), "Searched with keywords"],
         ["  – No keyword match", noMatch, pct(noMatch, total), "No results"],
         ["  – Search failed", failed, pct(failed, total), "Search failed"],
@@ -820,6 +830,92 @@ export function SiteWatch({
       ],
     };
   };
+  // Search results across the website search and the GeM search: found, approved (imported), rejected, conversion, new today.
+  const siteBy = stats?.byStatus ?? {};
+  const gemBy = (gem?.bids ?? []).reduce<Record<string, number>>((acc, bid) => ({ ...acc, [bid.status]: (acc[bid.status] ?? 0) + 1 }), {});
+  const siteFound = stats?.total ?? tenders.length;
+  const gemFound = gem?.bids.length ?? 0;
+  const foundTotal = siteFound + gemFound;
+  const approvedSite = siteBy.IMPORTED ?? 0;
+  const approvedGem = gemBy.IMPORTED ?? 0;
+  const reviewedOut = (siteBy.IGNORED ?? 0) + (gemBy.IGNORED ?? 0);
+  const excludedOut = (siteBy.EXCLUDED ?? 0) + (gemBy.EXCLUDED ?? 0);
+  const conversion = foundTotal ? ((approvedSite + approvedGem) / foundTotal) * 100 : 0;
+  const zoneDay = (value: Date | string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+  const todayKey = stats?.today ?? zoneDay(new Date());
+  const gemToday = (gem?.bids ?? []).filter((bid) => zoneDay(bid.firstSeenAt) === todayKey).length;
+  const siteToday = stats?.newToday ?? tenders.filter((item) => zoneDay(item.firstSeenAt) === todayKey).length;
+  const toResults = (status: string) => {
+    setTab(status);
+    setSiteFilter("");
+    document.getElementById("site-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const resultCards: { key: string; icon: string; tone: string; value: string | number; label: string; sub: string; go: string; title: string; open: () => void; chips: { label: string; open: () => void }[]; bar?: number }[] = [
+    {
+      key: "found",
+      icon: "🔎",
+      tone: "blue",
+      value: fmt(foundTotal),
+      label: "Total tenders in search",
+      sub: `${fmt(siteFound)} from websites · ${fmt(gemFound)} from GeM`,
+      go: "View tenders →",
+      title: "Every tender the keyword searches found",
+      open: () => toResults(""),
+      chips: gem ? [{ label: `🏛 ${gemFound} GeM bids`, open: toGem }] : [],
+    },
+    {
+      key: "approved",
+      icon: "✅",
+      tone: "green",
+      value: approvedSite + approvedGem,
+      label: "Approved",
+      sub: `imported as tenders · ${approvedSite} websites + ${approvedGem} GeM`,
+      go: "View approved →",
+      title: "Search results imported into the tender list",
+      open: () => toResults("IMPORTED"),
+      chips: [],
+    },
+    {
+      key: "rejected",
+      icon: "⛔",
+      tone: "red",
+      value: reviewedOut + excludedOut,
+      label: "Rejected",
+      sub: `${reviewedOut} rejected on review · ${excludedOut} excluded by words`,
+      go: "View rejected →",
+      title: "Results rejected on review, or dropped by the exclude words",
+      open: () => toResults(reviewedOut ? "IGNORED" : "EXCLUDED"),
+      chips: [
+        { label: `👁 ${reviewedOut} on review`, open: () => toResults("IGNORED") },
+        { label: `🚫 ${excludedOut} excluded`, open: () => toResults("EXCLUDED") },
+      ],
+    },
+    {
+      key: "conversion",
+      icon: "📈",
+      tone: "violet",
+      value: `${conversion < 10 ? conversion.toFixed(1) : Math.round(conversion)}%`,
+      label: "Conversion ratio",
+      sub: `${approvedSite + approvedGem} approved of ${fmt(foundTotal)} found`,
+      go: "View approved →",
+      title: "Approved tenders as a share of all tenders found",
+      open: () => toResults("IMPORTED"),
+      chips: [],
+      bar: conversion,
+    },
+    {
+      key: "today",
+      icon: "🆕",
+      tone: "ember",
+      value: siteToday + gemToday,
+      label: "New tenders today",
+      sub: `${siteToday} from websites · ${gemToday} from GeM`,
+      go: "View new →",
+      title: "Tenders first found today",
+      open: () => toResults("NEW"),
+      chips: [],
+    },
+  ];
   const downloadExcelAll = () => {
     const hand = handSites;
     const reasonSheets = ["DOWN", "LOGIN", "CAPTCHA", "SCRIPT", "NO_LIST", "COVERED"]
@@ -833,7 +929,7 @@ export function SiteWatch({
           {
             name: "GeM bids",
             rows: [
-              ["#", "GeM bid", "Title", "Department", "Ministry", "Keyword", "Bid ends", "Status", "Tender", "Link"],
+              ["#", "GeM bid", "Title", "Department", "Ministry", "Keyword", "Bid ends", "Status", "Tender", "Link", "Ignore reason", "Comment", "Ignored by"],
               ...gem.bids.map((bid, index) => [
                 index + 1,
                 bid.bidNumber,
@@ -845,6 +941,9 @@ export function SiteWatch({
                 GEM_STATUS[bid.status] ?? bid.status,
                 gem.tenders.find((tender) => tender.id === bid.tenderId)?.recordId ?? "",
                 `https://bidplus.gem.gov.in/showbidDocument/${bid.bidId}`,
+                bid.ignoreReason ?? "",
+                bid.ignoreComment ?? "",
+                bid.ignoredByName ? `${bid.ignoredByName}${bid.ignoredAt ? `, ${formatWhen(new Date(bid.ignoredAt), timeZone)}` : ""}` : "",
               ] as (string | number)[]),
             ],
           },
@@ -854,7 +953,7 @@ export function SiteWatch({
       summary,
       { name: "All websites", rows: [SITE_HEAD, ...siteRows(sites)] },
       { name: "Searched with keywords", rows: [SITE_HEAD, ...siteRows(keywordSites)] },
-      { name: "Working", rows: [SITE_HEAD, ...siteRows(workingSites)] },
+      { name: "Search answered", rows: [SITE_HEAD, ...siteRows(workingSites)] },
       { name: "Search failed", rows: [SITE_HEAD, ...siteRows(failedSites)] },
       { name: "No results", rows: [SITE_HEAD, ...siteRows(emptySites)] },
       { name: "Check by hand", rows: [HAND_HEAD, ...handRows(hand)] },
@@ -1220,6 +1319,7 @@ export function SiteWatch({
                     <td>
                       <span className={`pill ${STATUS[item.status].tone}`}>{STATUS[item.status].label}</span>
                       {item.error ? <small className="muted gem-error">{item.error}</small> : null}
+                      {item.status === "IGNORED" ? <IgnoredNote item={item} /> : null}
                     </td>
                     <td className="gem-row-actions">
                       {item.tenderId ? (
@@ -1237,13 +1337,7 @@ export function SiteWatch({
                         </form>
                       ) : null}
                       {canRun && item.status === "NEW" ? (
-                        <form action={run("site-watch")}>
-                          <input type="hidden" name="intent" value="ignore" />
-                          <input type="hidden" name="siteTenderId" value={item.id} />
-                          <button className="btn ghost" type="submit">
-                            Ignore
-                          </button>
-                        </form>
+                        <IgnoreForm action={run("site-watch")} idName="siteTenderId" id={item.id} />
                       ) : null}
                       {canRun && item.status === "IGNORED" ? (
                         <form action={run("site-watch")}>
@@ -1294,18 +1388,13 @@ export function SiteWatch({
           {(
             [
               { key: "sites", icon: "🌐", tone: "blue", value: sites.length, label: "Separate websites", sub: `${repeatedHosts.length} on several rows`, view: "SITES", tab: "ALL" },
-              { key: "auto", icon: "⚡", tone: "green", value: keywordSites.length, label: "Searched with keywords", sub: `${automatic.length} searched now${accessCount ? ` + ${accessCount} more` : ""}`, view: "SITES", tab: "AUTO" },
-              ...(
-                [
-                  ["DOWN", "🔌", "red", "Site not reachable", "the site did not answer or refused"],
-                  ["SCRIPT", "🧱", "amber", "Working – Need clarification from portal", "site works; ask the portal how to read its list"],
-                  ["NO_LIST", "📭", "slate", "URL not related to tender", "the link is not a tender page"],
-                ] as const
-              )
-                .filter(([kind]) => handCounts[kind])
-                .map(([kind, icon, tone, label, sub]) => ({ key: `hand-${kind}`, icon, tone, value: handCounts[kind], label, sub, view: "SITES" as const, tab: "MANUAL", kind })),
-              { key: "matched", icon: "🎯", tone: "ember", value: fmt(matchedNow), label: "Matching, last pass", sub: `of ${fmt(totalChecked)} tenders`, view: "", tab: "" },
-              ...(gem ? [{ key: "gem", icon: "🏛", tone: "teal", value: fmt(gemMatched), label: "GeM portal search", sub: `of ${fmt(gemChecked)} GeM bids · ${gemReview} to review`, view: "GEM", tab: "" }] : []),
+              { key: "auto", icon: "⚡", tone: "green", value: keywordSites.length, label: "Working", sub: `${automatic.length} searched with keywords${accessCount ? ` + ${accessCount} more` : ""}`, view: "SITES", tab: "AUTO" },
+              ...((handCounts.DOWN ?? 0) + (handCounts.NO_LIST ?? 0)
+                ? [{ key: "notmatch", icon: "🚫", tone: "red", value: (handCounts.DOWN ?? 0) + (handCounts.NO_LIST ?? 0), label: "Not matching", sub: "not reachable, or the URL is not about tenders", view: "SITES" as const, tab: "MANUAL", kind: "NOT_MATCHING" }]
+                : []),
+              ...(handCounts.SCRIPT
+                ? [{ key: "hand-SCRIPT", icon: "⏳", tone: "amber", value: handCounts.SCRIPT, label: "In pending", sub: "site works; need clarification from the portal", view: "SITES" as const, tab: "MANUAL", kind: "SCRIPT" }]
+                : []),
             ] as { key: string; icon: string; tone: string; value: string | number; label: string; sub: string; view: "" | "SITES" | "LINKS" | "GEM"; tab: string; kind?: string }[]
           ).map((card) => {
             const active = card.view !== "" && card.view !== "GEM" && siteView === card.view && siteTab === card.tab && (card.kind ? handKind === card.kind : !handKind) && !category && !repeatOnly && (card.key !== "links" || siteView === "LINKS");
@@ -1378,12 +1467,81 @@ export function SiteWatch({
                       ))}
                   </span>
                 ) : null}
+                {card.key === "notmatch" ? (
+                  <span className="sk-chips wrap">
+                    {NOT_MATCHING.filter((kind) => handCounts[kind]).map((kind) => (
+                      <button
+                        key={kind}
+                        type="button"
+                        className={`sk-chip tone-${kind === "DOWN" ? "bad" : "neutral"}${siteTab === "MANUAL" && handKind === kind ? " is-on" : ""}`}
+                        title={`Show the ${handCounts[kind]} websites: ${HAND_KIND[kind].label.toLowerCase()}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          showReason(kind);
+                        }}
+                      >
+                        {kind === "DOWN" ? "🔌" : "📭"} {handCounts[kind]} {HAND_KIND[kind].label}
+                      </button>
+                    ))}
+                  </span>
+                ) : null}
                 <span className="sk-go" aria-hidden>
                   {card.view === "GEM" ? `View GeM bids (${gemImported} imported) →` : card.view ? "View list →" : "View tenders →"}
                 </span>
               </div>
             );
           })}
+        </div>
+        <h4 className="sk-heading">Search results</h4>
+        <div className="sk-grid sk-results">
+          {resultCards.map((card) => (
+            <div
+              key={card.key}
+              role="button"
+              tabIndex={0}
+              className={`sk-card tone-${card.tone}`}
+              title={card.title}
+              onClick={card.open}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  card.open();
+                }
+              }}
+            >
+              <span className="sk-icon" aria-hidden>
+                {card.icon}
+              </span>
+              <b className="sk-value">{card.value}</b>
+              <span className="sk-label">{card.label}</span>
+              <small className="sk-sub">{card.sub}</small>
+              {card.chips.length ? (
+                <span className="sk-chips wrap">
+                  {card.chips.map((chip) => (
+                    <button
+                      key={chip.label}
+                      type="button"
+                      className="sk-chip"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        chip.open();
+                      }}
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </span>
+              ) : null}
+              {card.bar != null ? (
+                <span className="sk-split" aria-hidden>
+                  <i style={{ width: `${Math.min(100, card.bar)}%` }} />
+                </span>
+              ) : null}
+              <span className="sk-go" aria-hidden>
+                {card.go}
+              </span>
+            </div>
+          ))}
         </div>
         {categories.length ? (
           <>

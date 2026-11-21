@@ -29,6 +29,26 @@ async function filesFrom(formData: FormData, name: string) {
 }
 
 /** Returns the user when the credentials match an active account; the caller sets the session cookie. */
+/** Ignoring a search result needs a reason and a comment; both are kept with who ignored it and when. */
+const IGNORE_REASONS = [
+  "Not our scope of work",
+  "Location not serviceable",
+  "Value too low or too high",
+  "Eligibility not met",
+  "Duplicate of another tender",
+  "Deadline too close",
+  "Tender closed or cancelled",
+  "Other",
+];
+function ignoreFields(formData: FormData, actor: { id: string; name: string }, intent: string) {
+  if (intent !== "ignore") return { ignoreReason: "", ignoreComment: null, ignoredById: "", ignoredByName: "", ignoredAt: null };
+  const reason = String(formData.get("ignoreReason") || "").trim();
+  const comment = String(formData.get("ignoreComment") || "").trim();
+  if (!IGNORE_REASONS.includes(reason)) throw new WorkflowError("Choose a reason for ignoring it.");
+  if (comment.length < 3) throw new WorkflowError("Add a comment saying why it is ignored.");
+  return { ignoreReason: reason, ignoreComment: comment.slice(0, 2000), ignoredById: actor.id, ignoredByName: actor.name, ignoredAt: new Date() };
+}
+
 export async function checkLogin(emailInput: string, password: string) {
   const email = emailInput.trim().toLowerCase();
   const user = await db.user.findUnique({ where: { email } });
@@ -597,7 +617,7 @@ export async function gemAction(actor: User, formData: FormData): Promise<Action
       return { ok: result.already ? "This bid was already on a tender." : `${result.recordId} created from the GeM bid and sent for data validation.`, tenderId: result.tenderId };
     }
     if (intent === "ignore" || intent === "restore") {
-      await db.gemBid.update({ where: { id: bidId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "" } });
+      await db.gemBid.update({ where: { id: bidId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "", ...ignoreFields(formData, actor, intent) } });
       return { ok: intent === "ignore" ? "Bid ignored." : "Bid moved back to the review list." };
     }
     throw new WorkflowError("Unknown GeM action.");
@@ -644,7 +664,7 @@ export async function siteWatchAction(actor: User, formData: FormData): Promise<
       return { ok: result.already ? "This tender was already registered." : `${result.recordId} created from the portal listing. Add its documents from the portal.`, tenderId: result.tenderId };
     }
     if (intent === "ignore" || intent === "restore") {
-      await db.siteTender.update({ where: { id: tenderId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "" } });
+      await db.siteTender.update({ where: { id: tenderId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "", ...ignoreFields(formData, actor, intent) } });
       return { ok: intent === "ignore" ? "Tender ignored." : "Tender moved back to the review list." };
     }
     throw new WorkflowError("Unknown tender sites action.");

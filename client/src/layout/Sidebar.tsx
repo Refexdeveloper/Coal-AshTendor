@@ -29,7 +29,7 @@ export function Sidebar({
       <nav>
         <p className="nav-kicker">{role}</p>
         {navFor(user.role).map((item) => {
-          const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+          const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href) && !(item.href === "/reports" && pathname.startsWith("/reports/users"));
           return (
             <Link key={item.href} to={item.href} className={active ? "active" : ""} title={item.label} onClick={onNavigate}>
               <NavIcon name={item.icon} />
