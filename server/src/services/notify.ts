@@ -104,8 +104,8 @@ function fill(template: string, vars: Record<string, string>) {
 /** Local mail goes only to this inbox. The subject starts with "[for Name]" so you can see who it was for. Real people are not emailed. */
 const TEST_INBOX = "sathishkumar.r@refex.co.in";
 
-/** Copied on every live message. Local mail does not send these, so testing stays in the one inbox above. */
-const LIVE_BCC = ["srivaths.varadharajan@refex.co.in", "gowtham.s@refex.co.in"];
+/** Extra copies on every live message. Empty unless MAIL_BCC is set. Local mail does not send these. */
+const LIVE_BCC: string[] = [];
 
 /** Cloud Run, or any production host whose public URL is not this machine. */
 export function liveMail() {

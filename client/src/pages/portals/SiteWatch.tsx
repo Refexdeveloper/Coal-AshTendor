@@ -493,8 +493,8 @@ function portalLink(site: WatchSite | undefined, tender: SiteTender) {
  * Add as tender / Ignore, and the list of sites with how each one is read.
  */
 /**
- * The master-sheet websites section is shown first on the Portals page: it is rendered into the page's
- * #websites-top slot (same component, so its filters still drive the lists below), or in place when there is no slot.
+ * The master-sheet websites section is shown last on the Portals page: it is rendered into the page's
+ * #websites-top slot (same component, so its filters still drive the lists above), or in place when there is no slot.
  */
 function TopSlot({ children }: { children: ReactNode }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);

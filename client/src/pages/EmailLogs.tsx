@@ -126,7 +126,7 @@ export default function EmailLogsPage() {
         <h2>Send today&apos;s tender report</h2>
         <p>
           Total, active and new tenders, bids closing in 7 days, overdue tasks, and every pending tender with its stage, dates, value, EMD and tender file. Sent
-          automatically at 9:00 and 16:00 India time to dinesh@refex.co.in. BCC: srivaths.varadharajan@refex.co.in, gowtham.s@refex.co.in and
+          automatically at 9:00 and 16:00 India time to dinesh@refex.co.in. BCC: srivaths.varadharajan@refex.co.in and
           sathishkumar.r@refex.co.in. The Excel file is attached.
         </p>
         <div className="report-card-actions">

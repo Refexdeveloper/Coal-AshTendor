@@ -11,9 +11,9 @@ import { deliver, emailLink, isStepAction } from "./notify";
  * mail, plus a CSV of every tender (opens in Excel). Sent from Administration with one button.
  */
 
-/** The morning and evening report goes to Dinesh. The three addresses are copied. */
+/** The morning and evening report goes to Dinesh. These addresses are copied. */
 export const REPORT_TO = "dinesh@refex.co.in";
-export const REPORT_BCC = ["srivaths.varadharajan@refex.co.in", "gowtham.s@refex.co.in", "sathishkumar.r@refex.co.in"];
+export const REPORT_BCC = ["srivaths.varadharajan@refex.co.in", "sathishkumar.r@refex.co.in"];
 
 const TIME_ZONE = "Asia/Kolkata";
 

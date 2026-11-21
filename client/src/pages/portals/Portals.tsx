@@ -39,7 +39,6 @@ export default function PortalsPage() {
       </header>
       {query.notice ? <p className="banner good">{query.notice}</p> : null}
       {query.error ? <p className="banner bad">{query.error}</p> : null}
-      <div id="websites-top" />
       <GemWatch gem={gem} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit canKeywords canRun />
       {sites ? <SiteWatch data={sites} gem={gem} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit canRun /> : null}
       <h2 className="section-title">Other portals</h2>
@@ -159,6 +158,7 @@ export default function PortalsPage() {
           </p>
         ))}
       </section>
+      <div id="websites-top" />
     </>
   );
 }
