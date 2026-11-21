@@ -1240,6 +1240,124 @@ export async function sendBack(actor: Actor, taskId: string, remark: string) {
   await notifyTasks(task.tenderId, [follow], calendar);
 }
 
+/** Where each step sits: its track (steps in one track follow each other) and its order in that track. */
+const STEP_LANE: Record<string, { lane: "MAIN" | "COSTING" | "EMD" | "BID"; order: number; branch: string; title: string; role: string }> = {
+  DATA_VALIDATION: { lane: "MAIN", order: 0, branch: "MAIN", title: "Review extracted tender data", role: "COORDINATOR" },
+  OCR_EXCEPTION: { lane: "MAIN", order: 0, branch: "MAIN", title: "Extraction exception", role: "COORDINATOR" },
+  RELEVANCE: { lane: "MAIN", order: 1, branch: "MAIN", title: "Relevance review", role: "REVIEWER" },
+  DRAFT_COSTING: { lane: "COSTING", order: 2, branch: "COSTING", title: "Draft costing", role: "COSTING" },
+  SALES_INPUT: { lane: "COSTING", order: 3, branch: "COSTING", title: "Sales costing input", role: "SALES" },
+  FINAL_COSTING: { lane: "COSTING", order: 4, branch: "COSTING", title: "Final costing", role: "COSTING" },
+  DEPT_APPROVAL: { lane: "COSTING", order: 5, branch: "COSTING", title: "Department head approval", role: "DEPT_HEAD" },
+  BUSINESS_DECISION: { lane: "COSTING", order: 6, branch: "COSTING", title: "Business decision", role: "DEPT_HEAD" },
+  EMD_CLARIFICATION: { lane: "EMD", order: 2, branch: "EMD", title: "Clarify EMD requirement", role: "REVIEWER" },
+  EMD_BG: { lane: "EMD", order: 3, branch: "EMD", title: "Bank guarantee", role: "ACCOUNTS" },
+  EMD_ISB: { lane: "EMD", order: 3, branch: "EMD", title: "ISB / surety bond", role: "EMD_ISB" },
+  EMD_EXEMPTION: { lane: "EMD", order: 3, branch: "EMD", title: "EMD exemption", role: "ACCOUNTS" },
+  EMD_OTHER: { lane: "EMD", order: 3, branch: "EMD", title: "EMD instrument", role: "ACCOUNTS" },
+  BID_SUBMISSION: { lane: "BID", order: 7, branch: "BID", title: "Bid submission", role: "BID_SUBMITTER" },
+};
+
+/** True when sending the tender back to `target` should close the open step `stage` (it comes after the target). */
+function comesAfter(stage: string, target: string) {
+  const from = STEP_LANE[target];
+  const step = STEP_LANE[stage];
+  if (!from || !step || stage === target) return false;
+  if (from.lane === "MAIN") return true;
+  if (from.lane === "BID") return false;
+  return step.lane === "BID" || (step.lane === from.lane && step.order > from.order);
+}
+
+/** The earlier steps an administrator can send a tender back to: every step it has already been through. */
+export async function sendBackTargets(tenderId: string) {
+  const tasks = await db.workflowTask.findMany({ where: { tenderId }, orderBy: { createdAt: "asc" } });
+  const seen: string[] = [];
+  for (const task of tasks) if (STEP_LANE[task.stage] && !seen.includes(task.stage)) seen.push(task.stage);
+  return seen;
+}
+
+/**
+ * Administrator only: send a tender back to any step it has already been through. Open steps after it (in the same
+ * track) are closed as returned, the chosen step reopens for its last owner with the remark, and a closed tender
+ * (rejected, closed for business, missed or cancelled) is opened again. Won and lost tenders keep their outcome.
+ */
+export async function adminSendBack(actor: Actor, tenderId: string, target: string, remark: string) {
+  if (actor.role !== "ADMIN") throw new WorkflowError("Only an administrator can send a tender back to an earlier step.");
+  const note = remark.trim();
+  if (note.length < 3) throw new WorkflowError("Enter a remark saying why it is being sent back.");
+  const tender = await db.tender.findUnique({ where: { id: tenderId } });
+  if (!tender) throw new WorkflowError("That tender was not found.");
+  if (["WON", "LOST"].includes(tender.overallStatus)) throw new WorkflowError("This tender already has a result (won or lost), so it cannot be sent back.");
+  const step = STEP_LANE[target];
+  if (!step) throw new WorkflowError("Choose the step to send it back to.");
+  if (!(await sendBackTargets(tenderId)).includes(target)) throw new WorkflowError("The tender has not been through that step yet.");
+  if (target !== "DATA_VALIDATION" && tender.bidSubmissionEnd && new Date(tender.bidSubmissionEnd).getTime() <= Date.now()) {
+    throw new WorkflowError("The bid submission deadline has passed. Change the deadline first, or send it back to data validation to correct it.");
+  }
+
+  const tasks = await db.workflowTask.findMany({ where: { tenderId } });
+  const later = tasks.filter((task) => WORKABLE.includes(task.status) && comesAfter(task.stage, target));
+  const earlier = tasks.filter((task) => task.stage === target).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const last = earlier[0];
+  const remembered = last ? [...new Set([...parseIds(last.assigneeIds), last.completedById].filter(Boolean))] : [];
+  const stillActive = remembered.length ? await db.user.findMany({ where: { id: { in: remembered }, active: true } }) : [];
+  const owners = stillActive.length ? stillActive.map((user) => user.id) : await ownersFor(target, tender, step.role);
+  if (!owners.length) throw new WorkflowError(`Nobody for ${STAGE_TITLE(target)} can sign in. Add them in Administration.`);
+
+  const closed = CLOSED_OVERALL.includes(tender.overallStatus);
+  const status: Record<string, unknown> = { ...statusFor(target) };
+  if (step.lane === "MAIN") Object.assign(status, { costingStatus: "NOT_STARTED", approvalStatus: "NOT_STARTED", emdStatus: "NOT_STARTED", bidStatus: "NOT_YET_SUBMITTED" });
+  if (step.lane === "BID") Object.assign(status, { overallStatus: "READY_TO_BID", bidStatus: "NOT_YET_SUBMITTED" });
+  if (closed) {
+    Object.assign(status, { closedAt: null, closureReason: "", deadlineMissed: false, bidStatus: "NOT_YET_SUBMITTED" });
+    if (!status.overallStatus) status.overallStatus = "APPROVED_IN_PROGRESS";
+  }
+
+  const calendar = await getCalendar();
+  const plan = await plannedDue(target, calendar);
+  const follow = await db.$transaction(async (tx) => {
+    for (const task of later) {
+      await tx.workflowTask.update({
+        where: { id: task.id },
+        data: { status: "COMPLETED", decision: "RETURNED", comments: `Sent back to ${STAGE_TITLE(target)} by ${actor.name}. ${note}`, completedById: actor.id, completedAt: new Date() },
+      });
+    }
+    await tx.tender.update({ where: { id: tenderId }, data: status });
+    const open = tasks.find((task) => task.stage === target && WORKABLE.includes(task.status));
+    const data = {
+      status: "RETURNED_FOR_REVISION",
+      comments: note,
+      assigneeIds: JSON.stringify(owners),
+      dueAt: plan.dueAt,
+      slaMinutes: plan.slaMinutes,
+      baseAt: new Date(),
+      reminder50Sent: false,
+      reminder75Sent: false,
+      reminder1hSent: false,
+      breachSent: false,
+      breachLevel2Sent: false,
+      completedAt: null,
+      completedById: "",
+      decision: "",
+    };
+    const next = open
+      ? await tx.workflowTask.update({ where: { id: open.id }, data })
+      : await tx.workflowTask.create({ data: { tenderId, branch: step.branch, stage: target, title: last?.title || step.title, ...data } });
+    await audit(tx, {
+      tenderId,
+      actor,
+      action: "Sent back by administrator",
+      entity: "Tender",
+      detail: `Sent back to ${STAGE_TITLE(target)}${closed ? " and reopened" : ""}${later.length ? `; closed ${later.map((task) => task.title).join(", ")}` : ""}. ${note}`,
+    });
+    return next;
+  });
+  await notifyTasks(tenderId, [follow], calendar);
+  return { step: STAGE_TITLE(target), reopened: closed, closedSteps: later.length };
+}
+
+const STAGE_TITLE = (stage: string) => STEP_LANE[stage]?.title ?? stage;
+
 export async function saveEmdProgress(
   actor: Actor,
   taskId: string,

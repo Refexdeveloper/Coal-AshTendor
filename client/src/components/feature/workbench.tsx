@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ROLES, STAGE_HELP, TASK } from "@client/lib/labels";
+import { ROLES, STAGE, STAGE_HELP, TASK } from "@client/lib/labels";
 import { BidWizard, DeptReview, RelevanceReview } from "./review-forms";
 import { AmountInput, BoundForm, FilePick, type TaskContext } from "./task-kit";
 import { Status } from "@client/components/base/pill";
@@ -95,6 +95,60 @@ function SendBack({ tenderId, taskId }: { tenderId: string; taskId: string }) {
                 Cancel
               </button>
               <Submit name="intent" value="send-back">
+                Send back
+              </Submit>
+            </span>
+          </BoundForm>
+        </StepPopup>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Administrator only: send the whole tender back to any step it has already been through. Later open steps close,
+ * the chosen step reopens for its last owner with the remark, and a closed tender opens again.
+ */
+export function AdminSendBack({ tenderId, stages, current, closed }: { tenderId: string; stages: string[]; current: string[]; closed: boolean }) {
+  const [open, setOpen] = useState(false);
+  const choices = stages.filter((stage) => STAGE[stage]);
+  if (!choices.length) return null;
+  return (
+    <>
+      <button type="button" className="btn ghost admin-sendback-btn" onClick={() => setOpen(true)}>
+        ↺ Send back to an earlier step
+      </button>
+      {open ? (
+        <StepPopup title="Send back to an earlier step" onClose={() => setOpen(false)}>
+          <BoundForm>
+            <p className="muted wide">
+              The chosen step opens again for the person who last did it, with your remark by email. Open steps after it are closed as returned
+              {closed ? ", and this closed tender is opened again" : ""}. The change is kept in the history.
+            </p>
+            <input type="hidden" name="tenderId" value={tenderId} />
+            <label className="wide">
+              Send back to
+              <select name="stage" required defaultValue="">
+                <option value="" disabled>
+                  Choose a step
+                </option>
+                {choices.map((stage) => (
+                  <option key={stage} value={stage}>
+                    {STAGE[stage]}
+                    {current.includes(stage) ? " (open now)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="wide">
+              Remark
+              <textarea name="notes" rows={4} required minLength={3} placeholder="Why the tender is going back to this step" />
+            </label>
+            <span className="step-pop-actions wide">
+              <button type="button" className="btn ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+              <Submit name="intent" value="admin-send-back">
                 Send back
               </Submit>
             </span>

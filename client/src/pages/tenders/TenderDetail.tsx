@@ -50,7 +50,7 @@ import { parseBgRequest } from "@client/components/feature/bg-request";
 import { Countdown } from "@client/components/feature/countdown";
 import { StageTrack, type StagePlan } from "@client/components/feature/stage-track";
 import type { TaskContext } from "@client/components/feature/task-kit";
-import { ManagePanel, TaskCards, UploadForm } from "@client/components/feature/workbench";
+import { AdminSendBack, ManagePanel, TaskCards, UploadForm } from "@client/components/feature/workbench";
 import { ExecutiveBrief, StageHistory } from "@client/pages/tenders/ExecutiveTender";
 
 const PdfViewer = lazy(() => import("@client/components/feature/pdf-viewer"));
@@ -383,6 +383,18 @@ export default function TenderPage() {
         <p className="banner neutral">
           <b>Closed — {OVERALL[tender.overallStatus]?.label ?? tender.overallStatus}.</b> {tender.closureReason || tender.outcomeNotes}
         </p>
+      ) : null}
+
+      {actor.role === "ADMIN" && !["WON", "LOST"].includes(tender.overallStatus) ? (
+        <div className="admin-sendback">
+          <span className="muted">Administrator</span>
+          <AdminSendBack
+            tenderId={tender.id}
+            stages={[...tender.tasks].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()).map((task) => task.stage).filter((stage, index, all) => all.indexOf(stage) === index)}
+            current={openTasks.map((task) => task.stage)}
+            closed={closed}
+          />
+        </div>
       ) : null}
 
       <section className="panel track-panel journey-panel">

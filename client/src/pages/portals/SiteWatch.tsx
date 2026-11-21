@@ -116,7 +116,7 @@ const RUN_TONE: Record<string, string> = {
 };
 /** Excel sheet names are limited to 31 characters, so the long reason names get a short sheet name. */
 const handSheet = (kind: string) => HAND_KIND[kind]?.label ?? kind;
-/** "Not matching" groups two reasons: the site is not reachable, or its URL is not related to tenders. */
+/** "Not working" groups two reasons: the site is not reachable, or its URL is not related to tenders. */
 const NOT_MATCHING = ["DOWN", "NO_LIST"];
 const kindMatches = (kind: string, filter: string) => (filter === "NOT_MATCHING" ? NOT_MATCHING.includes(kind) : kind === filter);
 const HAND_KIND: Record<string, { label: string; tone: string }> = {
@@ -1390,7 +1390,7 @@ export function SiteWatch({
               { key: "sites", icon: "🌐", tone: "blue", value: sites.length, label: "Separate websites", sub: `${repeatedHosts.length} on several rows`, view: "SITES", tab: "ALL" },
               { key: "auto", icon: "⚡", tone: "green", value: keywordSites.length, label: "Working", sub: `${automatic.length} searched with keywords${accessCount ? ` + ${accessCount} more` : ""}`, view: "SITES", tab: "AUTO" },
               ...((handCounts.DOWN ?? 0) + (handCounts.NO_LIST ?? 0)
-                ? [{ key: "notmatch", icon: "🚫", tone: "red", value: (handCounts.DOWN ?? 0) + (handCounts.NO_LIST ?? 0), label: "Not matching", sub: "not reachable, or the URL is not about tenders", view: "SITES" as const, tab: "MANUAL", kind: "NOT_MATCHING" }]
+                ? [{ key: "notmatch", icon: "🚫", tone: "red", value: (handCounts.DOWN ?? 0) + (handCounts.NO_LIST ?? 0), label: "Not working", sub: "not reachable, or the URL is not about tenders", view: "SITES" as const, tab: "MANUAL", kind: "NOT_MATCHING" }]
                 : []),
               ...(handCounts.SCRIPT
                 ? [{ key: "hand-SCRIPT", icon: "⏳", tone: "amber", value: handCounts.SCRIPT, label: "In pending", sub: "site works; need clarification from the portal", view: "SITES" as const, tab: "MANUAL", kind: "SCRIPT" }]

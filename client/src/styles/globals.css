@@ -3278,3 +3278,6 @@ tr.site-detail-row > td { background: var(--paper); padding: 0; }
 .ignored-note b { color: #b91c1c; font-size: 0.76rem; }
 .ignored-note span { overflow-wrap: anywhere; }
 .ignored-note small { color: #94a3b8; }
+.admin-sendback { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin: 0 0 10px; }
+.admin-sendback .muted { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.admin-sendback-btn { border-color: #fdba74; color: #c2410c; }
