@@ -1,4 +1,5 @@
 import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import { formatDay, formatWhen, zonedParts } from "@client/utils/calendar";
 import { effectiveValue } from "@client/utils/format";
@@ -80,18 +81,17 @@ const FIELD_SECTIONS = [
 const FILTER_KEYS = ["period", "basis", "q", "client", "emd", "owner", "portal", "group", "card", "line"] as const;
 
 /** Business lines on the tender dashboard. A tender is counted in the first line its title or scope matches. */
-const LINES: { key: string; label: string }[] = [
-  { key: "dstn", label: "DSTN" },
-  { key: "lla", label: "LLA" },
-  { key: "rc", label: "RC" },
-  { key: "sale", label: "SALE" },
-  { key: "coal-transport", label: "Coal Transportation" },
-  { key: "om", label: "O&M" },
-  { key: "supply", label: "Supply" },
-  { key: "ob", label: "OB" },
-  { key: "rail", label: "Rail" },
-  { key: "ea", label: "EA" },
-  { key: "rcr", label: "RCR" },
+const LINES: { key: string; label: string; full: string }[] = [
+  { key: "dstn", label: "DSTN", full: "Destination" },
+  { key: "lla", label: "LLA", full: "Low lying area" },
+  { key: "rc", label: "RC", full: "Rate contract" },
+  { key: "sale", label: "SALE", full: "Sale of ash" },
+  { key: "coal-transport", label: "Coal Transportation", full: "Coal transportation" },
+  { key: "om", label: "O&M", full: "Operation & maintenance" },
+  { key: "supply", label: "Supply", full: "Supply of ash & coal" },
+  { key: "ob", label: "OB", full: "Over burden" },
+  { key: "rail", label: "Rail", full: "Rail" },
+  { key: "rcr", label: "RCR", full: "Rail come road" },
 ];
 
 const CATEGORY_KEY: Record<string, string> = {
@@ -248,6 +248,13 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
   const names = new Map(users.map((item) => [item.id, item.name]));
   const now = Date.now();
   const [openRow, setOpenRow] = useState<string | null>(null);
+  // The full name of a category, shown above its button on hover. Drawn on the page body so the scrolling row cannot clip it.
+  const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
+  const showTip = (target: HTMLElement, text: string) => {
+    if (text.toLowerCase() === (target.textContent ?? "").replace(/\d+$/, "").trim().toLowerCase()) return setTip(null);
+    const box = target.getBoundingClientRect();
+    setTip({ text, x: box.left + box.width / 2, y: box.top - 8 });
+  };
   const [page, setPage] = useState(1);
   const [pageFor, setPageFor] = useState("");
   const [allDeadlines, setAllDeadlines] = useState(false);
@@ -451,12 +458,30 @@ export function ExecutiveView({ user, group, data, toggle }: { user: { name: str
             <small>{everyTender.length}</small>
           </button>
           {LINES.map((item) => (
-            <button key={item.key} type="button" className={filter.line === item.key ? "is-on" : ""} onClick={() => setFilter("line", item.key)}>
+            <button
+              key={item.key}
+              type="button"
+              className={filter.line === item.key ? "is-on" : ""}
+              onClick={() => setFilter("line", item.key)}
+              aria-label={`${item.label}: ${item.full}`}
+              onMouseEnter={(event) => showTip(event.currentTarget, item.full)}
+              onMouseLeave={() => setTip(null)}
+              onFocus={(event) => showTip(event.currentTarget, item.full)}
+              onBlur={() => setTip(null)}
+            >
               {item.label}
               <small>{everyTender.filter((tender) => tenderLine(tender) === item.key).length}</small>
             </button>
           ))}
         </nav>
+        {tip
+          ? createPortal(
+              <span className="line-tip" role="tooltip" style={{ left: tip.x, top: tip.y }}>
+                {tip.text}
+              </span>,
+              document.body,
+            )
+          : null}
       </section>
 
       <section className="dk-cards" aria-label="Tender figures">

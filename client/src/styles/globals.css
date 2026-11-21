@@ -3281,3 +3281,11 @@ tr.site-detail-row > td { background: var(--paper); padding: 0; }
 .admin-sendback { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin: 0 0 10px; }
 .admin-sendback .muted { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 .admin-sendback-btn { border-color: #fdba74; color: #c2410c; }
+
+/* Full name of a tender category, above its button on the dashboard */
+.line-tip {
+  position: fixed; z-index: 1000; transform: translate(-50%, -100%); padding: 6px 11px; border-radius: 9px; background: #0f172a; color: #fff;
+  font-size: 0.78rem; font-weight: 600; white-space: nowrap; pointer-events: none; box-shadow: 0 8px 20px -8px rgba(15, 23, 42, 0.5); animation: line-tip-in 0.12s ease both;
+}
+.line-tip::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; background: #0f172a; transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
+@keyframes line-tip-in { from { opacity: 0; transform: translate(-50%, calc(-100% + 4px)); } to { opacity: 1; transform: translate(-50%, -100%); } }

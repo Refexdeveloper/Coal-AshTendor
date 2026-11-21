@@ -20,7 +20,7 @@ export const TENDER_FIELDS: FieldDef[] = [
     key: "tender_category",
     label: "Tender type",
     type: "choice",
-    options: ["DSTN", "LLA", "RC", "SALE", "Coal Transportation", "O&M", "Supply", "OB", "Rail", "EA", "RCR"],
+    options: ["DSTN", "LLA", "RC", "SALE", "Coal Transportation", "O&M", "Supply", "OB", "Rail", "RCR"],
     synonyms: ["Category", "Business category", "Tender type"],
   },
   { no: 2, key: "tender_ref", label: "Tender reference number", type: "text", critical: true, synonyms: ["Tender reference", "NIT reference"] },
