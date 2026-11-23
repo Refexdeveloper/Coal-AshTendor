@@ -7,8 +7,8 @@ import { allowedUpload, deleteStored, pagesFromBuffer, sha256, storeFile } from 
 import { extractUploadedFile, overlayHits } from "./ocr";
 import { CLOSED_OVERALL, CREATOR_ROLES, EDITOR_ROLES, MANAGER_ROLES, OPEN_TASK, STAGE as STAGE_NAME, WORKABLE } from "../utils/labels";
 import { BUSINESS_LINES, detectLine, ownersFor, type BusinessLine } from "./team";
-import { emailsFor, isStepAction, mailOcrResult, notifyAddresses, notifyStepMoved } from "./notify";
-import { phonesFor, queueWhatsApp } from "./whatsapp";
+import { emailsFor, isStepAction, mailOcrResult, notifyAddresses, notifyStepMoved, retryFailedMail } from "./notify";
+import { phonesFor, queueWhatsApp, retryFailedWhatsApp } from "./whatsapp";
 
 export class WorkflowError extends Error {
   constructor(message: string) {
@@ -359,6 +359,7 @@ async function notifyTasks(tenderId: string, tasks: WorkflowTask[], calendar: Ca
         comments: task.comments,
         detail: task.comments,
       },
+      since: task.baseAt,
     });
   }
 }
@@ -387,6 +388,7 @@ async function whatsAppForSteps(tenderId: string, tasks: WorkflowTask[]) {
         status: returned ? `Sent back - ${stage}` : `Pending - ${stage}`,
         workflow: `${stage}: ${tender.projectName || tender.clientName || "Tender"}`,
         link,
+        since: task.baseAt,
       });
     }
   }
@@ -860,7 +862,8 @@ export async function decideRelevance(actor: Actor, taskId: string, decision: "A
   }
 
   const kind = classifyEmd(task.tender.fields);
-  const plan = EMD_PLAN[kind];
+  // An ISB / surety bond still starts at the requirement check. Ranjana confirms it, and that opens instrument preparation.
+  const plan = kind === "ISB" ? EMD_PLAN.UNCLEAR : EMD_PLAN[kind];
   const owners = await ownersFor(plan.stage, task.tender, "ACCOUNTS");
   const drafters = await ownersFor("DRAFT_COSTING", task.tender, "COSTING");
   const sales = await ownersFor("SALES_INPUT", task.tender, "SALES");
@@ -1889,14 +1892,15 @@ export async function assignTask(actor: Actor, taskId: string, userId: string, r
   const person = await db.user.findFirst({ where: { id: userId, active: true } });
   if (!person) throw new WorkflowError("Choose a person.");
   const assigneeIds = JSON.stringify([person.id]);
-  await db.workflowTask.update({ where: { id: task.id }, data: { assigneeIds, comments: note } });
+  const baseAt = new Date();
+  await db.workflowTask.update({ where: { id: task.id }, data: { assigneeIds, comments: note, baseAt } });
   if (task.stage === "BID_SUBMISSION") {
     await db.tender.update({ where: { id: task.tenderId }, data: { submitterId: person.id } });
     await db.bidSubmission.updateMany({ where: { tenderId: task.tenderId }, data: { submitterId: person.id } });
   }
   await audit(db, { tenderId: task.tenderId, actor, action: "Assigned task", entity: "WorkflowTask", detail: `${task.title} → ${person.name}. ${note}` });
   const calendar = await getCalendar();
-  await notifyTasks(task.tenderId, [{ ...task, assigneeIds, comments: note }], calendar);
+  await notifyTasks(task.tenderId, [{ ...task, assigneeIds, comments: note, baseAt }], calendar);
 }
 
 export async function assignSubmitter(actor: Actor, tenderId: string, submitterId: string) {
@@ -2228,6 +2232,8 @@ export function kickAutomation() {
   void import("./site-watch").then((sites) => sites.maybeScheduledSiteScan()).catch((error) => console.error("Tender sites watch check failed", error));
   if (automation || Date.now() - lastAutomation < 15000) return;
   lastAutomation = Date.now();
+  void retryFailedMail().catch((error) => console.error("Failed email retry failed", error));
+  void retryFailedWhatsApp().catch((error) => console.error("Failed WhatsApp retry failed", error));
   automation = processAutomation()
     .catch((error) => console.error("SLA automation failed", error))
     .finally(() => {

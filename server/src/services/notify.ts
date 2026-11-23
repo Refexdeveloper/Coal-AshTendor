@@ -453,6 +453,31 @@ export async function resendLogged(logId: string, extraTo: string[] = []) {
   return { ok: `Resent to ${where}${inbox ? ` (test mode: delivered to ${inbox})` : ""}.` };
 }
 
+let lastMailRetry = 0;
+
+/** Sends failed emails again, up to three times, a couple of minutes apart. A later success stops the retries. */
+export async function retryFailedMail() {
+  if (!mailReady() || Date.now() - lastMailRetry < 2 * 60 * 1000) return;
+  lastMailRetry = Date.now();
+  const rows = await db.notificationLog.findMany({ where: { status: "FAILED" }, orderBy: { createdAt: "desc" }, take: 40 }).catch(() => []);
+  const seen = new Set<string>();
+  const cutoff = Date.now() - 2 * 24 * 60 * 60 * 1000;
+  for (const row of rows) {
+    const key = `${row.tenderId}|${row.taskId}|${row.eventType}|${row.recipientEmail}`;
+    if (seen.has(key) || new Date(row.createdAt).getTime() < cutoff) continue;
+    seen.add(key);
+    if (Date.now() - new Date(row.createdAt).getTime() < 2 * 60 * 1000) continue;
+    const related = await db.notificationLog.findMany({
+      where: { tenderId: row.tenderId, taskId: row.taskId, eventType: row.eventType, recipientEmail: row.recipientEmail },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+    }).catch(() => []);
+    if (related[0]?.status === "SENT") continue;
+    if (related.filter((item: { status: string }) => item.status === "FAILED").length >= 3) continue;
+    await resendLogged(row.id).catch((error) => console.error("Failed email was not retried", error));
+  }
+}
+
 type TenderFacts = { recordId: string; projectName: string; clientName: string; estimatedValue: number | null; bidSubmissionEnd: Date | null; overallStatus: string };
 
 /** The tender's key facts for the email header. */
@@ -470,7 +495,27 @@ async function factsFor(tender: TenderFacts): Promise<EmailFacts> {
   };
 }
 
-/** Audit actions that are not a step moving: edits and housekeeping get no step email. */
+const SENT_MAIL = new Set(["SENT", "QUEUED", "LOGGED"]);
+
+/** True when this person was already mailed for this step. A send-back or a new assignment moves the step's clock, so that notice still goes. */
+async function alreadyMailed(options: { tenderId: string; taskId?: string; event: string; email: string; since?: Date; subject?: string }) {
+  try {
+    const rows = await db.notificationLog.findMany({
+      where: { tenderId: options.tenderId, eventType: options.event, recipientEmail: options.email, ...(options.taskId ? { taskId: options.taskId } : {}) },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+    });
+    return rows.some((row: { status: string; createdAt: Date; subject?: string }) => {
+      if (!SENT_MAIL.has(row.status)) return false;
+      if (options.since && new Date(row.createdAt) < options.since) return false;
+      if (!options.taskId && options.subject && row.subject !== options.subject) return false;
+      if (!options.taskId) return Date.now() - new Date(row.createdAt).getTime() < 15 * 60 * 1000;
+      return true;
+    });
+  } catch {
+    return false;
+  }
+}
 const NOT_A_STEP = new Set(["Corrected tender fields", "Uploaded documents", "Extracted tender fields", "Escalation recipient missing", "Synced Refex One users", "Updated EMD register", "Assigned task"]);
 
 export function isStepAction(action: string) {
@@ -531,6 +576,7 @@ export async function notifyStepMoved(step: { tenderId: string; action: string; 
   const subject = closed && !openTasks.length ? `${tender.recordId}: ${step.action} — ${nextLabel}` : `${tender.recordId}: ${step.action} → next: ${nextLabel}`;
   const attached = await tenderAttachments(tender.id);
   for (const person of recipients.values()) {
+    if (await alreadyMailed({ tenderId: tender.id, event: "WORKFLOW_STEP", email: person.email, subject })) continue;
     const content: EmailContent = {
       headline: person.perspective === "actor" ? "Your step was recorded — workflow moved" : closed && !openTasks.length ? `Tender closed: ${nextLabel}` : "Step completed — workflow moved",
       intro:
@@ -557,6 +603,8 @@ export async function notifyAddresses(options: {
   templateEvent?: string;
   addresses: { email: string; name: string }[];
   extra?: Record<string, string>;
+  /** Ignore an earlier notice for this task from before this moment (a send-back or a fresh assignment). */
+  since?: Date;
 }) {
   const unique = new Map<string, { email: string; name: string }>();
   for (const address of options.addresses) {
@@ -581,6 +629,7 @@ export async function notifyAddresses(options: {
   const attached = assigned ? await tenderAttachments(tender.id) : { files: [] as MailAttachment[], lines: [] as string[] };
 
   for (const address of unique.values()) {
+    if (await alreadyMailed({ tenderId: tender.id, taskId: options.taskId, event: options.event, email: address.email, since: options.since })) continue;
     const vars = {
       recordId: tender.recordId,
       projectName: tender.projectName || "Untitled tender",

@@ -60,7 +60,7 @@ function clean(value: unknown, max: number) {
   return text.length > max ? `${text.slice(0, max - 3)}...` : text;
 }
 
-type Notice = { tenderId: string; taskId?: string; recordId: string; userId?: string; name: string; phone: string; status: string; workflow: string; link: string };
+type Notice = { tenderId: string; taskId?: string; recordId: string; userId?: string; name: string; phone: string; status: string; workflow: string; link: string; since?: Date };
 
 const recent = new Map<string, number>();
 let queue: Promise<unknown> = Promise.resolve();
@@ -88,7 +88,8 @@ async function send(notice: Notice) {
   const skip = (error: string) => log({ ...base, status: "SKIPPED", error });
   if (!c.enabled) return skip("WhatsApp is switched off (WHATSAPP_ENABLED=false).");
   if (!c.appKey || !c.appSecret) return skip("WhatsApp is not set up: WHATSAPP_APP_KEY and WHATSAPP_APP_SECRET are missing.");
-  if (!to) return skip(`No mobile number for ${notice.name}. Add it in Administration.`);
+  if (!to) return skip(`No mobile number for ${notice.name} in the Refex One directory.`);
+  if (notice.taskId && notice.userId && (await alreadySent(notice))) return skip("Already sent this WhatsApp for this step.");
   if (!liveMail() && !c.testTo) return skip("Not sent from this machine: set WHATSAPP_TEST_TO to try WhatsApp locally.");
 
   const key = `${deliveredTo}|${notice.recordId}|${notice.workflow}|${notice.status}`;
@@ -126,6 +127,20 @@ async function send(notice: Notice) {
   }
 }
 
+/** True when this person was already sent this step's WhatsApp. A send-back or a new assignment is after `since`, so that notice still goes. */
+async function alreadySent(notice: Notice) {
+  try {
+    const rows = await db.whatsAppLog.findMany({
+      where: { tenderId: notice.tenderId, taskId: notice.taskId, userId: notice.userId, stage: notice.workflow.slice(0, 190) },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    });
+    return rows.some((row: { status: string; createdAt: Date }) => (row.status === "SENT" || row.status === "QUEUED") && (!notice.since || new Date(row.createdAt) >= notice.since));
+  } catch {
+    return false;
+  }
+}
+
 /** Queues a notice; messages go one after another with a short gap, and never hold up the request. */
 export function queueWhatsApp(notice: Notice) {
   queue = queue
@@ -135,10 +150,62 @@ export function queueWhatsApp(notice: Notice) {
   return queue;
 }
 
-/** People's names and mobiles by user id. */
+/** People's names and mobiles by user id. The mobile comes from the Refex One directory and is saved for the next notice. */
 export async function phonesFor(userIds: string[]) {
   const ids = [...new Set(userIds.filter(Boolean))];
   if (!ids.length) return [];
   const users = await db.user.findMany({ where: { id: { in: ids }, active: true } });
-  return users.map((user: { id: string; name: string; phone?: string }) => ({ id: user.id, name: user.name, phone: user.phone ?? "" }));
+  const { phonesFromDirectory } = await import("./refexone-directory");
+  const directory = await phonesFromDirectory();
+  const people = [];
+  for (const user of users as { id: string; name: string; email?: string; phone?: string }[]) {
+    const stored = normalizePhone(user.phone);
+    const fromDirectory = directory.get((user.email ?? "").toLowerCase()) ?? "";
+    const phone = fromDirectory || stored;
+    if (fromDirectory && fromDirectory !== stored) await db.user.update({ where: { id: user.id }, data: { phone: fromDirectory } }).catch(() => undefined);
+    people.push({ id: user.id, name: user.name, phone });
+  }
+  return people;
+}
+
+let lastWhatsAppRetry = 0;
+
+/** Sends failed WhatsApp notices again, up to three times, a couple of minutes apart. A later success stops the retries. */
+export async function retryFailedWhatsApp() {
+  if (Date.now() - lastWhatsAppRetry < 2 * 60 * 1000) return;
+  lastWhatsAppRetry = Date.now();
+  const rows = await db.whatsAppLog.findMany({ where: { status: "FAILED" }, orderBy: { createdAt: "desc" }, take: 40 }).catch(() => []);
+  const seen = new Set<string>();
+  const cutoff = Date.now() - 2 * 24 * 60 * 60 * 1000;
+  for (const row of rows) {
+    const key = `${row.tenderId}|${row.taskId}|${row.userId}|${row.stage}`;
+    if (seen.has(key) || new Date(row.createdAt).getTime() < cutoff) continue;
+    seen.add(key);
+    if (Date.now() - new Date(row.createdAt).getTime() < 2 * 60 * 1000) continue;
+    const related = await db.whatsAppLog.findMany({
+      where: { tenderId: row.tenderId, taskId: row.taskId, userId: row.userId, stage: row.stage },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+    }).catch(() => []);
+    if (related[0]?.status === "SENT") continue;
+    if (related.filter((item: { status: string }) => item.status === "FAILED").length >= 3) continue;
+    let params: string[] = [];
+    try {
+      const parsed = JSON.parse(row.parameters || "[]");
+      if (Array.isArray(parsed)) params = parsed.map((item) => String(item ?? ""));
+    } catch {
+      params = [];
+    }
+    queueWhatsApp({
+      tenderId: row.tenderId,
+      taskId: row.taskId,
+      recordId: row.recordId || params[2] || "",
+      userId: row.userId,
+      name: row.toName || params[0] || "",
+      phone: row.toPhone,
+      status: params[3] || "",
+      workflow: params[4] || row.stage,
+      link: params[5] || "",
+    });
+  }
 }

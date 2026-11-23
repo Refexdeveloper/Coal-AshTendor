@@ -61,6 +61,7 @@ const TABS = [
   ["documents", "Documents"],
   ["costing", "Costing & bid"],
   ["emd", "EMD"],
+  ["stages", "Stage-wise history"],
   ["history", "History"],
 ] as const;
 

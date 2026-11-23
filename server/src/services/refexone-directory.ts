@@ -107,6 +107,27 @@ export async function fetchDirectory(): Promise<DirectoryPerson[]> {
   return [...byEmail.values()];
 }
 
+let phoneCache: { at: number; ok: boolean; map: Map<string, string> } | null = null;
+
+/** Email → mobile from the Refex One directory. Cached for half an hour; a failed pull is retried after five minutes. */
+export async function phonesFromDirectory() {
+  const freshFor = phoneCache?.ok ? 30 * 60 * 1000 : 5 * 60 * 1000;
+  if (phoneCache && Date.now() - phoneCache.at < freshFor) return phoneCache.map;
+  try {
+    const map = new Map<string, string>();
+    for (const person of await fetchDirectory()) {
+      const phone = normalizePhone(person.phone);
+      if (phone) map.set(person.email, phone);
+    }
+    phoneCache = { at: Date.now(), ok: true, map };
+    return map;
+  } catch (error) {
+    console.error("[refexone] Mobile lookup failed:", error instanceof Error ? error.message : error);
+    phoneCache = { at: Date.now(), ok: false, map: phoneCache?.map ?? new Map() };
+    return phoneCache.map;
+  }
+}
+
 function personKeyFor(email: string, taken: Set<string>) {
   const base = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 36) || "user";
   let key = base;
