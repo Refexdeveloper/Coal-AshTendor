@@ -68,7 +68,8 @@ p { margin: 0; }
   content: ""; pointer-events: none; position: absolute; left: -40px; right: -40px; bottom: -64px; height: 240px;
   background: radial-gradient(ellipse at 50% 100%, rgba(234, 88, 12, 0.22), transparent 70%);
 }
-.brand { display: flex; gap: 10px; align-items: center; height: 64px; padding: 0 22px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+.brand { display: flex; gap: 10px; align-items: center; height: 64px; padding: 0 22px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); text-decoration: none; color: inherit; cursor: pointer; }
+.brand:hover { color: inherit; }
 .brand-copy { display: grid; }
 .brand strong { font-size: 1rem; font-weight: 600; white-space: nowrap; color: #fff; }
 .brand small { color: rgba(255, 255, 255, 0.65); font-size: 0.72rem; white-space: nowrap; }
@@ -3310,3 +3311,11 @@ tr.site-detail-row > td { background: var(--paper); padding: 0; }
   .refex-back-text { display: inline; }
 }
 @media (max-width: 420px) { .refex-back { padding: 6px 8px; } .refex-back-text { font-size: 0.76rem; } }
+
+/* EMD board: rows slide in one after another each time a card filters the register (as on Security Deposits). */
+.emd-board .emd-row { animation: stepIn 0.45s calc(var(--r, 0) * 45ms) both; }
+@media (prefers-reduced-motion: reduce) { .emd-board .emd-row { animation: none; } }
+
+/* WhatsApp log: the message preview under an opened row, drawn like a WhatsApp bubble. */
+.wa-message { max-width: 460px; padding: 12px 14px; border-radius: 4px 14px 14px 14px; background: #dcf8c6; color: #111b21; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+.wa-message p { margin: 0 0 8px; line-height: 1.45; word-break: break-word; }

@@ -7,6 +7,7 @@ import type { ActionState } from "@client/api/action-state";
 import { LoadFailed, Loading } from "@client/components/base/loading";
 import { Submit } from "@client/components/base/submit";
 import { CountUp } from "@client/components/feature/count-up";
+import { playCardFx, scrollToElement, type CardFx } from "@client/components/feature/fx";
 import { Icon, PlantArt } from "@client/pages/executive/ExecutiveView";
 import { day } from "@client/pages/bonds/Bonds";
 import { inr } from "@client/utils/money";
@@ -220,15 +221,15 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
   const count = (match: (row: Row) => boolean) => rows.filter(match).length;
   const instrumentSum = (kind: Instrument["kind"]) => instruments.filter((row) => row.kind === kind).reduce((total, row) => total + (row.amount ?? 0), 0);
   const instrumentCount = (kind: Instrument["kind"]) => instruments.filter((row) => row.kind === kind).length;
-  const cards: { key: string; label: string; value: number; money?: boolean; note: string; tone: string; icon: string }[] = [
-    { key: "BG", label: "BG", value: instrumentSum("BG"), money: true, note: `(${instrumentCount("BG")})`, tone: "violet", icon: "doc" },
-    { key: "ISB", label: "ISB", value: instrumentSum("ISB"), money: true, note: `(${instrumentCount("ISB")})`, tone: "sky", icon: "shield" },
-    { key: "ONLINE", label: "NEFT/RTGS", value: sum((row) => row.method === "ONLINE"), money: true, note: `(${count((row) => row.method === "ONLINE")})`, tone: "teal", icon: "doc" },
-    { key: "DD", label: "Demand Draft", value: sum((row) => row.method === "DD"), money: true, note: `(${count((row) => row.method === "DD")})`, tone: "orange", icon: "doc" },
-    { key: "", label: "Total", value: instrumentSum("BG") + instrumentSum("ISB"), money: true, note: `(${rows.length}) · BG (${count((row) => row.method === "BG")}) · ISB (${count((row) => row.method === "ISB")})`, tone: "", icon: "shield" },
-    { key: "EXEMPTION", label: "Exemption", value: count((row) => row.method === "EXEMPTION"), note: "Count", tone: "green", icon: "check" },
-    { key: "WON", label: "Won", value: count((row) => row.result === "WON"), note: `${count((row) => row.result === "WON" && row.convertedToSd)} converted to SD`, tone: "green", icon: "check" },
-    { key: "LOST", label: "Lost", value: count((row) => row.result === "LOST"), note: `${inr(sum((row) => row.result === "LOST", (row) => row.pending))} pending`, tone: "red", icon: "rupee" },
+  const cards: { key: string; label: string; value: number; money?: boolean; note: string; tone: string; icon: string; fx: CardFx }[] = [
+    { key: "BG", label: "BG", value: instrumentSum("BG"), money: true, note: `(${instrumentCount("BG")})`, tone: "violet", icon: "doc", fx: "shield" },
+    { key: "ISB", label: "ISB", value: instrumentSum("ISB"), money: true, note: `(${instrumentCount("ISB")})`, tone: "sky", icon: "shield", fx: "shield" },
+    { key: "ONLINE", label: "NEFT/RTGS", value: sum((row) => row.method === "ONLINE"), money: true, note: `(${count((row) => row.method === "ONLINE")})`, tone: "teal", icon: "doc", fx: "send" },
+    { key: "DD", label: "Demand Draft", value: sum((row) => row.method === "DD"), money: true, note: `(${count((row) => row.method === "DD")})`, tone: "orange", icon: "doc", fx: "docs" },
+    { key: "", label: "Total", value: instrumentSum("BG") + instrumentSum("ISB"), money: true, note: `(${rows.length}) · BG (${count((row) => row.method === "BG")}) · ISB (${count((row) => row.method === "ISB")})`, tone: "", icon: "shield", fx: "coins" },
+    { key: "EXEMPTION", label: "Exemption", value: count((row) => row.method === "EXEMPTION"), note: "Count", tone: "green", icon: "check", fx: "ready" },
+    { key: "WON", label: "Won", value: count((row) => row.result === "WON"), note: `${count((row) => row.result === "WON" && row.convertedToSd)} converted to SD`, tone: "green", icon: "check", fx: "award" },
+    { key: "LOST", label: "Lost", value: count((row) => row.result === "LOST"), note: `${inr(sum((row) => row.result === "LOST", (row) => row.pending))} pending`, tone: "red", icon: "rupee", fx: "lost" },
   ];
 
   return (
@@ -249,7 +250,20 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
             type="button"
             className={`dk-card ${item.tone}${card === item.key ? " is-on" : ""}`}
             style={{ "--i": index } as CSSProperties}
-            onClick={() => setCard((current) => (current === item.key ? "" : item.key))}
+            title={card === item.key ? "Click again to show every EMD" : `Show ${item.label} below`}
+            onClick={(event) => {
+              // Same as the Security Deposits cards: play the card's effect, filter the register, then scroll to it.
+              const point = event.detail ? { x: event.clientX, y: event.clientY } : undefined;
+              const wait = playCardFx(item.fx, event.currentTarget, point);
+              const next = card === item.key ? "" : item.key;
+              window.setTimeout(() => {
+                setCard(next);
+                window.setTimeout(() => {
+                  const target = document.getElementById("emd-list");
+                  if (target) scrollToElement(target);
+                }, 120);
+              }, wait);
+            }}
           >
             <span className="dk-card-icon">
               <Icon name={item.icon} />
@@ -261,11 +275,13 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
               </b>
               <small>{item.note}</small>
             </span>
+            <Icon name="arrow" className="dk-card-arrow" />
+            <Icon name={item.icon} className="dk-card-mark" />
           </button>
         ))}
       </section>
 
-      <section className="dk-panel">
+      <section className="dk-panel" id="emd-list">
         <header className="dk-panel-head">
           <span className="dk-panel-icon">
             <Icon name="shield" />
@@ -287,8 +303,8 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
           listedInstruments.length === 0 ? (
             <p className="dk-empty">No EMD {card === "BG" ? "bank guarantees" : "surety bonds"} match this view.</p>
           ) : (
-            listedInstruments.map((row) => (
-              <article key={row.id} className="emd-row">
+            listedInstruments.map((row, index) => (
+              <article key={`${card}-${row.id}`} className="emd-row" style={{ "--r": Math.min(index, 12) } as CSSProperties}>
                 <header>
                   <div>
                     <Link to={row.kind === "BG" ? `/guarantees/${row.id}` : `/bonds/${row.id}`} state={{ from: "/?board=emd" }}>
@@ -323,8 +339,8 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
         ) : null}
         {!instrumentView && listed.length === 0 ? <p className="dk-empty">No EMD submissions match this view.</p> : null}
         {!instrumentView
-          ? listed.map((row) => (
-          <article key={row.tenderId} className="emd-row">
+          ? listed.map((row, index) => (
+          <article key={`${card}-${row.tenderId}`} className="emd-row" style={{ "--r": Math.min(index, 12) } as CSSProperties}>
             <header>
               <div>
                 <Link to={`/tenders/${row.tenderId}?tab=emd`}>{row.recordId}</Link>

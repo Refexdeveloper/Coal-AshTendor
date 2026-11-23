@@ -1,7 +1,7 @@
 /** The side menu the Group CEO sees. Every login gets this same list, including Portals. */
 const CEO_MENU = ["/", "/worklist", "/register", "/bonds", "/guarantees", "/reports/users", "/reports", "/notifications", "/portals"];
 /** Extra menus only the administrator login sees. */
-const ADMIN_MENU = ["/email-logs", "/admin"];
+const ADMIN_MENU = ["/email-logs", "/whatsapp-logs", "/admin"];
 
 export const NAV: { href: string; label: string; icon: string }[] = [
   { href: "/", label: "Pipeline", icon: "grid" },
@@ -14,6 +14,7 @@ export const NAV: { href: string; label: string; icon: string }[] = [
   { href: "/notifications", label: "Notifications", icon: "bell" },
   { href: "/portals", label: "Portals", icon: "globe" },
   { href: "/email-logs", label: "Email log", icon: "mail" },
+  { href: "/whatsapp-logs", label: "WhatsApp log", icon: "chat" },
   { href: "/admin", label: "Administration", icon: "gear" },
 ];
 

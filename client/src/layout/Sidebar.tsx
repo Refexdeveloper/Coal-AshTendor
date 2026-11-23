@@ -19,13 +19,13 @@ export function Sidebar({
   const role = roleTitle(user);
   return (
     <div className="sidebar-inner">
-      <div className="brand">
+      <Link className="brand" to="/" title="Dashboard" onClick={onNavigate}>
         <span className="mark">CA</span>
         <span className="brand-copy">
           <strong>Coal & Ash</strong>
           <small>Tender management</small>
         </span>
-      </div>
+      </Link>
       <nav>
         <p className="nav-kicker">{role}</p>
         {navFor(user.role).map((item) => {

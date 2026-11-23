@@ -6,7 +6,6 @@ import type { PublicUser } from "@client/lib/types";
 import { LoadFailed, Loading } from "@client/components/base/loading";
 import { useFormPending } from "@client/components/base/submit";
 import { useNoticeAction } from "@client/components/feature/notice-action";
-import { WhatsAppLogPanel } from "@client/pages/WhatsAppLogs";
 
 type Data = {
   calendar: { workStart: string; workEnd: string; workingDays: string } | null;
@@ -69,7 +68,6 @@ export default function AdminPage() {
       </header>
       {query.notice ? <p className="banner good">{query.notice}</p> : null}
       {query.error ? <p className="banner bad">{query.error}</p> : null}
-      <WhatsAppLogPanel />
       <TodayReportPanel />
       <section className="panel">
         <h2>Still to confirm</h2>
