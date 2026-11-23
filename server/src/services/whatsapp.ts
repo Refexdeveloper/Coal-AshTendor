@@ -7,20 +7,23 @@ import { liveMail } from "./notify";
  *
  *   Dear {{1}},  Application: {{2}}  Reference ID: {{3}}  Status: {{4}}  Workflow: {{5}}  {{6}} (link)
  *
- * The key and secret come from the environment (WHATSAPP_APP_KEY, WHATSAPP_APP_SECRET); without them nothing is sent
- * and the log says why. Like email, only the live server messages real people: anywhere else every message goes to
+ * The Unfyd key and secret are set here, as in the P2P app (keep this repository private); WHATSAPP_APP_KEY and
+ * WHATSAPP_APP_SECRET in the environment override them. Like email, only the live server messages real people: anywhere else every message goes to
  * WHATSAPP_TEST_TO, or is not sent when that is not set. Every attempt is kept in WhatsAppLog.
  */
 
 const DEFAULT_API_URL = "https://whatsapp.unfyd.com:9443/unfyd-meta-api/api/v1/hsm/send";
 const DEFAULT_TEMPLATE = "workflow_all_application";
+/** Unfyd Meta HSM credentials, the same ones the P2P app uses. */
+const DEFAULT_APP_KEY = "ak_3f873de0b9f26bddd8";
+const DEFAULT_APP_SECRET = "911829e9e0ca8d739a55ce5ce66ae3abbce6b76f0389b231";
 const APP_NAME = "Coal & Ash Tenders";
 
 function config() {
   return {
     apiUrl: (process.env.WHATSAPP_API_URL || DEFAULT_API_URL).trim(),
-    appKey: (process.env.WHATSAPP_APP_KEY || "").trim(),
-    appSecret: (process.env.WHATSAPP_APP_SECRET || "").trim(),
+    appKey: (process.env.WHATSAPP_APP_KEY || DEFAULT_APP_KEY).trim(),
+    appSecret: (process.env.WHATSAPP_APP_SECRET || DEFAULT_APP_SECRET).trim(),
     template: (process.env.WHATSAPP_TEMPLATE_NAME || DEFAULT_TEMPLATE).trim(),
     language: (process.env.WHATSAPP_TEMPLATE_LANG || "en_US").trim(),
     // Switch off without a deploy: WHATSAPP_ENABLED=false.
