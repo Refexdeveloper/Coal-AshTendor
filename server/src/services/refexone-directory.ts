@@ -22,7 +22,7 @@ const SCHEDULE: SyncActor = { id: "refexone-daily", name: "Daily automatic sync"
 
 /** Org-admin token for the Refex One directory. Kept in the app, not read from the environment. */
 const REFEX_ONE_TOKEN =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYTM2MmY4YWQtNzBkZC00OTYyLWE0Y2EtMTRmNDg4NmYzNDVhIiwiZW1haWwiOiJnb3d0aGFtLnNAcmVmZXguY28uaW4iLCJvcmdfaWQiOiIxNWY2ODhhZC1hZTBhLTQ5NDctYjMyOS03YTIzMTg1OWYyMjYiLCJyb2xlIjoib3JnX2FkbWluIiwiZXhwIjoxNzg4MDg0NzQ4LCJpYXQiOjE3ODU0OTI3NDh9.ZmtJBlIq4etgBw-wQ39uhtYx7he5hYzaPBiiSO1DgO8";
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYTM2MmY4YWQtNzBkZC00OTYyLWE0Y2EtMTRmNDg4NmYzNDVhIiwiZW1haWwiOiJnb3d0aGFtLnNAcmVmZXguY28uaW4iLCJvcmdfaWQiOiIxNWY2ODhhZC1hZTBhLTQ5NDctYjMyOS03YTIzMTg1OWYyMjYiLCJyb2xlIjoib3JnX2FkbWluIiwiaWF0IjoxNzk0OTc1MzA0LCJleHAiOjE4MTA1MjczMDR9.OAHODkQ4sj4xGpB-IEMlRtkdLFEf-EFBN2Z28n5HvPQ";
 
 function apiConfig() {
   const baseUrl = (process.env.REFEXONE_API_URL || "https://refexone.com/api").replace(/\/$/, "");

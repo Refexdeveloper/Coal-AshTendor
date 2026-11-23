@@ -97,7 +97,7 @@ function sameFile(a: string, b: string) {
  * The bid PDF plus the documents it links to (ATC, BOQ, specification, buyer uploads). PDFs open in the viewer,
  * other files download. The links are read from the bid PDF on first open and kept on the bid.
  */
-function BidDocuments({ bid }: { bid: GemBid }) {
+export function BidDocuments({ bid }: { bid: GemBid }) {
   const stored = (() => {
     try {
       const list = bid.links ? (JSON.parse(bid.links) as GemLink[]) : null;

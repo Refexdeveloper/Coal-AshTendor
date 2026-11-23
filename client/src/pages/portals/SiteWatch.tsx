@@ -6,7 +6,8 @@ import type { Portal } from "@client/lib/types";
 import { apiUrl } from "@client/api/client";
 import { downloadXlsx } from "@client/utils/xlsx";
 import { IgnoreForm, IgnoredNote } from "@client/components/feature/ignore-form";
-import type { GemBid, GemData } from "@client/pages/portals/GemWatch";
+import { BidDocuments, type GemBid, type GemData } from "@client/pages/portals/GemWatch";
+import { GemResults } from "@client/components/feature/gem-results";
 
 const PdfViewer = lazy(() => import("@client/components/feature/pdf-viewer"));
 
@@ -525,6 +526,46 @@ function matchesResult(view: string, status: string, seen: Date | string, todayK
   return true;
 }
 
+/** Clicking a row opens it, except clicks on its links, buttons and forms. */
+function rowToggle(toggle: () => void) {
+  return (event: { target: EventTarget | null }) => {
+    if (event.target instanceof Element && event.target.closest("a, button, form, input, select, textarea, label")) return;
+    toggle();
+  };
+}
+
+/** A GeM bid's full details in the opened row: the facts, the bid result once it has closed, and its documents. */
+function GemBidDetail({ bid, timeZone }: { bid: GemBid; timeZone: string }) {
+  const closed = Boolean(bid.endAt && new Date(bid.endAt).getTime() < Date.now());
+  const facts: [string, ReactNode][] = [
+    ["Bid number", bid.bidNumber],
+    ["Item / service", bid.title],
+    ["Ministry", bid.ministry || "—"],
+    ["Department", bid.department && bid.department !== "NA" ? bid.department : "—"],
+    ["Quantity", bid.quantity ?? "—"],
+    ["Bid opens", bid.startAt ? formatWhen(bid.startAt, timeZone) : "—"],
+    ["Bid closes", bid.endAt ? formatWhen(bid.endAt, timeZone) : "—"],
+    ["Matched keyword", bid.keyword || "—"],
+    ["Found on", formatWhen(bid.firstSeenAt, timeZone)],
+    ["Status", STATUS[bid.status].label],
+  ];
+  return (
+    <div className="mix-detail">
+      <dl className="mix-facts">
+        {facts.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {bid.status === "IGNORED" ? <IgnoredNote item={bid} /> : null}
+      {closed ? <GemResults gemBidId={bid.id} /> : null}
+      <BidDocuments bid={bid} />
+    </div>
+  );
+}
+
 /** GeM bids and searched-website tenders in one list, filtered by the search-result card. */
 function SearchMix({
   view,
@@ -562,6 +603,67 @@ function SearchMix({
   const gemCount = rows.filter((row) => row.kind === "gem").length;
   const siteCount = rows.length - gemCount;
   const filterOn = (key: string) => view === key || (key === "approved" && view === "conversion") || (key === "rejected" && (view === "ignored" || view === "excluded"));
+  const [openKey, setOpenKey] = useState("");
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState(25);
+  // A new filter starts again on the first page.
+  useEffect(() => setPage(1), [view]);
+  const pages = Math.max(1, Math.ceil(rows.length / size));
+  const current = Math.min(page, pages);
+  const shownRows = rows.slice((current - 1) * size, current * size);
+  const goTo = (next: number) => {
+    setPage(Math.min(Math.max(1, next), pages));
+    setOpenKey("");
+    document.getElementById("search-mix")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const pager =
+    rows.length > 0 ? (
+      <nav className="mix-pager" aria-label="Pages">
+        <span className="muted">
+          {fmt((current - 1) * size + 1)}–{fmt(Math.min(current * size, rows.length))} of {fmt(rows.length)}
+        </span>
+        <label>
+          Rows
+          <select
+            value={size}
+            onChange={(event) => {
+              setSize(Number(event.target.value));
+              setPage(1);
+            }}
+          >
+            {[10, 25, 50, 100].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="mix-pages">
+          <button type="button" className="btn ghost" onClick={() => goTo(1)} disabled={current === 1} aria-label="First page">
+            «
+          </button>
+          <button type="button" className="btn ghost" onClick={() => goTo(current - 1)} disabled={current === 1}>
+            ‹ Prev
+          </button>
+          {Array.from({ length: pages }, (_, index) => index + 1)
+            .filter((n) => n === 1 || n === pages || Math.abs(n - current) <= 1)
+            .map((n, index, list) => (
+              <Fragment key={n}>
+                {index > 0 && n - list[index - 1] > 1 ? <span className="muted">…</span> : null}
+                <button type="button" className={`btn ghost${n === current ? " is-on" : ""}`} aria-current={n === current ? "page" : undefined} onClick={() => goTo(n)}>
+                  {n}
+                </button>
+              </Fragment>
+            ))}
+          <button type="button" className="btn ghost" onClick={() => goTo(current + 1)} disabled={current === pages}>
+            Next ›
+          </button>
+          <button type="button" className="btn ghost" onClick={() => goTo(pages)} disabled={current === pages} aria-label="Last page">
+            »
+          </button>
+        </span>
+      </nav>
+    ) : null;
   return (
     <div className="search-mix" id="search-mix">
       <div className="site-list-head">
@@ -600,14 +702,17 @@ function SearchMix({
                 </td>
               </tr>
             ) : null}
-            {rows.map((row) => {
+            {shownRows.map((row) => {
               if (row.kind === "site") {
                 const item = row.item;
                 const site = siteOf(item.siteId);
                 const closed = Boolean(item.closingAt && new Date(item.closingAt).getTime() < Date.now());
                 const href = portalLink(site, item);
+                const key = `site-${item.id}`;
+                const open = openKey === key;
                 return (
-                  <tr key={`site-${item.id}`}>
+                  <Fragment key={key}>
+                  <tr className={`mix-row${open ? " site-row-open" : ""}`} onClick={rowToggle(() => setOpenKey(open ? "" : key))} title={open ? "Click to hide the details" : "Click to see the full details and documents"}>
                     <td className="gem-number">
                       {href ? (
                         <a href={href} target="_blank" rel="noopener noreferrer">
@@ -619,7 +724,12 @@ function SearchMix({
                       <small className="muted">{site?.host}</small>
                     </td>
                     <td>
-                      <span className="gem-title">{item.title}</span>
+                      <span className="gem-title">
+                        <span className="site-caret" aria-hidden>
+                          {open ? "▾ " : "▸ "}
+                        </span>
+                        {item.title}
+                      </span>
                       {item.portalTenderId || item.refNo ? (
                         <small className="muted site-ids">
                           {item.portalTenderId ? <b>{item.portalTenderId}</b> : null}
@@ -667,13 +777,24 @@ function SearchMix({
                       ) : null}
                     </td>
                   </tr>
+                  {open ? (
+                    <tr className="site-detail-row">
+                      <td colSpan={7}>
+                        <TenderDetailPanel item={item} site={site} />
+                      </td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
                 );
               }
               const bid = row.bid;
               const closed = Boolean(bid.endAt && new Date(bid.endAt).getTime() < Date.now());
               const tender = gemTenders.find((item) => item.id === bid.tenderId);
+              const key = `gem-${bid.id}`;
+              const open = openKey === key;
               return (
-                <tr key={`gem-${bid.id}`}>
+                <Fragment key={key}>
+                <tr className={`mix-row${open ? " site-row-open" : ""}`} onClick={rowToggle(() => setOpenKey(open ? "" : key))} title={open ? "Click to hide the details" : "Click to see the full details and documents"}>
                   <td className="gem-number">
                     <a href={gemDocUrl(bid)} target="_blank" rel="noreferrer">
                       GeM
@@ -682,6 +803,9 @@ function SearchMix({
                   </td>
                   <td>
                     <span className="gem-title" title={bid.title}>
+                      <span className="site-caret" aria-hidden>
+                        {open ? "▾ " : "▸ "}
+                      </span>
                       {bid.title}
                     </span>
                   </td>
@@ -728,11 +852,20 @@ function SearchMix({
                     ) : null}
                   </td>
                 </tr>
+                {open ? (
+                  <tr className="gem-doc-row">
+                    <td colSpan={7}>
+                      <GemBidDetail bid={bid} timeZone={timeZone} />
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
               );
             })}
           </tbody>
         </table>
       </div>
+      {pager}
     </div>
   );
 }
@@ -1521,7 +1654,7 @@ export function SiteWatch({
               return (
                 <Fragment key={item.id}>
                   <tr className={open ? "site-row-open" : ""}>
-                    <td className="gem-number">
+                    <td className="gem-number" data-label="Website">
                       {href ? (
                         <a href={href} target="_blank" rel="noopener noreferrer" title={site?.method === "NIC" ? "Open the portal's Tenders by Organisation list" : "Open on the website"}>
                           {site ? short(site.name) : "Website"}
@@ -1531,7 +1664,7 @@ export function SiteWatch({
                       )}
                       <small className="muted">{site?.host}</small>
                     </td>
-                    <td>
+                    <td data-label="Tender">
                       <button
                         type="button"
                         className="site-expand"

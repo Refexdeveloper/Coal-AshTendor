@@ -3321,3 +3321,51 @@ tr.site-detail-row > td { background: var(--paper); padding: 0; }
 /* WhatsApp log: the message preview under an opened row, drawn like a WhatsApp bubble. */
 .wa-message { max-width: 460px; padding: 12px 14px; border-radius: 4px 14px 14px 14px; background: #dcf8c6; color: #111b21; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
 .wa-message p { margin: 0 0 8px; line-height: 1.45; word-break: break-word; }
+
+/* Portals search list: a whole row opens its full details, documents and (for closed GeM bids) results. */
+.search-mix tr.mix-row { cursor: pointer; transition: background 0.15s; }
+.search-mix tr.mix-row:hover td { background: #fbf7f2; }
+.mix-detail { display: grid; gap: 14px; animation: stepIn 0.3s both; }
+.mix-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 18px; margin: 0; padding: 14px; border-radius: 12px; background: #fff; border: 1px solid #ece7e1; }
+.mix-facts div { display: grid; gap: 2px; min-width: 0; }
+.mix-facts dt { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #8a8178; }
+.mix-facts dd { margin: 0; color: #1f1a17; overflow-wrap: anywhere; }
+.mix-pager { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; justify-content: space-between; padding: 12px 4px 0; }
+.mix-pager label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #6b6259; }
+.mix-pager select { padding: 4px 8px; border-radius: 8px; border: 1px solid #e2dbd3; background: #fff; }
+.mix-pages { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mix-pages .btn { min-width: 38px; padding: 6px 10px; }
+.mix-pages .btn.is-on { background: var(--ember, #ea580c); border-color: transparent; color: #fff; }
+.mix-pages .btn:disabled { opacity: 0.45; cursor: default; }
+
+/* Phone: portal tender rows (GeM and website search) become cards instead of a wide table. */
+@media (max-width: 760px) {
+  .table-wrap:has(.gem-table) { overflow: visible; border: 0; background: transparent; box-shadow: none; }
+  .table-wrap .gem-table,
+  .table-wrap .gem-table tbody { display: block !important; width: 100% !important; min-width: 0 !important; }
+  .table-wrap .gem-table thead { display: none !important; }
+  .table-wrap .gem-table tr {
+    display: flex !important; flex-direction: column; gap: 10px; margin: 0 0 12px; padding: 14px;
+    background: #fff; border: 1px solid var(--line-soft); border-radius: 16px;
+    box-shadow: 0 8px 24px -18px rgba(15, 23, 42, 0.45);
+  }
+  .table-wrap .gem-table td {
+    display: block !important; width: auto !important; min-width: 0 !important; max-width: none !important;
+    padding: 0 !important; border: 0 !important; position: static !important; white-space: normal !important;
+    background: transparent !important; box-shadow: none !important; overflow: visible;
+  }
+  .table-wrap .gem-table .gem-title { max-width: none; -webkit-line-clamp: unset; }
+  .table-wrap .gem-table td.gem-row-actions {
+    display: flex !important; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 4px;
+  }
+  .table-wrap .gem-table td.gem-row-actions .btn,
+  .table-wrap .gem-table td.gem-row-actions button,
+  .table-wrap .gem-table td.gem-row-actions a.btn,
+  .table-wrap .gem-table td.gem-row-actions form { width: 100%; margin: 0; }
+  .table-wrap .gem-table tr.site-row-open,
+  .table-wrap .gem-table tr.is-open { margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .table-wrap .gem-table tr.site-detail-row,
+  .table-wrap .gem-table tr.gem-doc-row {
+    margin-top: -12px; border-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; box-shadow: none;
+  }
+}
