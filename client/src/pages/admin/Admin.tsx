@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ROLES } from "@client/lib/labels";
-import { apiGet, postAction, useApi } from "@client/api/client";
+import { ApiError, apiGet, apiPost, postAction, useApi } from "@client/api/client";
 import { useActor } from "@client/api/session";
 import type { PublicUser } from "@client/lib/types";
 import { LoadFailed, Loading } from "@client/components/base/loading";
@@ -515,6 +515,19 @@ function RefexOnePanel({ refexone, users, run, error }: { refexone: Data["refexo
 }
 
 /** The people list with a search and an access filter, since a synced directory is long. */
+async function loginAs(user: PublicUser) {
+  if (!window.confirm(`Sign in as ${user.name}? You will leave Administration and see the app as this person.`)) return;
+  const body = new FormData();
+  body.set("userId", user.id);
+  try {
+    await apiPost("/auth/login-as", body);
+  } catch (error) {
+    window.alert(error instanceof ApiError ? error.message : "Could not sign in as this person.");
+    return;
+  }
+  window.location.assign("/");
+}
+
 function PeopleTable({ users, run }: { users: PublicUser[]; run: Run }) {
   const [query, setQuery] = useState("");
   const [show, setShow] = useState<"all" | "allowed" | "waiting">("all");
@@ -593,6 +606,9 @@ function PeopleTable({ users, run }: { users: PublicUser[]; run: Run }) {
                     </select>
                     <button className="btn" type="submit">
                       Save
+                    </button>
+                    <button className="btn ghost" type="button" disabled={!user.active} title={user.active ? `Sign in as ${user.name}` : "Allow sign-in first"} onClick={() => void loginAs(user)}>
+                      Login
                     </button>
                   </form>
                 </td>

@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
 import { checkLogin } from "../services/actions";
-import { clearSession, publicUser, setSession } from "../middleware/auth";
+import { clearSession, loadActor, publicUser, setSession } from "../middleware/auth";
 import { consumeRefexOne } from "../services/refexone";
 import { noteSignIn } from "../services/user-activity";
 
@@ -41,6 +41,23 @@ authRouter.post("/refexone/saml/acs", async (req, res) => {
     const message = error instanceof Error && error.message ? error.message : "Refex One sign-in failed.";
     res.status(401).type("html").send(signInPage("Refex One sign-in failed", message));
   }
+});
+
+/** An administrator opens the app as one active person. The session becomes that person's, the same way a sign-in does. */
+authRouter.post("/login-as", multer().none(), async (req, res) => {
+  const actor = await loadActor(req);
+  if (!actor || actor.role !== "ADMIN") {
+    res.status(403).json({ error: "Only a system administrator can sign in as someone else." });
+    return;
+  }
+  const user = await db.user.findUnique({ where: { id: String(req.body?.userId || "") } });
+  if (!user?.active) {
+    res.status(400).json({ error: "That person cannot sign in yet. Allow access and save first." });
+    return;
+  }
+  await setSession(res, user.id);
+  console.log(`[auth] ${actor.email} signed in as ${user.email}`);
+  res.json({ ok: "Signed in" });
 });
 
 authRouter.post("/logout", (_req, res) => {
