@@ -5,6 +5,7 @@ import { createApp } from "./app";
 import { ensureDatabaseReady } from "./bootstrap";
 import { migrate } from "./db/migrations";
 import { ensureDefaultUsers } from "./services/accounts";
+import { assignOpenSaleRelevance } from "./services/team";
 import { restoreLiveRegisters } from "./services/live-register";
 import { storageBackend, storageLabel } from "./services/files";
 import { maybeScheduledSync, syncEveryHours } from "./services/refexone-directory";
@@ -18,6 +19,9 @@ async function main() {
   });
   await ensureDefaultUsers().catch((error) => {
     console.error("[db] Default login was not added:", error instanceof Error ? error.message : error);
+  });
+  await assignOpenSaleRelevance().catch((error) => {
+    console.error("[team] Sale relevance was not reassigned:", error instanceof Error ? error.message : error);
   });
   await restoreLiveRegisters().catch((error) => {
     console.error("[db] Live register was not loaded:", error instanceof Error ? error.message : error);

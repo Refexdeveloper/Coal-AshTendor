@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { OPEN_TASK } from "../utils/labels";
 
 /**
  * Who owns each workflow stage, by business line (Ash or Coal) and, for sales input, by state.
@@ -34,6 +35,7 @@ export const TEAM = [
   { email: "babu.sathiyavelu@refex.co.in", name: "Babu Sathiyavelu", role: "SALES" },
   { email: "ashishkumar.m@refex.co.in", name: "Aashish Kumar Mukherji", role: "SALES" },
   { email: "harshit.saxena@refex.co.in", name: "Harshit Saxena", role: "SALES" },
+  { email: "harshvardhan.dugar@refex.co.in", name: "Harshvardhan Dugar", role: "REVIEWER" },
   { email: "srivaths.varadharajan@refex.co.in", name: "Srivaths Varadharajan", role: "GROUP_CEO" },
 ] as const;
 
@@ -48,6 +50,7 @@ const KRISHNA = "krishna.s@refex.co.in";
 const SURYA = "surya.m@refex.co.in";
 const SANJEEV = "sanjeev.ks@refex.co.in";
 const WASEEM = "waseem@refex.co.in";
+const HARSHVARDHAN = "harshvardhan.dugar@refex.co.in";
 
 type Route = string[] | Record<BusinessLine, string[]>;
 
@@ -106,10 +109,34 @@ export function lineOf(value: string | null | undefined): BusinessLine {
   return value === "COAL" ? "COAL" : "ASH";
 }
 
-export type RoutingTender = { businessLine?: string | null; location?: string | null; clientName?: string | null; projectName?: string | null };
+export type RoutingTender = {
+  id?: string;
+  businessLine?: string | null;
+  location?: string | null;
+  clientName?: string | null;
+  projectName?: string | null;
+  fields?: { fieldKey: string; extractedValue?: string; correctedValue?: string; correctedAt?: Date | string | null }[];
+};
+
+/** The saved tender type, preferring a correction over the extracted value. */
+function tenderType(tender: RoutingTender) {
+  const field = tender.fields?.find((row) => row.fieldKey === "tender_category");
+  if (!field) return "";
+  const value = (field.correctedAt ? field.correctedValue : field.extractedValue) ?? "";
+  const trimmed = value.trim();
+  return !trimmed || trimmed === "Not Found in Document" ? "" : trimmed;
+}
+
+/** Loads the tender type when the caller did not include the field rows. */
+async function withType(tender: RoutingTender) {
+  if (tenderType(tender) || !tender.id) return tender;
+  const field = await db.tenderField.findFirst({ where: { tenderId: tender.id, fieldKey: "tender_category" } });
+  return field ? { ...tender, fields: [field] } : tender;
+}
 
 /** Emails that own a stage for this tender. EMD_* stages and SALES_INPUT included. */
 export function ownerEmails(stage: string, tender: RoutingTender) {
+  if (stage === "RELEVANCE" && tenderType(tender).toUpperCase() === "SALE") return [HARSHVARDHAN];
   if (stage === "SALES_INPUT") {
     const state = detectState(tender.location ?? "", tender.clientName ?? "", tender.projectName ?? "");
     return SALES_BY_STATE.find((row) => row.state === state)?.emails ?? ALL_SALES;
@@ -121,7 +148,7 @@ export function ownerEmails(stage: string, tender: RoutingTender) {
 
 /** Active user ids that own a stage. Falls back to `fallbackRole` holders when nobody on the list can sign in. */
 export async function ownersFor(stage: string, tender: RoutingTender, fallbackRole?: string) {
-  const emails = ownerEmails(stage, tender);
+  const emails = ownerEmails(stage, stage === "RELEVANCE" ? await withType(tender) : tender);
   const users = emails.length ? await db.user.findMany({ where: { email: { in: emails }, active: true } }) : [];
   if (users.length) return emails.map((email) => users.find((user: { email: string }) => user.email.toLowerCase() === email)?.id).filter((id): id is string => Boolean(id));
   if (!fallbackRole) return [];
@@ -130,6 +157,7 @@ export async function ownersFor(stage: string, tender: RoutingTender, fallbackRo
 
 /** Names per stage for the progress track, so later steps show who will take them. */
 export async function plannedOwners(tender: RoutingTender & { emdType?: string | null }) {
+  tender = await withType(tender);
   const stages = ["DATA_VALIDATION", "RELEVANCE", "DRAFT_COSTING", "SALES_INPUT", "FINAL_COSTING", "DEPT_APPROVAL", "EMD_CLARIFICATION", "BID_SUBMISSION"];
   // Until the EMD type is known, either the BG team or the ISB owner may prepare it.
   const instrument =
@@ -143,4 +171,22 @@ export async function plannedOwners(tender: RoutingTender & { emdType?: string |
     state: detectState(tender.location ?? "", tender.clientName ?? "", tender.projectName ?? ""),
     stages: Object.fromEntries([...wanted.entries()].map(([stage, list]) => [stage, list.map(nameOf)])) as Record<string, string[]>,
   };
+}
+
+/** Open relevance reviews on SALE tenders belong to Harshvardhan, including ones already assigned. */
+export async function assignOpenSaleRelevance() {
+  const reviewer = await db.user.findFirst({ where: { email: HARSHVARDHAN, active: true } });
+  if (!reviewer) return;
+  const fields = await db.tenderField.findMany({ where: { fieldKey: "tender_category" } });
+  const sale = new Set(fields.filter((field) => tenderType({ fields: [field] }).toUpperCase() === "SALE").map((field) => field.tenderId as string));
+  if (!sale.size) return;
+  const tasks = await db.workflowTask.findMany({ where: { stage: "RELEVANCE", status: { in: [...OPEN_TASK] } } });
+  const wanted = JSON.stringify([reviewer.id]);
+  let moved = 0;
+  for (const task of tasks) {
+    if (!sale.has(task.tenderId) || task.assigneeIds === wanted) continue;
+    await db.workflowTask.update({ where: { id: task.id }, data: { assigneeIds: wanted } });
+    moved += 1;
+  }
+  if (moved) console.log(`[team] ${moved} sale relevance review${moved === 1 ? "" : "s"} assigned to Harshvardhan Dugar`);
 }

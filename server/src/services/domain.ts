@@ -1773,7 +1773,15 @@ export function readinessChecklist(tender: ReadinessInput) {
   const conflicts = tender.fields.filter((field) => field.validationStatus === "CONFLICT");
   const deadlineOpen = Boolean(tender.bidSubmissionEnd && tender.bidSubmissionEnd.getTime() > Date.now());
   return [
-    { label: "Relevance approved", gap: "Relevance is not approved.", ok: tender.relevanceStatus === "APPROVED", owner: "Relevance reviewers (Ash: Ranjana or Vishesh · Coal: Aditya)" },
+    {
+      label: "Relevance approved",
+      gap: "Relevance is not approved.",
+      ok: tender.relevanceStatus === "APPROVED",
+      owner:
+        valueOf(tender.fields.find((field) => field.fieldKey === "tender_category")).toUpperCase() === "SALE"
+          ? "Harshvardhan Dugar"
+          : "Relevance reviewers (Ash: Ranjana or Vishesh · Coal: Aditya)",
+    },
     { label: "Final costing approved by the Department Head", gap: "Final costing is not approved by the Department Head.", ok: tender.costingStatus === "APPROVED", owner: "Costing team, then Department Head" },
     { label: "EMD prepared and verified, or exemption documented", gap: "EMD is not prepared and verified, and no exemption is recorded.", ok: EMD_READY.includes(tender.emdStatus), owner: "Ranjana, Krishnananth / Surya (BG) or Sanjeev (ISB)" },
     {
