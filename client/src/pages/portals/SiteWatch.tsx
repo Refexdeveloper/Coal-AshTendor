@@ -6,7 +6,7 @@ import type { Portal } from "@client/lib/types";
 import { apiUrl } from "@client/api/client";
 import { downloadXlsx } from "@client/utils/xlsx";
 import { IgnoreForm, IgnoredNote } from "@client/components/feature/ignore-form";
-import type { GemData } from "@client/pages/portals/GemWatch";
+import type { GemBid, GemData } from "@client/pages/portals/GemWatch";
 
 const PdfViewer = lazy(() => import("@client/components/feature/pdf-viewer"));
 
@@ -166,6 +166,10 @@ function runNumbers(summary: string) {
   };
 }
 const fmt = (value: number | null | undefined) => (value == null ? "—" : value.toLocaleString("en-IN"));
+const gemDocUrl = (bid: Pick<GemBid, "bidType" | "bidId">) => {
+  const path = bid.bidType === 5 ? "showdirectradocumentPdf" : bid.bidType === 2 ? "showradocumentPdf" : "showbidDocument";
+  return `https://bidplus.gem.gov.in/${path}/${bid.bidId}`;
+};
 function duration(start: Date, end: Date | null) {
   if (!end) return "";
   const seconds = Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000));
@@ -496,6 +500,243 @@ function portalLink(site: WatchSite | undefined, tender: SiteTender) {
  * The master-sheet websites section is shown first on the Portals page: it is rendered into the page's
  * #websites-top slot (same component, so its filters still drive the lists below), or in place when there is no slot.
  */
+const RESULT_VIEWS: ["found" | "approved" | "rejected" | "today", string][] = [
+  ["found", "All found"],
+  ["approved", "Approved"],
+  ["rejected", "Rejected"],
+  ["today", "New today"],
+];
+const RESULT_TITLE: Record<string, string> = {
+  found: "Total tenders in search",
+  approved: "Approved",
+  conversion: "Approved",
+  rejected: "Rejected",
+  ignored: "Rejected on review",
+  excluded: "Excluded by words",
+  today: "New tenders today",
+};
+
+function matchesResult(view: string, status: string, seen: Date | string, todayKey: string, zoneDay: (value: Date | string) => string) {
+  if (view === "today") return zoneDay(seen) === todayKey;
+  if (view === "approved" || view === "conversion") return status === "IMPORTED";
+  if (view === "rejected") return status === "IGNORED" || status === "EXCLUDED";
+  if (view === "ignored") return status === "IGNORED";
+  if (view === "excluded") return status === "EXCLUDED";
+  return true;
+}
+
+/** GeM bids and searched-website tenders in one list, filtered by the search-result card. */
+function SearchMix({
+  view,
+  onView,
+  tenders,
+  bids,
+  gemTenders,
+  siteOf,
+  timeZone,
+  todayKey,
+  zoneDay,
+  canRun,
+  run,
+}: {
+  view: string;
+  onView: (view: "found" | "approved" | "rejected" | "today") => void;
+  tenders: SiteTender[];
+  bids: GemBid[];
+  gemTenders: { id: string; recordId: string }[];
+  siteOf: (id: string) => WatchSite | undefined;
+  timeZone: string;
+  todayKey: string;
+  zoneDay: (value: Date | string) => string;
+  canRun: boolean;
+  run: (name: string) => (formData: FormData) => Promise<void>;
+}) {
+  const rows = [
+    ...tenders
+      .filter((item) => matchesResult(view, item.status, item.firstSeenAt, todayKey, zoneDay))
+      .map((item) => ({ kind: "site" as const, at: new Date(item.firstSeenAt).getTime(), item })),
+    ...bids
+      .filter((bid) => matchesResult(view, bid.status, bid.firstSeenAt, todayKey, zoneDay))
+      .map((bid) => ({ kind: "gem" as const, at: new Date(bid.firstSeenAt).getTime(), bid })),
+  ].sort((a, b) => b.at - a.at);
+  const gemCount = rows.filter((row) => row.kind === "gem").length;
+  const siteCount = rows.length - gemCount;
+  const filterOn = (key: string) => view === key || (key === "approved" && view === "conversion") || (key === "rejected" && (view === "ignored" || view === "excluded"));
+  return (
+    <div className="search-mix" id="search-mix">
+      <div className="site-list-head">
+        <div>
+          <h3>{RESULT_TITLE[view] ?? "Tenders"}</h3>
+          <small className="muted">
+            {fmt(rows.length)} in this list · {fmt(siteCount)} from searched websites · {fmt(gemCount)} from GeM. Both sources are in this table.
+          </small>
+        </div>
+      </div>
+      <div className="tabs gem-tabs" role="tablist" aria-label="Tender list filter">
+        {RESULT_VIEWS.map(([key, label]) => (
+          <button key={key} type="button" role="tab" aria-selected={filterOn(key)} className={`tab ${filterOn(key) ? "active" : ""}`} onClick={() => onView(key)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="table-wrap flat">
+        <table className="gem-table">
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Tender</th>
+              <th>Organisation</th>
+              <th>Keyword</th>
+              <th>Closes</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="empty">
+                  No tenders in this filter.
+                </td>
+              </tr>
+            ) : null}
+            {rows.map((row) => {
+              if (row.kind === "site") {
+                const item = row.item;
+                const site = siteOf(item.siteId);
+                const closed = Boolean(item.closingAt && new Date(item.closingAt).getTime() < Date.now());
+                const href = portalLink(site, item);
+                return (
+                  <tr key={`site-${item.id}`}>
+                    <td className="gem-number">
+                      {href ? (
+                        <a href={href} target="_blank" rel="noopener noreferrer">
+                          {site ? short(site.name) : "Website"}
+                        </a>
+                      ) : (
+                        short(site?.name ?? "Website")
+                      )}
+                      <small className="muted">{site?.host}</small>
+                    </td>
+                    <td>
+                      <span className="gem-title">{item.title}</span>
+                      {item.portalTenderId || item.refNo ? (
+                        <small className="muted site-ids">
+                          {item.portalTenderId ? <b>{item.portalTenderId}</b> : null}
+                          {item.refNo ? ` · ${item.refNo}` : ""}
+                        </small>
+                      ) : null}
+                    </td>
+                    <td>{item.organisation || "—"}</td>
+                    <td>
+                      <span className="gem-chip small">{item.keyword}</span>
+                    </td>
+                    <td className={closed ? "text-bad" : ""}>
+                      {item.closingAt ? formatWhen(item.closingAt, timeZone) : "—"}
+                      {closed ? <small>closed</small> : null}
+                    </td>
+                    <td>
+                      <span className={`pill ${STATUS[item.status].tone}`}>{STATUS[item.status].label}</span>
+                      {item.error ? <small className="muted gem-error">{item.error}</small> : null}
+                      {item.status === "IGNORED" ? <IgnoredNote item={item} /> : null}
+                    </td>
+                    <td className="gem-row-actions">
+                      {item.tenderId ? (
+                        <Link className="btn ghost" to={`/tenders/${item.tenderId}`}>
+                          Open tender
+                        </Link>
+                      ) : null}
+                      {canRun && (item.status === "NEW" || item.status === "FAILED" || item.status === "EXCLUDED") ? (
+                        <form action={run("site-watch")}>
+                          <input type="hidden" name="intent" value="import" />
+                          <input type="hidden" name="siteTenderId" value={item.id} />
+                          <button className="btn" type="submit">
+                            {item.status === "FAILED" ? "Retry" : "Add as tender"}
+                          </button>
+                        </form>
+                      ) : null}
+                      {canRun && item.status === "NEW" ? <IgnoreForm action={run("site-watch")} idName="siteTenderId" id={item.id} /> : null}
+                      {canRun && item.status === "IGNORED" ? (
+                        <form action={run("site-watch")}>
+                          <input type="hidden" name="intent" value="restore" />
+                          <input type="hidden" name="siteTenderId" value={item.id} />
+                          <button className="btn ghost" type="submit">
+                            Restore
+                          </button>
+                        </form>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              }
+              const bid = row.bid;
+              const closed = Boolean(bid.endAt && new Date(bid.endAt).getTime() < Date.now());
+              const tender = gemTenders.find((item) => item.id === bid.tenderId);
+              return (
+                <tr key={`gem-${bid.id}`}>
+                  <td className="gem-number">
+                    <a href={gemDocUrl(bid)} target="_blank" rel="noreferrer">
+                      GeM
+                    </a>
+                    <small className="muted">{bid.bidNumber}</small>
+                  </td>
+                  <td>
+                    <span className="gem-title" title={bid.title}>
+                      {bid.title}
+                    </span>
+                  </td>
+                  <td>
+                    {bid.department && bid.department !== "NA" ? bid.department : "—"}
+                    <small className="muted">{bid.ministry}</small>
+                  </td>
+                  <td>
+                    <span className="gem-chip small">{bid.keyword}</span>
+                  </td>
+                  <td className={closed ? "text-bad" : ""}>
+                    {bid.endAt ? formatWhen(bid.endAt, timeZone) : "—"}
+                    {closed ? <small>closed</small> : null}
+                  </td>
+                  <td>
+                    <span className={`pill ${STATUS[bid.status].tone}`}>{STATUS[bid.status].label}</span>
+                    {bid.error ? <small className="muted gem-error">{bid.error}</small> : null}
+                    {bid.status === "IGNORED" ? <IgnoredNote item={bid} /> : null}
+                  </td>
+                  <td className="gem-row-actions">
+                    {tender ? (
+                      <Link className="btn ghost" to={`/tenders/${tender.id}`}>
+                        {tender.recordId}
+                      </Link>
+                    ) : null}
+                    {canRun && (bid.status === "NEW" || bid.status === "FAILED" || bid.status === "EXCLUDED") ? (
+                      <form action={run("gem")}>
+                        <input type="hidden" name="intent" value="import" />
+                        <input type="hidden" name="bidId" value={bid.id} />
+                        <button className="btn" type="submit">
+                          {bid.status === "FAILED" ? "Retry import" : "Import as tender"}
+                        </button>
+                      </form>
+                    ) : null}
+                    {canRun && bid.status === "NEW" ? <IgnoreForm action={run("gem")} idName="bidId" id={bid.id} /> : null}
+                    {canRun && bid.status === "IGNORED" ? (
+                      <form action={run("gem")}>
+                        <input type="hidden" name="intent" value="restore" />
+                        <input type="hidden" name="bidId" value={bid.id} />
+                        <button className="btn ghost" type="submit">
+                          Restore
+                        </button>
+                      </form>
+                    ) : null}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function TopSlot({ children }: { children: ReactNode }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useEffect(() => setSlot(document.getElementById("websites-top")), []);
@@ -533,7 +774,13 @@ export function SiteWatch({
   const [repeatOnly, setRepeatOnly] = useState(false);
   const [handKind, setHandKind] = useState("");
   const [editing, setEditing] = useState(false);
+  const [resultView, setResultView] = useState<"" | "found" | "approved" | "conversion" | "rejected" | "ignored" | "excluded" | "today">("");
   const [, tick] = useState(0);
+
+  useEffect(() => {
+    if (!resultView) return;
+    document.getElementById("search-mix")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [resultView]);
 
   useEffect(() => {
     if (!running) return;
@@ -845,11 +1092,7 @@ export function SiteWatch({
   const todayKey = stats?.today ?? zoneDay(new Date());
   const gemToday = (gem?.bids ?? []).filter((bid) => zoneDay(bid.firstSeenAt) === todayKey).length;
   const siteToday = stats?.newToday ?? tenders.filter((item) => zoneDay(item.firstSeenAt) === todayKey).length;
-  const toResults = (status: string) => {
-    setTab(status);
-    setSiteFilter("");
-    document.getElementById("site-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  const showResults = (view: "found" | "approved" | "conversion" | "rejected" | "ignored" | "excluded" | "today") => setResultView(view);
   const resultCards: { key: string; icon: string; tone: string; value: string | number; label: string; sub: string; go: string; title: string; open: () => void; chips: { label: string; open: () => void }[]; bar?: number }[] = [
     {
       key: "found",
@@ -860,8 +1103,8 @@ export function SiteWatch({
       sub: `${fmt(siteFound)} from websites · ${fmt(gemFound)} from GeM`,
       go: "View tenders →",
       title: "Every tender the keyword searches found",
-      open: () => toResults(""),
-      chips: gem ? [{ label: `🏛 ${gemFound} GeM bids`, open: toGem }] : [],
+      open: () => showResults("found"),
+      chips: [],
     },
     {
       key: "approved",
@@ -872,7 +1115,7 @@ export function SiteWatch({
       sub: `imported as tenders · ${approvedSite} websites + ${approvedGem} GeM`,
       go: "View approved →",
       title: "Search results imported into the tender list",
-      open: () => toResults("IMPORTED"),
+      open: () => showResults("approved"),
       chips: [],
     },
     {
@@ -884,10 +1127,10 @@ export function SiteWatch({
       sub: `${reviewedOut} rejected on review · ${excludedOut} excluded by words`,
       go: "View rejected →",
       title: "Results rejected on review, or dropped by the exclude words",
-      open: () => toResults(reviewedOut ? "IGNORED" : "EXCLUDED"),
+      open: () => showResults("rejected"),
       chips: [
-        { label: `👁 ${reviewedOut} on review`, open: () => toResults("IGNORED") },
-        { label: `🚫 ${excludedOut} excluded`, open: () => toResults("EXCLUDED") },
+        { label: `👁 ${reviewedOut} on review`, open: () => showResults("ignored") },
+        { label: `🚫 ${excludedOut} excluded`, open: () => showResults("excluded") },
       ],
     },
     {
@@ -899,7 +1142,7 @@ export function SiteWatch({
       sub: `${approvedSite + approvedGem} approved of ${fmt(foundTotal)} found`,
       go: "View approved →",
       title: "Approved tenders as a share of all tenders found",
-      open: () => toResults("IMPORTED"),
+      open: () => showResults("conversion"),
       chips: [],
       bar: conversion,
     },
@@ -912,7 +1155,7 @@ export function SiteWatch({
       sub: `${siteToday} from websites · ${gemToday} from GeM`,
       go: "View new →",
       title: "Tenders first found today",
-      open: () => toResults("NEW"),
+      open: () => showResults("today"),
       chips: [],
     },
   ];
@@ -1499,7 +1742,8 @@ export function SiteWatch({
               key={card.key}
               role="button"
               tabIndex={0}
-              className={`sk-card tone-${card.tone}`}
+              className={`sk-card tone-${card.tone}${resultView === card.key ? " is-active" : ""}`}
+              aria-pressed={resultView === card.key}
               title={card.title}
               onClick={card.open}
               onKeyDown={(event) => {
@@ -1543,6 +1787,21 @@ export function SiteWatch({
             </div>
           ))}
         </div>
+        {resultView ? (
+          <SearchMix
+            view={resultView}
+            onView={showResults}
+            tenders={tenders}
+            bids={gem?.bids ?? []}
+            gemTenders={gem?.tenders ?? []}
+            siteOf={siteOf}
+            timeZone={timeZone}
+            todayKey={todayKey}
+            zoneDay={zoneDay}
+            canRun={canRun}
+            run={run}
+          />
+        ) : null}
         {categories.length ? (
           <>
             <h4 className="sk-heading">By classification</h4>
