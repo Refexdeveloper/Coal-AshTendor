@@ -1,4 +1,5 @@
 import { randomBytes } from "crypto";
+import { normalizePhone } from "./whatsapp";
 import bcrypt from "bcryptjs";
 import { db } from "../db";
 import { deliver } from "./notify";
@@ -55,19 +56,21 @@ export async function recordRefexOnePerson(emailInput: string, nameInput: string
 }
 
 /** Turns sign-in on or off and sets the role. Newly allowed people receive the initial password. */
-export async function updateUserAccess(actorId: string, input: { userId: string; role: string; allow: boolean }) {
+export async function updateUserAccess(actorId: string, input: { userId: string; role: string; allow: boolean; phone?: string }) {
   const user = await db.user.findUnique({ where: { id: input.userId } });
   if (!user) return { error: "That person is not on the list." };
   const role = ROLES[input.role] ? input.role : user.role;
   if (input.allow && !ROLES[role]) return { error: "Choose a role before allowing sign-in." };
   if (user.id === actorId && !input.allow) return { error: "You cannot turn off your own sign-in." };
   if (user.id === actorId && role !== "ADMIN") return { error: "You cannot remove your own administrator role." };
+  if (input.phone && !normalizePhone(input.phone)) return { error: "That mobile number does not look right. Use 10 digits, or the country code and number." };
   const turningOn = input.allow && !user.active;
   await db.user.update({
     where: { id: user.id },
     data: {
       role: ROLES[role] ? role : user.role,
       active: input.allow,
+      ...(input.phone !== undefined ? { phone: normalizePhone(input.phone) } : {}),
       ...(turningOn ? { passwordHash: bcrypt.hashSync(INITIAL_PASSWORD, 10) } : {}),
     },
   });

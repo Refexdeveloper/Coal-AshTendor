@@ -367,8 +367,12 @@ async function notifyTasks(tenderId: string, tasks: WorkflowTask[], calendar: Ca
 async function whatsAppForSteps(tenderId: string, tasks: WorkflowTask[]) {
   const tender = await db.tender.findUnique({ where: { id: tenderId } });
   if (!tender) return;
-  const { emailLink } = await import("./notify");
-  const link = await emailLink(`/tenders/${tenderId}?tab=overview`);
+  // The plain tender address: short enough for WhatsApp (the Refex One sign-in link is too long and gets cut off).
+  // Opening it without a session still goes through Refex One sign-in.
+  const { publicBase } = await import("./refexone");
+  const configured = (process.env.APP_URL || "").trim();
+  const base = /^https:\/\//.test(configured) && !/localhost|127\.0\.0\.1/.test(configured) ? configured : publicBase();
+  const link = `${base.replace(/\/$/, "")}/tenders/${tenderId}`;
   for (const task of tasks) {
     const stage = STAGE_NAME[task.stage] ?? task.title;
     const returned = task.status === "RETURNED_FOR_REVISION";

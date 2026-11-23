@@ -22,6 +22,14 @@ export function NavIcon({ name }: { name: string }) {
       </svg>
     );
   }
+  if (name === "chat") {
+    return (
+      <svg {...common}>
+        <path d="M4 19.5 5.3 16A8 8 0 1 1 8.6 19L4 19.5Z" strokeLinejoin="round" />
+        <path d="M9 10.5h6M9 13.5h4" strokeLinecap="round" />
+      </svg>
+    );
+  }
   if (name === "users") {
     return (
       <svg {...common}>

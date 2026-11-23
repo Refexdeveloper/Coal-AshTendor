@@ -95,13 +95,8 @@ views.get("/register", async (_req, res) => {
   res.json({ tenders, users: users.map(publicUser), calendar: calendarJson(calendar) });
 });
 
-/** Person-wise daily usage: who used the app on the day, and each person's tender tasks. Managers only. */
-const USAGE_ROLES = ["ADMIN", "GROUP_CEO", "DEPT_HEAD", "COORDINATOR"];
+/** Person-wise daily usage: who used the app on the day, and each person's tender tasks. Same page for every login. */
 views.get("/reports/users", async (req, res) => {
-  if (!USAGE_ROLES.includes(req.actor!.role)) {
-    res.status(403).json({ error: "Only administrators, the Group CEO, department heads and coordinators can see the usage report." });
-    return;
-  }
   const { userReport } = await import("../services/user-activity");
   res.json(await userReport(typeof req.query.day === "string" ? req.query.day : undefined));
 });
@@ -120,6 +115,18 @@ views.get("/notifications", async (req, res) => {
 });
 
 /** Mail log for administrators, like P2P's email log: newest first, filtered by status, type and text. */
+/** WhatsApp notices: the latest 300, with the setup state. Administrator only. */
+views.get("/whatsapp-logs", async (req, res) => {
+  if (req.actor!.role !== "ADMIN") {
+    res.status(403).json({ error: "The WhatsApp log is limited to the system administrator." });
+    return;
+  }
+  const { whatsAppStatus } = await import("../services/whatsapp");
+  const [rows, users] = await Promise.all([db.whatsAppLog.findMany({ orderBy: { createdAt: "desc" }, take: 300 }), db.user.findMany({ where: { active: true } })]);
+  const withPhone = users.filter((user: { phone?: string }) => user.phone).length;
+  res.json({ rows, status: whatsAppStatus(), people: { active: users.length, withPhone } });
+});
+
 views.get("/email-logs", async (req, res) => {
   if (req.actor!.role !== "ADMIN") {
     res.status(403).json({ error: "The mail log is limited to the system administrator." });
@@ -352,7 +359,8 @@ views.get("/admin", async (req, res) => {
     settings,
     escalations,
     templates,
-    users: users.map(publicUser),
+    // Mobiles are shown to the administrator only, for WhatsApp notices.
+    users: users.map((user: { phone?: string } & Parameters<typeof publicUser>[0]) => ({ ...publicUser(user), phone: user.phone ?? "" })),
     tenderCount: tenders.length,
     tenders,
     refexone: { configured: directoryConfigured(), lastSync: await lastSync(), schedule: await syncSchedule() },

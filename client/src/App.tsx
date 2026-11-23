@@ -10,6 +10,7 @@ import PortalsPage from "@client/pages/portals/Portals";
 import RegisterPage from "@client/pages/Register";
 import ReportsPage from "@client/pages/Reports";
 import UserReportPage from "@client/pages/UserReport";
+import WhatsAppLogsPage from "@client/pages/WhatsAppLogs";
 import TenderPage from "@client/pages/tenders/TenderDetail";
 import BgLetterPage from "@client/pages/tenders/BgLetter";
 import WorklistPage from "@client/pages/Worklist";
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="reports/users" element={<UserReportPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="email-logs" element={<EmailLogsPage />} />
+        <Route path="whatsapp-logs" element={<WhatsAppLogsPage />} />
         <Route path="portals" element={<PortalsPage />} />
         <Route path="admin" element={<AdminPage />} />
         <Route path="*" element={<p className="panel">That page does not exist.</p>} />

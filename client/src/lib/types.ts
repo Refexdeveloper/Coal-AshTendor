@@ -1,6 +1,6 @@
 /** Shapes of the records the API sends. Dates arrive as ISO strings and are revived to Date by api.ts. */
 
-export type PublicUser = { id: string; name: string; email: string; role: string; personKey: string; active: boolean };
+export type PublicUser = { id: string; name: string; email: string; role: string; personKey: string; active: boolean; phone?: string };
 
 export type Tender = {
   id: string;

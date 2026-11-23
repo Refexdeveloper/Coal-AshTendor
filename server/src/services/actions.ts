@@ -254,6 +254,7 @@ export async function updateUserAccessAction(actor: User, formData: FormData): P
       userId: String(formData.get("userId") || ""),
       role: String(formData.get("role") || ""),
       allow: formData.get("allow") === "yes",
+      phone: formData.has("phone") ? String(formData.get("phone") || "") : undefined,
     });
   } catch (error) {
     return failure(error);

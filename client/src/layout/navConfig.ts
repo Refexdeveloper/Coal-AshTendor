@@ -1,23 +1,20 @@
-import { CREATOR_ROLES } from "@client/lib/labels";
+/** The side menu the Group CEO sees. Every login gets this same list, including Portals. */
+const CEO_MENU = ["/", "/worklist", "/register", "/bonds", "/guarantees", "/reports/users", "/reports", "/notifications", "/portals"];
 
-/** `roles` limits an entry to those roles; entries without it show for everyone. */
-export const NAV: { href: string; label: string; icon: string; roles?: string[] }[] = [
+export const NAV: { href: string; label: string; icon: string }[] = [
   { href: "/", label: "Pipeline", icon: "grid" },
   { href: "/worklist", label: "My worklist", icon: "check" },
   { href: "/register", label: "Tender register", icon: "list" },
-  { href: "/tenders/new", label: "New tender", icon: "plus", roles: CREATOR_ROLES },
   { href: "/bonds", label: "ISB bonds", icon: "shield" },
   { href: "/guarantees", label: "Bank guarantees", icon: "bank" },
-  { href: "/reports/users", label: "User report", icon: "users", roles: ["ADMIN", "GROUP_CEO", "DEPT_HEAD", "COORDINATOR"] },
+  { href: "/reports/users", label: "User report", icon: "users" },
   { href: "/reports", label: "Reports", icon: "chart" },
   { href: "/notifications", label: "Notifications", icon: "bell" },
-  { href: "/email-logs", label: "Email log", icon: "mail", roles: ["ADMIN"] },
   { href: "/portals", label: "Portals", icon: "globe" },
-  { href: "/admin", label: "Administration", icon: "gear", roles: ["ADMIN"] },
 ];
 
-export function navFor(role: string) {
-  return NAV.filter((item) => !item.roles || item.roles.includes(role));
+export function navFor(_role: string) {
+  return NAV.filter((item) => CEO_MENU.includes(item.href));
 }
 
 export function navTitle(pathname: string) {

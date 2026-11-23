@@ -430,6 +430,15 @@ function PeopleTable({ users, run }: { users: PublicUser[]; run: Run }) {
                       <input type="checkbox" name="allow" value="yes" defaultChecked={user.active} />
                       Can sign in
                     </label>
+                    <input
+                      name="phone"
+                      type="tel"
+                      inputMode="tel"
+                      defaultValue={user.phone ?? ""}
+                      placeholder="Mobile for WhatsApp"
+                      aria-label={`${user.name} mobile for WhatsApp`}
+                      className="user-phone"
+                    />
                     <select name="role" defaultValue={ROLES[user.role] ? user.role : ""}>
                       <option value="">Choose a role</option>
                       {Object.entries(ROLES).map(([value, label]) => (

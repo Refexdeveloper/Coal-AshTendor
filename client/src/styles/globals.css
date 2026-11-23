@@ -3289,3 +3289,9 @@ tr.site-detail-row > td { background: var(--paper); padding: 0; }
 }
 .line-tip::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; background: #0f172a; transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
 @keyframes line-tip-in { from { opacity: 0; transform: translate(-50%, calc(-100% + 4px)); } to { opacity: 1; transform: translate(-50%, -100%); } }
+
+/* WhatsApp log */
+@media (min-width: 1200px) { .sk-grid.wa-cards, .sk-grid.wa-cards:has(> :nth-child(8)) { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.wa-cards { margin-bottom: 16px; }
+.wa-people { text-decoration: none; color: inherit; }
+.user-phone { width: 170px; }
