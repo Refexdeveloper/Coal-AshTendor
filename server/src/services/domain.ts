@@ -5,9 +5,10 @@ import { effectiveValue, extractFields, parseDateTime, parseInr, type FieldHit, 
 import { NOT_FOUND, TENDER_FIELDS } from "../utils/fields";
 import { allowedUpload, deleteStored, pagesFromBuffer, sha256, storeFile } from "./files";
 import { extractUploadedFile, overlayHits } from "./ocr";
-import { CLOSED_OVERALL, CREATOR_ROLES, EDITOR_ROLES, MANAGER_ROLES, OPEN_TASK, WORKABLE } from "../utils/labels";
+import { CLOSED_OVERALL, CREATOR_ROLES, EDITOR_ROLES, MANAGER_ROLES, OPEN_TASK, STAGE as STAGE_NAME, WORKABLE } from "../utils/labels";
 import { BUSINESS_LINES, detectLine, ownersFor, type BusinessLine } from "./team";
 import { emailsFor, isStepAction, mailOcrResult, notifyAddresses, notifyStepMoved } from "./notify";
+import { phonesFor, queueWhatsApp } from "./whatsapp";
 
 export class WorkflowError extends Error {
   constructor(message: string) {
@@ -342,6 +343,10 @@ async function rememberManual(tenderId: string, key: string, value: string, acto
 }
 
 async function notifyTasks(tenderId: string, tasks: WorkflowTask[], calendar: Calendar, event = "TASK_ASSIGNED") {
+  // WhatsApp, as in the P2P app: each new owner of a step gets a short notice with a link to the tender.
+  if (event === "TASK_ASSIGNED" && tasks.length) {
+    await whatsAppForSteps(tenderId, tasks).catch((error) => console.error("WhatsApp notice failed", error));
+  }
   for (const task of tasks) {
     await notifyAddresses({
       tenderId,
@@ -355,6 +360,31 @@ async function notifyTasks(tenderId: string, tasks: WorkflowTask[], calendar: Ca
         detail: task.comments,
       },
     });
+  }
+}
+
+/** One WhatsApp notice per owner of each step: who, which tender, the step and whether it was sent back. */
+async function whatsAppForSteps(tenderId: string, tasks: WorkflowTask[]) {
+  const tender = await db.tender.findUnique({ where: { id: tenderId } });
+  if (!tender) return;
+  const { emailLink } = await import("./notify");
+  const link = await emailLink(`/tenders/${tenderId}?tab=overview`);
+  for (const task of tasks) {
+    const stage = STAGE_NAME[task.stage] ?? task.title;
+    const returned = task.status === "RETURNED_FOR_REVISION";
+    for (const person of await phonesFor(parseIds(task.assigneeIds))) {
+      void queueWhatsApp({
+        tenderId,
+        taskId: task.id,
+        recordId: tender.recordId,
+        userId: person.id,
+        name: person.name,
+        phone: person.phone,
+        status: returned ? `Sent back - ${stage}` : `Pending - ${stage}`,
+        workflow: `${stage}: ${tender.projectName || tender.clientName || "Tender"}`,
+        link,
+      });
+    }
   }
 }
 

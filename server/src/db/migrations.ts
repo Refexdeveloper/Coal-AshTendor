@@ -6,6 +6,7 @@ const run = (sql: string) => db.$queryRaw(Object.assign([sql], { raw: [sql] }) a
 /** Columns added after the first release. New databases get them from schema.sql; existing ones here. */
 const ADDED_COLUMNS: Record<string, [string, string][]> = {
   Tender: [["businessLine", "VARCHAR(191) NOT NULL DEFAULT 'ASH'"]],
+  User: [["phone", "VARCHAR(32) NOT NULL DEFAULT ''"]],
   EmdRecord: [
     ["bgRequest", "LONGTEXT NULL"],
     ["bankDetails", "VARCHAR(255) NOT NULL DEFAULT ''"],
@@ -55,6 +56,25 @@ const ADDED_COLUMNS: Record<string, [string, string][]> = {
 
 /** Tables added after the first release, created when missing. */
 const ADDED_TABLES: string[] = [
+  `CREATE TABLE IF NOT EXISTS \`WhatsAppLog\` (
+  \`id\` VARCHAR(191) NOT NULL,
+  \`tenderId\` VARCHAR(191) NOT NULL DEFAULT '',
+  \`taskId\` VARCHAR(191) NOT NULL DEFAULT '',
+  \`recordId\` VARCHAR(191) NOT NULL DEFAULT '',
+  \`userId\` VARCHAR(191) NOT NULL DEFAULT '',
+  \`toName\` VARCHAR(191) NOT NULL DEFAULT '',
+  \`toPhone\` VARCHAR(32) NOT NULL DEFAULT '',
+  \`deliveredTo\` VARCHAR(32) NOT NULL DEFAULT '',
+  \`stage\` VARCHAR(191) NOT NULL DEFAULT '',
+  \`status\` VARCHAR(16) NOT NULL DEFAULT 'QUEUED',
+  \`parameters\` TEXT NULL,
+  \`messageId\` VARCHAR(191) NOT NULL DEFAULT '',
+  \`error\` TEXT NULL,
+  \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (\`id\`),
+  KEY \`WhatsAppLog_createdAt_idx\` (\`createdAt\`),
+  KEY \`WhatsAppLog_tenderId_idx\` (\`tenderId\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
   `CREATE TABLE IF NOT EXISTS \`UserActivity\` (
   \`id\` VARCHAR(191) NOT NULL,
   \`userId\` VARCHAR(191) NOT NULL,

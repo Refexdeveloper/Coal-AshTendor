@@ -80,6 +80,7 @@ const MODELS: Record<string, string> = {
   watchSite: "WatchSite",
   siteTender: "SiteTender",
   userActivity: "UserActivity",
+  whatsAppLog: "WhatsAppLog",
 };
 
 const RELATIONS: Record<string, Record<string, Relation>> = {
@@ -194,6 +195,7 @@ export interface Db {
   watchSite: Model;
   siteTender: Model;
   userActivity: Model;
+  whatsAppLog: Model;
   $transaction<T>(work: (tx: Db) => Promise<T>): Promise<T>;
   $transaction<T>(work: Lazy<T>[]): Promise<T[]>;
   $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Lazy<unknown>;

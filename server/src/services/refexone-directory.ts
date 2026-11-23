@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { db, type User } from "../db";
+import { normalizePhone } from "./whatsapp";
 
 /**
  * Refex One user directory sync, as in the P2P app: GET {REFEXONE_API_URL}/users with an org-admin token.
@@ -9,7 +10,7 @@ import { db, type User } from "../db";
  * Nobody is given access by the sync, administrators are never switched off, and local-only accounts are left alone.
  */
 
-export type DirectoryPerson = { email: string; name: string; active: boolean; designation: string };
+export type DirectoryPerson = { email: string; name: string; active: boolean; designation: string; phone: string };
 export type SyncResult = { total: number; created: number; renamed: number; deactivated: number; unchanged: number; skippedAdmins: string[] };
 
 const SYNC_ENTITY = "RefexOneSync";
@@ -50,7 +51,9 @@ export function normalizePerson(raw: Record<string, unknown>): DirectoryPerson |
   const status = text(raw.status).toLowerCase();
   const active = status ? status === "active" : raw.is_active !== false && raw.active !== false;
   const designation = text(raw.designation) || text(raw.job_title) || text(raw.position) || text(raw.title);
-  return { email, name, active, designation };
+  // Mobile for WhatsApp notices, as the P2P app reads it.
+  const phone = text(raw.work_mobile) || text(raw.mobile) || text(raw.employee_mobile) || text(raw.phone) || text(raw.phone_number);
+  return { email, name, active, designation, phone };
 }
 
 /** Reads the whole Refex One directory. Throws a message an administrator can act on. */
@@ -119,13 +122,16 @@ async function runSync(actor: SyncActor): Promise<SyncResult> {
     if (!existing) {
       if (!person.active) continue;
       await db.user.create({
-        data: { personKey: personKeyFor(person.email, takenKeys), name: person.name, email: person.email, role: "PENDING", passwordHash: lockedHash, active: false },
+        data: { personKey: personKeyFor(person.email, takenKeys), name: person.name, email: person.email, phone: normalizePhone(person.phone), role: "PENDING", passwordHash: lockedHash, active: false },
       });
       result.created += 1;
       continue;
     }
     const data: Partial<User> = {};
     if (person.name && person.name !== existing.name) data.name = person.name;
+    // A mobile typed in Administration is kept; the directory only fills an empty one.
+    const phone = normalizePhone(person.phone);
+    if (phone && !(existing as { phone?: string }).phone) (data as Record<string, unknown>).phone = phone;
     if (!person.active && existing.active) {
       if (existing.role === "ADMIN" || existing.id === actor.id) result.skippedAdmins.push(existing.email);
       else data.active = false;
