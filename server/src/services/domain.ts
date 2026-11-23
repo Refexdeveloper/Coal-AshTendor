@@ -1418,7 +1418,7 @@ export async function saveEmdProgress(
   const settings = await db.appSettings.findUnique({ where: { id: "default" } });
   let documentId = task.tender.emd?.documentId || "";
   for (const file of input.files ?? []) {
-    if (!allowedUpload(file.name, file.type)) throw new WorkflowError("Evidence must be a PDF, an Excel file, a text file, or an image.");
+    if (!allowedUpload(file.name, file.type)) throw new WorkflowError("Evidence must be a PDF, a Word document, an Excel file, a text file, or an image.");
     if (file.buffer.length > 20 * 1024 * 1024) throw new WorkflowError(`${file.name} is larger than 20 MB.`);
     const hash = sha256(file.buffer);
     const existing = await db.tenderDocument.findFirst({ where: { tenderId: task.tenderId, sha256: hash, docType: "EMD_EVIDENCE" } });

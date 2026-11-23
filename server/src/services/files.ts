@@ -163,8 +163,17 @@ export function isSpreadsheet(fileName: string, mime = "") {
 
 export function allowedUpload(fileName: string, mime: string) {
   const lower = fileName.toLowerCase();
-  const mimeOk = ["application/pdf", "text/plain", "image/png", "image/jpeg", "image/webp", "image/tiff"].includes(mime);
-  const extOk = [".pdf", ".txt", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ...SPREADSHEET_EXT].some((ext) => lower.endsWith(ext));
+  const mimeOk = [
+    "application/pdf",
+    "text/plain",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/tiff",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ].includes(mime);
+  const extOk = [".pdf", ".txt", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".doc", ".docx", ...SPREADSHEET_EXT].some((ext) => lower.endsWith(ext));
   return mimeOk || extOk || isSpreadsheet(fileName, mime);
 }
 

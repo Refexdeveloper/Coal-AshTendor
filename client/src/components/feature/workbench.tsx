@@ -440,7 +440,7 @@ function TaskForm({
             <option>Prepared</option>
           </select>
         </label>
-        <FilePick name="files" multiple label="Evidence" hint="Choose one or more scans. Each file can be removed before you save." />
+        <FilePick name="files" multiple label={task.stage === "EMD_ISB" ? "Evidence document" : "Evidence"} hint="Word, PDF, Excel, a scan or a text file. Several files at once. Excel is stored, and only the Group CEO can open it." />
         <label className="wide">
           Notes
           <textarea name="notes" rows={2} defaultValue={emd?.notes} />
