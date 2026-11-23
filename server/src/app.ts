@@ -78,10 +78,17 @@ export function createApp() {
     index: false,
     setHeaders(res, filePath) {
       if (filePath.endsWith(".mjs")) res.setHeader("Content-Type", "text/javascript");
+      // Built files carry a content hash in their name, so they never change; index.html must always be fresh.
+      if (/[\\/]assets[\\/]/.test(filePath)) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     },
   }));
+  // A program file from an older build: answer 404, not the app page, so the browser reloads onto the new build.
+  app.use("/assets", (_req, res) => {
+    res.status(404).type("text").send("Not found");
+  });
   app.get(/^(?!\/api\/).*/, (_req, res) => {
-    if (existsSync(clientIndex)) res.sendFile(clientIndex);
+    // Never cached: after a deploy the browser must pick up the new file names straight away.
+    if (existsSync(clientIndex)) res.sendFile(clientIndex, { headers: { "Cache-Control": "no-cache, no-store, must-revalidate" } });
     else res.status(404).send("The frontend is not built yet. Run: npm run build");
   });
 
