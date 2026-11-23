@@ -23,7 +23,7 @@ const TONE: Record<Row["status"], string> = { SENT: "good", FAILED: "bad", SKIPP
 const masked = (phone: string) => (phone.length > 4 ? `${"•".repeat(Math.max(0, phone.length - 4))}${phone.slice(-4)}` : phone || "—");
 
 /** WhatsApp notices sent when a tender step moves: setup state and every attempt. Administrator only. */
-export default function WhatsAppLogsPage() {
+export function WhatsAppLogPanel() {
   const { data, error, reload } = useApi<Data>("/whatsapp-logs");
   const [filter, setFilter] = useState<"" | Row["status"]>("");
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
@@ -41,17 +41,15 @@ export default function WhatsAppLogsPage() {
           : { tone: "warn", text: "Not sent from this machine. Notices are logged here; set WHATSAPP_TEST_TO to try a real message locally." };
 
   return (
-    <>
-      <header className="page-head">
+    <section className="stack" id="whatsapp-log">
+      <header className="panel-head">
         <div>
-          <h1>WhatsApp log</h1>
-          <p>When a tender moves to a new step, its new owner gets a WhatsApp notice with the tender, the step and a link, sent the same way as Procure to Pay.</p>
+          <h2>WhatsApp notification log</h2>
+          <p>When a tender moves to a new step, its new owner gets a WhatsApp notice with the tender, the step and a link.</p>
         </div>
-        <div className="actions">
-          <button type="button" className="btn ghost" onClick={() => void reload()}>
-            Refresh
-          </button>
-        </div>
+        <button type="button" className="btn ghost" onClick={() => void reload()}>
+          Refresh
+        </button>
       </header>
       <p className={`banner ${setup.tone}`}>{setup.text}</p>
 
@@ -141,6 +139,10 @@ export default function WhatsAppLogsPage() {
           </tbody>
         </table>
       </div>
-    </>
+    </section>
   );
+}
+
+export default function WhatsAppLogsPage() {
+  return <WhatsAppLogPanel />;
 }
