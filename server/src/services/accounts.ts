@@ -35,11 +35,18 @@ export async function createAccount(input: { name: string; email: string; role: 
 }
 
 /** Stores a Refex One person without letting them sign in until an administrator allows it. */
-export async function recordRefexOnePerson(emailInput: string, nameInput: string) {
+export async function recordRefexOnePerson(emailInput: string, nameInput: string, phoneInput = "") {
   const email = emailInput.trim().toLowerCase();
   const name = nameInput.trim() || email;
+  const phone = normalizePhone(phoneInput);
   const existing = await db.user.findFirst({ where: { email } });
-  if (existing) return existing;
+  if (existing) {
+    if (phone && phone !== ((existing as { phone?: string }).phone ?? "")) {
+      await db.user.update({ where: { id: existing.id }, data: { phone } });
+      return { ...existing, phone };
+    }
+    return existing;
+  }
   let personKey = personKeyFor(email);
   const taken = await db.user.findFirst({ where: { personKey } });
   if (taken) personKey = `${personKey.slice(0, 36)}${Date.now().toString(36).slice(-4)}`;
@@ -48,6 +55,7 @@ export async function recordRefexOnePerson(emailInput: string, nameInput: string
       personKey,
       name,
       email,
+      phone,
       role: "PENDING",
       passwordHash: bcrypt.hashSync(randomBytes(24).toString("hex"), 10),
       active: false,

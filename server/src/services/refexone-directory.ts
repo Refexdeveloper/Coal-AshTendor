@@ -11,7 +11,7 @@ import { normalizePhone } from "./whatsapp";
  */
 
 export type DirectoryPerson = { email: string; name: string; active: boolean; designation: string; phone: string };
-export type SyncResult = { total: number; created: number; renamed: number; deactivated: number; unchanged: number; skippedAdmins: string[] };
+export type SyncResult = { total: number; created: number; renamed: number; deactivated: number; phones: number; unchanged: number; skippedAdmins: string[] };
 
 const SYNC_ENTITY = "RefexOneSync";
 const FAILED_ENTITY = "RefexOneSyncFailed";
@@ -41,7 +41,25 @@ function listOf(body: unknown): Record<string, unknown>[] {
   return [];
 }
 
-const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+const text = (value: unknown) => (typeof value === "string" ? value.trim() : typeof value === "number" && Number.isFinite(value) ? String(Math.trunc(value)) : "");
+
+const PHONE_KEYS = ["work_mobile", "mobile", "employee_mobile", "phone", "phone_number", "mobile_number", "contact_number", "whatsapp", "whatsapp_number"];
+
+/** Mobile from a directory row, including a number nested under employee, profile or contact. */
+function phoneOf(raw: Record<string, unknown>) {
+  const sources: Record<string, unknown>[] = [raw];
+  for (const key of ["employee", "profile", "contact", "user"]) {
+    const nested = raw[key];
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) sources.push(nested as Record<string, unknown>);
+  }
+  for (const source of sources) {
+    for (const key of PHONE_KEYS) {
+      const value = text(source[key]);
+      if (value) return value;
+    }
+  }
+  return "";
+}
 
 /** One directory row in our shape, or null when it has no usable email. */
 export function normalizePerson(raw: Record<string, unknown>): DirectoryPerson | null {
@@ -51,8 +69,7 @@ export function normalizePerson(raw: Record<string, unknown>): DirectoryPerson |
   const status = text(raw.status).toLowerCase();
   const active = status ? status === "active" : raw.is_active !== false && raw.active !== false;
   const designation = text(raw.designation) || text(raw.job_title) || text(raw.position) || text(raw.title);
-  // Mobile for WhatsApp notices, as the P2P app reads it.
-  const phone = text(raw.work_mobile) || text(raw.mobile) || text(raw.employee_mobile) || text(raw.phone) || text(raw.phone_number);
+  const phone = phoneOf(raw);
   return { email, name, active, designation, phone };
 }
 
@@ -113,7 +130,7 @@ async function runSync(actor: SyncActor): Promise<SyncResult> {
   const local = await db.user.findMany();
   const byEmail = new Map(local.map((user) => [user.email.toLowerCase(), user]));
   const takenKeys = new Set(local.map((user) => user.personKey));
-  const result: SyncResult = { total: people.length, created: 0, renamed: 0, deactivated: 0, unchanged: 0, skippedAdmins: [] };
+  const result: SyncResult = { total: people.length, created: 0, renamed: 0, deactivated: 0, phones: 0, unchanged: 0, skippedAdmins: [] };
   // Placeholder hash for people added by the sync: nobody knows it, and allowing access later sets the real one.
   const lockedHash = bcrypt.hashSync(randomBytes(24).toString("hex"), 10);
 
@@ -129,9 +146,12 @@ async function runSync(actor: SyncActor): Promise<SyncResult> {
     }
     const data: Partial<User> = {};
     if (person.name && person.name !== existing.name) data.name = person.name;
-    // A mobile typed in Administration is kept; the directory only fills an empty one.
+    // Refex One is the source for the mobile. A number it sends replaces a blank or an older one.
     const phone = normalizePhone(person.phone);
-    if (phone && !(existing as { phone?: string }).phone) (data as Record<string, unknown>).phone = phone;
+    if (phone && phone !== ((existing as { phone?: string }).phone ?? "")) {
+      (data as Record<string, unknown>).phone = phone;
+      result.phones += 1;
+    }
     if (!person.active && existing.active) {
       if (existing.role === "ADMIN" || existing.id === actor.id) result.skippedAdmins.push(existing.email);
       else data.active = false;
@@ -218,6 +238,7 @@ export function describeSync(result: SyncResult) {
     `${result.total} people in Refex One`,
     `${result.created} added and waiting for access`,
     `${result.renamed} names updated`,
+    `${result.phones} mobile numbers filled from Refex One`,
     `${result.deactivated} switched off because Refex One marks them inactive`,
   ];
   const kept = result.skippedAdmins.length ? ` Administrators kept on although inactive in Refex One: ${result.skippedAdmins.join(", ")}.` : "";

@@ -4,6 +4,7 @@ import type { Request } from "express";
 import { SAML, ValidateInResponseTo, generateServiceProviderMetadata, type Profile } from "@node-saml/node-saml";
 import { db } from "../db";
 import { recordRefexOnePerson } from "./accounts";
+import { normalizePhone } from "./whatsapp";
 
 const EMAIL_CLAIMS = [
   "email",
@@ -244,6 +245,31 @@ function displayName(profile: Profile, email: string) {
   return combined || email;
 }
 
+const PHONE_CLAIMS = [
+  "work_mobile",
+  "mobile",
+  "employee_mobile",
+  "phone",
+  "phone_number",
+  "mobile_number",
+  "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/mobilephone",
+  "urn:oid:0.9.2342.19200300.100.1.41",
+];
+
+/** A mobile number Refex One put on the sign-in, when the assertion carries one. */
+function phoneFrom(profile: Profile) {
+  for (const key of PHONE_CLAIMS) {
+    const phone = normalizePhone(claimText(profile[key]));
+    if (phone) return phone;
+  }
+  for (const [key, value] of Object.entries(profile)) {
+    if (!/mobile|phone|tel/i.test(key)) continue;
+    const phone = normalizePhone(claimText(value));
+    if (phone) return phone;
+  }
+  return "";
+}
+
 function emailFrom(profile: Profile) {
   for (const key of EMAIL_CLAIMS) {
     const text = claimText(profile[key]);
@@ -264,8 +290,8 @@ export async function consumeRefexOne(req: Request, body: Record<string, string>
   if (!profile) return { error: "Refex One did not confirm this sign-in." };
   const email = emailFrom(profile);
   if (!email) return { error: "Refex One did not include an email address." };
-  let user = await db.user.findFirst({ where: { email } });
-  if (!user) user = await recordRefexOnePerson(email, displayName(profile, email));
+  const phone = phoneFrom(profile);
+  let user = await recordRefexOnePerson(email, displayName(profile, email), phone);
   if (!user.active) {
     return { error: `${email} is saved from Refex One. An administrator must allow this person to sign in and choose a role.` };
   }

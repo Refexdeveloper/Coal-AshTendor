@@ -34,7 +34,7 @@ type Data = {
   };
 };
 
-type SyncSummary = { total: number; created: number; renamed: number; deactivated: number; unchanged: number; skippedAdmins: string[] };
+type SyncSummary = { total: number; created: number; renamed: number; deactivated: number; phones?: number; unchanged: number; skippedAdmins: string[] };
 type Run = (name: string) => (formData: FormData) => Promise<void>;
 
 const DECISIONS = [
@@ -189,7 +189,7 @@ export default function AdminPage() {
       <section className="panel stack" id="people">
         <h2>People</h2>
         <p className="muted">
-          A person who signs in with Refex One is listed here and cannot enter until you allow it. Tick Can sign in, choose a role, and save. Only those people can sign in. Their password is CoalAsh@2026.
+          A person who signs in with Refex One is listed here and cannot enter until you allow it. Tick Can sign in, choose a role, and save. The mobile number is filled from Refex One. Only those people can sign in. Their password is CoalAsh@2026.
         </p>
         <form action={run("add-user")} className="form-grid">
           <label>
@@ -461,7 +461,7 @@ function RefexOnePanel({ refexone, users, run, error }: { refexone: Data["refexo
           <h2>Refex One users</h2>
           <p className="muted">
             Brings everyone in the Refex One directory into People. New people wait for access until you allow them below, names are kept up to date, and
-            people Refex One marks inactive lose sign-in. The sync never gives anyone access and never switches off an administrator.
+            mobile numbers are filled from Refex One. People Refex One marks inactive lose sign-in. The sync never gives anyone access and never switches off an administrator.
           </p>
         </div>
         <span className={`pill ${refexone.configured ? "good" : "warn"}`}>{refexone.configured ? "Connected" : "Not set up"}</span>
@@ -499,7 +499,11 @@ function RefexOnePanel({ refexone, users, run, error }: { refexone: Data["refexo
         <div>
           <span>Updated last time</span>
           <b>{last?.summary ? last.summary.renamed + last.summary.deactivated : "—"}</b>
-          <small>{last?.summary ? `${last.summary.renamed} renamed · ${last.summary.deactivated} switched off` : "names and status"}</small>
+          <small>
+            {last?.summary
+              ? `${last.summary.renamed} renamed · ${last.summary.phones ?? 0} mobiles · ${last.summary.deactivated} switched off`
+              : "names, mobiles and status"}
+          </small>
         </div>
         <a href="#people" className={waiting ? "warn" : ""}>
           <span>Waiting for access</span>
