@@ -18,6 +18,8 @@ type Data = {
   users: PublicUser[];
   tenderCount: number;
   tenders: { id: string; recordId: string; projectName: string; clientName: string }[];
+  guarantees: { id: string; bgNumber: string; beneficiary: string; bgType: string; bank: string }[];
+  bonds: { id: string; bondNumber: string; customer: string; kind: string; insurer: string }[];
   refexone: {
     configured: boolean;
     lastSync: { at: Date; by: string; summary: SyncSummary | null } | null;
@@ -55,7 +57,7 @@ export default function AdminPage() {
   const { data, error, reload } = useApi<Data>("/admin");
   if (actor.role !== "ADMIN") return <p className="panel">Administration is limited to the system administrator.</p>;
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
-  const { calendar, holidays, policies, settings, escalations, templates, users, tenderCount, tenders, refexone, sso } = data;
+  const { calendar, holidays, policies, settings, escalations, templates, users, tenderCount, tenders, guarantees, bonds, refexone, sso } = data;
   const days = new Set((calendar?.workingDays ?? "1,2,3,4,5").split(","));
   return (
     <>
@@ -183,6 +185,7 @@ export default function AdminPage() {
         </button>
       </form>
       <TenderData tenders={tenders} count={tenderCount} run={run} />
+      <RegisterData guarantees={guarantees} bonds={bonds} run={run} />
       <RefexOneSsoPanel sso={sso} />
       <RefexOnePanel refexone={refexone} users={users} run={run} error={query.error} />
       <section className="panel stack" id="people">
@@ -290,6 +293,147 @@ function ClearTenders({ count, run }: { count: number; run: (name: string) => (f
       </label>
       <button className="btn danger" type="submit" disabled={phrase !== "REMOVE" || count === 0}>
         Remove all tender data
+      </button>
+    </form>
+  );
+}
+
+function RegisterData({
+  guarantees,
+  bonds,
+  run,
+}: {
+  guarantees: { id: string; bgNumber: string; beneficiary: string; bgType: string; bank: string }[];
+  bonds: { id: string; bondNumber: string; customer: string; kind: string; insurer: string }[];
+  run: Run;
+}) {
+  return (
+    <section className="panel stack">
+      <h2>Bank guarantees</h2>
+      <p className="muted">Remove one row, or the whole register. Uploaded copies for that BG number go with it.</p>
+      <div className="table-wrap flat">
+        <table>
+          <thead>
+            <tr>
+              <th>BG number</th>
+              <th>Type</th>
+              <th>Beneficiary</th>
+              <th>Bank</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {guarantees.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="empty">
+                  No bank guarantees stored.
+                </td>
+              </tr>
+            ) : null}
+            {guarantees.map((row) => (
+              <tr key={row.id}>
+                <td>{row.bgNumber || "—"}</td>
+                <td>{row.bgType || "—"}</td>
+                <td>{row.beneficiary || "—"}</td>
+                <td>{row.bank || "—"}</td>
+                <td>
+                  <form
+                    action={async (formData) => {
+                      if (!window.confirm(`Remove bank guarantee ${row.bgNumber || "this row"} and its documents?`)) return;
+                      await run("delete-guarantee")(formData);
+                    }}
+                  >
+                    <input type="hidden" name="id" value={row.id} />
+                    <button className="btn ghost" type="submit">
+                      Remove
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <ConfirmClear title="Remove all bank guarantee data" count={guarantees.length} noun="bank guarantee" phrase="REMOVE BG" intent="clear-guarantees" run={run} />
+
+      <h2>ISB</h2>
+      <p className="muted">Remove one bond, or the whole ISB register. Uploaded copies for that bond number go with it.</p>
+      <div className="table-wrap flat">
+        <table>
+          <thead>
+            <tr>
+              <th>Bond number</th>
+              <th>Type</th>
+              <th>Customer</th>
+              <th>Insurer</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {bonds.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="empty">
+                  No ISB records stored.
+                </td>
+              </tr>
+            ) : null}
+            {bonds.map((row) => (
+              <tr key={row.id}>
+                <td>{row.bondNumber || "—"}</td>
+                <td>{row.kind === "EMD" ? "EMD" : "PBG"}</td>
+                <td>{row.customer || "—"}</td>
+                <td>{row.insurer || "—"}</td>
+                <td>
+                  <form
+                    action={async (formData) => {
+                      if (!window.confirm(`Remove ISB ${row.bondNumber || "this row"} and its documents?`)) return;
+                      await run("delete-bond")(formData);
+                    }}
+                  >
+                    <input type="hidden" name="id" value={row.id} />
+                    <button className="btn ghost" type="submit">
+                      Remove
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <ConfirmClear title="Remove all ISB data" count={bonds.length} noun="ISB record" phrase="REMOVE ISB" intent="clear-bonds" run={run} />
+    </section>
+  );
+}
+
+function ConfirmClear({
+  title,
+  count,
+  noun,
+  phrase,
+  intent,
+  run,
+}: {
+  title: string;
+  count: number;
+  noun: string;
+  phrase: string;
+  intent: string;
+  run: Run;
+}) {
+  const [typed, setTyped] = useState("");
+  return (
+    <form action={run(intent)} className="stack">
+      <h3>{title}</h3>
+      <p>
+        {count === 1 ? `1 ${noun} is stored.` : `${count} ${noun}s are stored.`} This cannot be undone.
+      </p>
+      <label>
+        Type {phrase} to confirm
+        <input name="confirm" value={typed} onChange={(event) => setTyped(event.target.value)} autoComplete="off" />
+      </label>
+      <button className="btn danger" type="submit" disabled={typed !== phrase || count === 0}>
+        {title}
       </button>
     </form>
   );

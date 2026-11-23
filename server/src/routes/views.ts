@@ -342,7 +342,7 @@ views.get("/admin", async (req, res) => {
     res.status(403).json({ error: "Administration is limited to the system administrator." });
     return;
   }
-  const [calendar, holidays, policies, settings, escalations, templates, users, tenders] = await Promise.all([
+  const [calendar, holidays, policies, settings, escalations, templates, users, tenders, guarantees, bonds] = await Promise.all([
     db.calendarSettings.findUnique({ where: { id: "default" } }),
     db.holiday.findMany({ orderBy: { date: "asc" } }),
     db.slaPolicy.findMany({ orderBy: { stage: "asc" } }),
@@ -351,6 +351,8 @@ views.get("/admin", async (req, res) => {
     db.emailTemplate.findMany({ orderBy: { event: "asc" } }),
     db.user.findMany({ orderBy: { name: "asc" } }),
     db.tender.findMany({ orderBy: { updatedAt: "desc" }, select: { id: true, recordId: true, projectName: true, clientName: true } }),
+    db.bankGuarantee.findMany({ orderBy: [{ serialNo: "asc" }] }),
+    db.suretyBond.findMany({ orderBy: [{ kind: "asc" }, { serialNo: "asc" }] }),
   ]);
   res.json({
     calendar,
@@ -363,6 +365,20 @@ views.get("/admin", async (req, res) => {
     users: users.map((user: { phone?: string } & Parameters<typeof publicUser>[0]) => ({ ...publicUser(user), phone: user.phone ?? "" })),
     tenderCount: tenders.length,
     tenders,
+    guarantees: guarantees.map((row: { id: string; bgNumber: string; beneficiary: string; bgType: string; bank: string }) => ({
+      id: row.id,
+      bgNumber: row.bgNumber,
+      beneficiary: row.beneficiary,
+      bgType: row.bgType,
+      bank: row.bank,
+    })),
+    bonds: bonds.map((row: { id: string; bondNumber: string; customer: string; kind: string; insurer: string }) => ({
+      id: row.id,
+      bondNumber: row.bondNumber,
+      customer: row.customer,
+      kind: row.kind,
+      insurer: row.insurer,
+    })),
     refexone: { configured: directoryConfigured(), lastSync: await lastSync(), schedule: await syncSchedule() },
     sso: ssoStatus(req),
   });

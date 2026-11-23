@@ -2397,6 +2397,62 @@ export async function removeTender(actor: Actor, tenderId: string) {
   return tender.recordId;
 }
 
+/** Deletes one bank guarantee and the copies stored for its BG number. */
+export async function removeGuarantee(actor: Actor, id: string) {
+  requireAdmin(actor);
+  const row = await db.bankGuarantee.findUnique({ where: { id } });
+  if (!row) throw new WorkflowError("That bank guarantee was not found.");
+  const { bgKey } = await import("./bg-documents");
+  const key = bgKey(String(row.bgNumber ?? ""));
+  const documents = key ? await db.bgDocument.findMany({ where: { bgNumber: key } }) : [];
+  await db.$transaction(async (tx) => {
+    if (key) await tx.bgDocument.deleteMany({ where: { bgNumber: key } });
+    await tx.bankGuarantee.delete({ where: { id } });
+  });
+  await Promise.all(documents.map((document) => deleteStored(document.storedPath).catch(() => undefined)));
+  return String(row.bgNumber || "Bank guarantee");
+}
+
+/** Deletes one ISB and the copies stored for its bond number. */
+export async function removeBond(actor: Actor, id: string) {
+  requireAdmin(actor);
+  const row = await db.suretyBond.findUnique({ where: { id } });
+  if (!row) throw new WorkflowError("That ISB record was not found.");
+  const { bondKey } = await import("./bond-documents");
+  const key = bondKey(String(row.bondNumber ?? ""));
+  const documents = key ? await db.bondDocument.findMany({ where: { bondKey: key } }) : [];
+  await db.$transaction(async (tx) => {
+    if (key) await tx.bondDocument.deleteMany({ where: { bondKey: key } });
+    await tx.suretyBond.delete({ where: { id } });
+  });
+  await Promise.all(documents.map((document) => deleteStored(document.storedPath).catch(() => undefined)));
+  return String(row.bondNumber || "ISB");
+}
+
+/** Deletes every bank guarantee and the uploaded BG copies. Tenders stay. */
+export async function removeAllGuarantees(actor: Actor) {
+  requireAdmin(actor);
+  const documents = await db.bgDocument.findMany();
+  const removed = await db.$transaction(async (tx) => {
+    await tx.bgDocument.deleteMany();
+    return tx.bankGuarantee.deleteMany();
+  });
+  await Promise.all(documents.map((document) => deleteStored(document.storedPath).catch(() => undefined)));
+  return removed.count;
+}
+
+/** Deletes every ISB (EMD and performance surety bond) and the uploaded bond copies. Tenders stay. */
+export async function removeAllBonds(actor: Actor) {
+  requireAdmin(actor);
+  const documents = await db.bondDocument.findMany();
+  const removed = await db.$transaction(async (tx) => {
+    await tx.bondDocument.deleteMany();
+    return tx.suretyBond.deleteMany();
+  });
+  await Promise.all(documents.map((document) => deleteStored(document.storedPath).catch(() => undefined)));
+  return removed.count;
+}
+
 /** Deletes every tender and the rows tied to it. Users, calendar, SLAs, and portals stay. */
 export async function removeAllTenderData(actor: Actor) {
   requireAdmin(actor);

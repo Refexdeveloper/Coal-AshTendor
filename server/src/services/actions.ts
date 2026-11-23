@@ -328,6 +328,56 @@ export async function deleteTenderAction(actor: User, formData: FormData): Promi
   }
 }
 
+export async function deleteGuaranteeAction(actor: User, formData: FormData): Promise<ActionState> {
+  const denied = adminOnly(actor);
+  if (denied) return denied;
+  const id = String(formData.get("id") || "");
+  if (!id) return { error: "Choose a bank guarantee to remove." };
+  try {
+    const label = await domain.removeGuarantee(actor, id);
+    return { ok: `Removed bank guarantee ${label} and its documents.` };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function deleteBondAction(actor: User, formData: FormData): Promise<ActionState> {
+  const denied = adminOnly(actor);
+  if (denied) return denied;
+  const id = String(formData.get("id") || "");
+  if (!id) return { error: "Choose an ISB record to remove." };
+  try {
+    const label = await domain.removeBond(actor, id);
+    return { ok: `Removed ISB ${label} and its documents.` };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function clearGuaranteesAction(actor: User, formData: FormData): Promise<ActionState> {
+  const denied = adminOnly(actor);
+  if (denied) return denied;
+  if (String(formData.get("confirm") || "") !== "REMOVE BG") return { error: "Type REMOVE BG to confirm." };
+  try {
+    const count = await domain.removeAllGuarantees(actor);
+    return { ok: count ? `Removed ${count} bank guarantee${count === 1 ? "" : "s"} and their documents.` : "There were no bank guarantees to remove." };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function clearBondsAction(actor: User, formData: FormData): Promise<ActionState> {
+  const denied = adminOnly(actor);
+  if (denied) return denied;
+  if (String(formData.get("confirm") || "") !== "REMOVE ISB") return { error: "Type REMOVE ISB to confirm." };
+  try {
+    const count = await domain.removeAllBonds(actor);
+    return { ok: count ? `Removed ${count} ISB record${count === 1 ? "" : "s"} and their documents.` : "There were no ISB records to remove." };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 export async function clearTendersAction(actor: User, formData: FormData): Promise<ActionState> {
   const denied = adminOnly(actor);
   if (denied) return denied;
