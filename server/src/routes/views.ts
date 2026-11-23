@@ -22,6 +22,12 @@ export function calendarJson(calendar: Calendar) {
 
 const mineWhere = (userId: string) => ({ status: { in: WORKABLE }, assigneeIds: { contains: `"${userId}"` } });
 
+/** Tender ids where this person is named on a task, including a step they have already finished. */
+async function assignedTenderIds(userId: string) {
+  const tasks = await db.workflowTask.findMany({ where: { assigneeIds: { contains: `"${userId}"` } } });
+  return new Set(tasks.map((task) => task.tenderId as string));
+}
+
 function idList(raw: string) {
   try {
     const value = JSON.parse(raw || "[]") as unknown;
@@ -57,7 +63,7 @@ views.get("/me", async (req, res) => {
   res.json({ user: publicUser(user), openTasks });
 });
 
-views.get("/dashboard", async (_req, res) => {
+views.get("/dashboard", async (req, res) => {
   await kickAutomation();
   const [tenders, users, calendar] = await Promise.all([
     db.tender.findMany({
@@ -73,7 +79,8 @@ views.get("/dashboard", async (_req, res) => {
     db.user.findMany(),
     getCalendar(),
   ]);
-  res.json({ kind: "executive", tenders, users: users.map(publicUser), calendar: calendarJson(calendar) });
+  const visible = req.actor!.role === "SALES" ? await assignedTenderIds(req.actor!.id) : null;
+  res.json({ kind: "executive", tenders: visible ? tenders.filter((tender) => visible.has(tender.id)) : tenders, users: users.map(publicUser), calendar: calendarJson(calendar) });
 });
 
 views.get("/worklist", async (req, res) => {
@@ -85,14 +92,15 @@ views.get("/worklist", async (req, res) => {
   res.json({ tasks, calendar: calendarJson(calendar) });
 });
 
-views.get("/register", async (_req, res) => {
+views.get("/register", async (req, res) => {
   await kickAutomation();
   const [tenders, users, calendar] = await Promise.all([
     db.tender.findMany({ include: { tasks: { where: { status: { in: WORKABLE } }, orderBy: { dueAt: "asc" } }, bid: true }, orderBy: { updatedAt: "desc" } }),
     db.user.findMany(),
     getCalendar(),
   ]);
-  res.json({ tenders, users: users.map(publicUser), calendar: calendarJson(calendar) });
+  const visible = req.actor!.role === "SALES" ? await assignedTenderIds(req.actor!.id) : null;
+  res.json({ tenders: visible ? tenders.filter((tender) => visible.has(tender.id)) : tenders, users: users.map(publicUser), calendar: calendarJson(calendar) });
 });
 
 /** Person-wise daily usage: who used the app on the day, and each person's tender tasks. Same page for every login. */
@@ -443,6 +451,10 @@ views.get("/tenders/:id", async (req, res) => {
     },
   });
   if (!tender) {
+    res.status(404).json({ error: "Tender not found" });
+    return;
+  }
+  if (actor.role === "SALES" && !tender.tasks.some((task) => idList(task.assigneeIds).includes(actor.id))) {
     res.status(404).json({ error: "Tender not found" });
     return;
   }
