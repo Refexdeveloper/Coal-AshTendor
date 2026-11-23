@@ -24,7 +24,9 @@ export async function loginAction(_state: ActionState, formData: FormData): Prom
   }
 }
 
+/** Signs out of Coal & Ash and goes back to Refex One, as the P2P app does. The admin sign-in page stays local. */
 export async function logoutAction() {
   await apiPost("/auth/logout").catch(() => null);
-  window.location.assign(window.location.pathname.startsWith("/admin") ? "/admin/login" : "/login");
+  if (window.location.pathname.startsWith("/admin")) window.location.assign("/admin/login");
+  else window.location.replace("https://refexone.com");
 }

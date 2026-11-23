@@ -5,6 +5,10 @@ import { roleTitle } from "@client/lib/labels";
 import { navTitle } from "./navConfig";
 import { NavIcon } from "./NavIcon";
 
+/** The Refex One portal people come from, as in the P2P app. The back button returns there. */
+const REFEX_ONE_URL = "https://refexone.com";
+const REFEX_ONE_LOGO = "https://refexone.com/refexone-logo.png";
+
 export function Topbar({
   user,
   onMenu,
@@ -21,6 +25,13 @@ export function Topbar({
       <button className="icon-btn menu-btn" type="button" onClick={onMenu} aria-label="Open navigation">
         <NavIcon name="menu" />
       </button>
+      <a className="refex-back" href={REFEX_ONE_URL} title="Back to Refex One" aria-label="Back to Refex One">
+        <span className="refex-back-arrow" aria-hidden>
+          ←
+        </span>
+        <img src={REFEX_ONE_LOGO} alt="" onError={(event) => (event.currentTarget.style.display = "none")} />
+        <span className="refex-back-text">Refex One</span>
+      </a>
       <div className="topbar-title">
         <p className="crumb">Coal & Ash</p>
         <strong>{navTitle(pathname)}</strong>
@@ -63,6 +74,9 @@ export function Topbar({
                 <span>{user.email}</span>
                 <em>{role}</em>
               </div>
+              <a className="user-menu-link" href={REFEX_ONE_URL}>
+                ← Back to Refex One
+              </a>
               <form action={logoutAction}>
                 <button type="submit">Sign out</button>
               </form>

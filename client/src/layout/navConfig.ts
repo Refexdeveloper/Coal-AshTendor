@@ -1,5 +1,7 @@
 /** The side menu the Group CEO sees. Every login gets this same list, including Portals. */
 const CEO_MENU = ["/", "/worklist", "/register", "/bonds", "/guarantees", "/reports/users", "/reports", "/notifications", "/portals"];
+/** Extra menus only the administrator login sees. */
+const ADMIN_MENU = ["/email-logs", "/admin"];
 
 export const NAV: { href: string; label: string; icon: string }[] = [
   { href: "/", label: "Pipeline", icon: "grid" },
@@ -11,10 +13,12 @@ export const NAV: { href: string; label: string; icon: string }[] = [
   { href: "/reports", label: "Reports", icon: "chart" },
   { href: "/notifications", label: "Notifications", icon: "bell" },
   { href: "/portals", label: "Portals", icon: "globe" },
+  { href: "/email-logs", label: "Email log", icon: "mail" },
+  { href: "/admin", label: "Administration", icon: "gear" },
 ];
 
-export function navFor(_role: string) {
-  return NAV.filter((item) => CEO_MENU.includes(item.href));
+export function navFor(role: string) {
+  return NAV.filter((item) => CEO_MENU.includes(item.href) || (role === "ADMIN" && ADMIN_MENU.includes(item.href)));
 }
 
 export function navTitle(pathname: string) {
