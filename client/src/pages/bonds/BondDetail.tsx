@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { useApi } from "@client/api/client";
 import type { SuretyBond } from "@client/lib/types";
@@ -7,6 +7,7 @@ import { PlantArt } from "@client/pages/executive/ExecutiveView";
 import { inr, inrFull } from "@client/utils/money";
 import { HEALTH, day, enrich } from "./Bonds";
 import { BondDocumentsPanel, bondDocUrl, type BondDocument } from "./BondDocuments";
+import { BondEditForm } from "./BondEdit";
 
 /** One surety bond (EMD or PBG ISB) on its own page: every field, its validity steps and its ISB copies. */
 export default function BondDetailPage() {
@@ -14,7 +15,8 @@ export default function BondDetailPage() {
   const location = useLocation();
   const back = (location.state as { from?: string } | null)?.from ?? "/bonds";
   const backLabel = back.includes("board=emd") ? "Back to EMD" : "Back to ISB register";
-  const { data, error, reload } = useApi<{ bond: SuretyBond; documents: BondDocument[]; canUpload: boolean }>(`/bonds/${encodeURIComponent(id)}`);
+  const { data, error, reload } = useApi<{ bond: SuretyBond; documents: BondDocument[]; canUpload: boolean; canEdit: boolean }>(`/bonds/${encodeURIComponent(id)}`);
+  const [editing, setEditing] = useState(false);
   const today = useMemo(() => new Date(), []);
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
   const row = enrich(data.bond, today);
@@ -135,8 +137,22 @@ export default function BondDetailPage() {
                 <h2>Bond details</h2>
                 <p className="muted">Every field stored from the ISB register</p>
               </div>
+              {data.canEdit ? (
+                <button type="button" className="btn ghost" onClick={() => setEditing((open) => !open)}>
+                  {editing ? "Close" : "Edit"}
+                </button>
+              ) : null}
             </header>
-            <div className="exec-field-groups">
+            {editing && data.canEdit ? (
+              <BondEditForm
+                bond={data.bond}
+                onDone={() => {
+                  setEditing(false);
+                  void reload();
+                }}
+              />
+            ) : (
+              <div className="exec-field-groups">
               {groups.map((group) => (
                 <section key={group.title} className="exec-field-group">
                   <h3>
@@ -153,7 +169,8 @@ export default function BondDetailPage() {
                   </dl>
                 </section>
               ))}
-            </div>
+              </div>
+            )}
           </section>
         </div>
 

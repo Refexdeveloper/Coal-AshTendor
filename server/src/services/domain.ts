@@ -348,6 +348,8 @@ async function notifyTasks(tenderId: string, tasks: WorkflowTask[], calendar: Ca
     await whatsAppForSteps(tenderId, tasks).catch((error) => console.error("WhatsApp notice failed", error));
   }
   for (const task of tasks) {
+    // The extracted-data review is done in the app. That step does not send an email.
+    if (task.stage === "DATA_VALIDATION") continue;
     await notifyAddresses({
       tenderId,
       taskId: task.id,

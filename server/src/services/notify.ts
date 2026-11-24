@@ -222,6 +222,18 @@ function copyOf(to: string) {
   return cc;
 }
 
+/** CC list for one message: the global copy, plus any addresses named for this send. Skips the To address. */
+function joinedCopy(to: string, extra: string[] = []) {
+  const skip = new Set(to.split(",").map((email) => email.trim().toLowerCase()).filter(Boolean));
+  return [copyOf(to), ...extra]
+    .join(",")
+    .split(",")
+    .map((email) => email.trim())
+    .filter((email) => email && !skip.has(email.toLowerCase()))
+    .filter((email, index, all) => all.findIndex((item) => item.toLowerCase() === email.toLowerCase()) === index)
+    .join(", ");
+}
+
 /** Live BCC list, without anyone already named as To or CC. Extra addresses are added for one message. */
 function blindCopy(to: string, cc: string, extra: string[] = []) {
   const skip = new Set([to, cc].join(",").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean));
@@ -280,6 +292,8 @@ export async function deliver(message: {
   rawHtml?: string;
   /** Send to this address itself. The daily report uses this so an extra recipient is not folded into the test inbox. */
   direct?: boolean;
+  /** Extra CC for this message only. Local test mail does not send these. */
+  cc?: string[];
   /** Extra BCC for this message only, added to the live BCC list. */
   bcc?: string[];
   attachments?: MailAttachment[];
@@ -287,7 +301,7 @@ export async function deliver(message: {
 }) {
   const config = mailConfig();
   const target = deliveredTo(message.to, message.toName);
-  const cc = copyOf(target.email);
+  const cc = config.redirectTo ? "" : joinedCopy(target.email, message.cc ?? []);
   const bcc = config.redirectTo ? "" : blindCopy(target.email, cc, message.bcc ?? []);
   const intendedFor = target.forWhom || null;
   const subject = intendedFor ? `[for ${message.toName}] ${message.subject}` : message.subject;
@@ -366,6 +380,20 @@ export async function deliver(message: {
     await finish({ status: "SENT", messageId: String(info?.messageId ?? ""), sentAt: new Date() });
     return "SENT";
   } catch (error) {
+    // A tender file that is too large makes Gmail reject the whole notice. Send the same notice with the files left off.
+    if (files.length) {
+      try {
+        const slim = await (await transport()).sendMail({
+          ...mail,
+          attachments: logo ? [logo.attachment] : undefined,
+          text: `The tender files were left off this email. Open the tender to read them.\n\n${text}`,
+        });
+        await finish({ status: "SENT", messageId: String(slim?.messageId ?? ""), sentAt: new Date(), errorMessage: null });
+        return "SENT";
+      } catch (again) {
+        error = again;
+      }
+    }
     console.error("Email delivery failed", error);
     await finish({ status: "FAILED", errorMessage: (error instanceof Error ? error.message : String(error)).slice(0, 2000) });
     return "FAILED";
@@ -409,11 +437,11 @@ export async function tenderAttachments(tenderId: string) {
 }
 
 /** Sends a logged message again, to its original recipient and any extra addresses (all still go through the test inbox). */
-export async function resendLogged(logId: string, extraTo: string[] = []) {
+export async function resendLogged(logId: string, extraTo: string[] = [], options?: { skipFiles?: boolean }) {
   const original = await db.notificationLog.findUnique({ where: { id: logId } });
   if (!original) return { error: "That email is no longer in the log." };
   const attachments: MailAttachment[] = [];
-  const listed = original.attachments ? (JSON.parse(original.attachments) as { filename: string; documentId?: string }[]) : [];
+  const listed = options?.skipFiles || !original.attachments ? [] : (JSON.parse(original.attachments) as { filename: string; documentId?: string }[]);
   if (listed.length) {
     const { isSpreadsheet, readStored } = await import("./files");
     for (const item of listed) {
@@ -474,7 +502,9 @@ export async function retryFailedMail() {
     }).catch(() => []);
     if (related[0]?.status === "SENT") continue;
     if (related.filter((item: { status: string }) => item.status === "FAILED").length >= 3) continue;
-    await resendLogged(row.id).catch((error) => console.error("Failed email was not retried", error));
+    if (row.eventType === "OCR_RESULT" || /review extracted tender data/i.test(String(row.subject ?? ""))) continue;
+    const tooLarge = /size|too large|552/i.test(String(row.errorMessage ?? ""));
+    await resendLogged(row.id, [], { skipFiles: tooLarge || Boolean(row.attachments) }).catch((error) => console.error("Failed email was not retried", error));
   }
 }
 
@@ -668,35 +698,9 @@ export async function notifyAddresses(options: {
   }
 }
 
-function safeFile(name: string) {
-  const base = name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "-").replace(/-+/g, "-").slice(0, 80);
-  return base || "upload";
-}
-
-/** Inbox that receives the raw OCR JSON. Override with OCR_RESULT_EMAIL. */
-export function ocrResultEmail() {
-  return (process.env.OCR_RESULT_EMAIL || "sathishkumar.r@refex.co.in").trim();
-}
-
-/** Emails the OCR service JSON for one uploaded file and records it in Notifications. */
-export async function mailOcrResult(tenderId: string, fileName: string, raw: string) {
-  const email = ocrResultEmail();
-  if (!email || !raw.trim()) return;
-  const tender = await db.tender.findUnique({ where: { id: tenderId } });
-  if (!tender) return;
-  const subject = `${tender.recordId} OCR result JSON`;
-  const text = `OCR result for ${fileName} on ${tender.projectName || "Untitled tender"} (${tender.recordId}).\n\n${raw}`;
-  const link = `${process.env.APP_URL || "http://localhost:5173"}/tenders/${tender.id}?tab=details`;
-  if (!mailReady()) console.error(`OCR result for ${fileName} was not emailed to ${email}: set SMTP_PASS in server/.env.`);
-  await deliver({
-    to: email,
-    toName: "Sathishkumar",
-    subject,
-    text,
-    link,
-    attachments: [{ filename: `${safeFile(fileName)}-ocr-response.json`, content: raw, contentType: "application/json" }],
-    log: { tenderId: tender.id, eventType: "OCR_RESULT" },
-  });
+/** The OCR JSON stays on the tender. It is not emailed. */
+export async function mailOcrResult(_tenderId: string, _fileName: string, _raw: string) {
+  return;
 }
 
 export async function emailsFor(userIds: string[]) {

@@ -11,8 +11,9 @@ import { deliver, emailLink, isStepAction } from "./notify";
  * mail, plus a CSV of every tender (opens in Excel). Sent from Administration with one button.
  */
 
-/** The morning and evening report goes to Dinesh. These addresses are copied. */
+/** The morning and evening report goes to Dinesh. These addresses are copied on the message. */
 export const REPORT_TO = "dinesh@refex.co.in";
+export const REPORT_CC = ["vishesh.h@refex.co.in", "susmitha.s@refex.co.in", "sundaralingam.g@refex.co.in", "harshvardhan.dugar@refex.co.in"];
 export const REPORT_BCC = ["srivaths.varadharajan@refex.co.in", "sathishkumar.r@refex.co.in"];
 
 const TIME_ZONE = "Asia/Kolkata";
@@ -526,7 +527,7 @@ function reportCsv(report: Report) {
   return `﻿${[header.join(","), ...lines].join("\r\n")}`;
 }
 
-/** Builds today's report and emails it to Dinesh, with the BCC list, logged as DAILY_REPORT. */
+/** Builds today's report and emails it to Dinesh, with the CC and BCC lists, logged as DAILY_REPORT. */
 export async function sendTodayReport(options?: { note?: string; logId?: string }) {
   const report = await loadTodayReport();
   const built = await buildTodayReportEmail(report);
@@ -538,6 +539,7 @@ export async function sendTodayReport(options?: { note?: string; logId?: string 
     text: built.text,
     link: "",
     rawHtml: built.html,
+    cc: REPORT_CC,
     bcc: REPORT_BCC,
     attachments: [{ filename: `coal-ash-tenders-${stamp}.csv`, content: built.csv, contentType: "text/csv" }],
     log: { id: options?.logId, eventType: "DAILY_REPORT", note: options?.note },

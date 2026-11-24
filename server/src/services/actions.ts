@@ -264,14 +264,14 @@ export async function updateUserAccessAction(actor: User, formData: FormData): P
 export async function sendTodayReportAction(actor: User, _formData: FormData): Promise<ActionState> {
   const denied = adminOnly(actor);
   if (denied) return denied;
-  const { REPORT_TO, REPORT_BCC, sendTodayReport } = await import("./daily-report");
+  const { REPORT_TO, REPORT_CC, REPORT_BCC, sendTodayReport } = await import("./daily-report");
   try {
     const result = await sendTodayReport();
     const sent = result.statuses.filter((status) => status === "SENT").length;
     if (!sent) return { error: `The report was not sent (${result.statuses.join(", ").toLowerCase()}). The Email log shows why.` };
     const { stats } = result;
     return {
-      ok: `Today's report sent to ${REPORT_TO}. BCC: ${REPORT_BCC.join(", ")}. Total tenders ${stats.total}, active ${stats.active}, new today ${stats.newToday}, closing in 7 days ${stats.closing}, overdue tasks ${stats.overdue}.`,
+      ok: `Today's report sent to ${REPORT_TO}. CC: ${REPORT_CC.join(", ")}. BCC: ${REPORT_BCC.join(", ")}. Total tenders ${stats.total}, active ${stats.active}, new today ${stats.newToday}, closing in 7 days ${stats.closing}, overdue tasks ${stats.overdue}.`,
     };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "The report could not be sent." };
@@ -539,6 +539,17 @@ export async function convertEmdToSdAction(actor: User, formData: FormData): Pro
     const { convertEmdToSd } = await import("./emd-board");
     const result = await convertEmdToSd(actor, formData);
     return { ok: `${result.recordId} EMD converted to a security deposit.`, tenderId: result.tenderId };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Saves every field of one EMD or performance surety bond. */
+export async function updateBondAction(actor: User, formData: FormData): Promise<ActionState> {
+  try {
+    const { updateBond } = await import("./bonds");
+    const result = await updateBond(actor, formData);
+    return { ok: `${result.bondNumber} saved.` };
   } catch (error) {
     return failure(error);
   }

@@ -413,7 +413,7 @@ views.get("/bonds/:id", async (req, res) => {
     res.status(404).json({ error: "Bond not found" });
     return;
   }
-  res.json({ bond, documents: await documentsForBond(bond.bondNumber), canUpload: BOND_MANAGERS.includes(req.actor!.role) });
+  res.json({ bond, documents: await documentsForBond(bond.bondNumber), canUpload: BOND_MANAGERS.includes(req.actor!.role), canEdit: [...BOND_MANAGERS, "GROUP_CEO", "REVIEWER"].includes(req.actor!.role) });
 });
 
 /** The bank guarantee register for the BG dashboard. */

@@ -9,7 +9,9 @@ import { Submit } from "@client/components/base/submit";
 import { CountUp } from "@client/components/feature/count-up";
 import { playCardFx, scrollToElement, type CardFx } from "@client/components/feature/fx";
 import { Icon, PlantArt } from "@client/pages/executive/ExecutiveView";
+import { BondEditForm } from "@client/pages/bonds/BondEdit";
 import { day } from "@client/pages/bonds/Bonds";
+import type { SuretyBond } from "@client/lib/types";
 import { inr } from "@client/utils/money";
 
 type Doc = { id: string; fileName: string };
@@ -152,6 +154,12 @@ function EditRow({ row, onDone }: { row: Row; onDone: () => void }) {
   );
 }
 
+function IsbEditor({ id, onDone }: { id: string; onDone: () => void }) {
+  const { data, error, reload } = useApi<{ bond: SuretyBond }>(`/bonds/${encodeURIComponent(id)}`);
+  if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
+  return <BondEditForm bond={data.bond} onDone={onDone} />;
+}
+
 function ConvertToSd({ row, onDone }: { row: Row; onDone: () => void }) {
   const [state, action] = useActionState(async (previous: ActionState, formData: FormData) => {
     const result = await convertEmdToSdAction(previous, formData);
@@ -190,6 +198,7 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
   const [card, setCard] = useState("");
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
+  const [editingBond, setEditingBond] = useState<string | null>(null);
   const [converting, setConverting] = useState<string | null>(null);
   const rows = data?.rows ?? [];
   const instruments = data?.instruments ?? [];
@@ -314,6 +323,15 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
                     <small>{row.party || "No customer"}</small>
                   </div>
                   <span className={`dk-pill ${row.kind === "BG" ? "violet" : "blue"}`}>{row.kind === "BG" ? "EMD BG" : "EMD ISB"}</span>
+                  {data.canEdit && row.kind === "ISB" ? (
+                    <button
+                      type="button"
+                      className={`dk-ghost${editingBond === row.id ? " is-on" : ""}`}
+                      onClick={() => setEditingBond((current) => (current === row.id ? null : row.id))}
+                    >
+                      {editingBond === row.id ? "Close" : "Edit"}
+                    </button>
+                  ) : null}
                 </header>
                 <dl>
                   <div>
@@ -330,9 +348,18 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
                   </div>
                   <div>
                     <dt>Expiry</dt>
-                    <dd>{day(row.expiryDate)}</dd>
-                  </div>
+                  <dd>{day(row.expiryDate)}</dd>
+                </div>
                 </dl>
+                {editingBond === row.id ? (
+                  <IsbEditor
+                    id={row.id}
+                    onDone={() => {
+                      setEditingBond(null);
+                      void reload();
+                    }}
+                  />
+                ) : null}
               </article>
             ))
           )

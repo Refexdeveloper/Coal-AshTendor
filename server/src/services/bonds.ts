@@ -183,3 +183,44 @@ export async function importBonds(actor: { id: string; role: string }, file: { n
 export async function listBonds() {
   return db.suretyBond.findMany({ orderBy: [{ kind: "asc" }, { serialNo: "asc" }] });
 }
+
+const BOND_EDITORS = [...BOND_MANAGERS, "GROUP_CEO", "REVIEWER"];
+const BOND_TEXT = ["state", "line", "tenderRef", "tenderDetails", "plant", "customer", "broker", "insurer", "bondNumber", "mode", "transferType", "status", "usedFor"] as const;
+const BOND_MONEY = ["amount", "onlineAmount", "isbAmount", "premium", "premiumPercent", "stampDuty"] as const;
+const BOND_DATES = ["issueDate", "startDate", "expiryDate", "claimExpiryDate", "ext1IssueDate", "ext1StartDate", "ext1ExpiryDate", "ext1ClaimDate", "ext2Date", "ext2ClaimDate"] as const;
+
+function formMoney(value: unknown) {
+  const raw = clean(String(value ?? "")).replace(/,/g, "");
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formDay(value: unknown) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(clean(String(value ?? "")));
+  if (!match) return null;
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
+}
+
+/** Saves every field of one surety bond. Blank numbers and dates are cleared. */
+export async function updateBond(actor: { id: string; name: string; role: string }, formData: FormData) {
+  if (!BOND_EDITORS.includes(actor.role)) throw new Error("You cannot edit this ISB.");
+  const id = clean(String(formData.get("id") || ""));
+  const bond = await db.suretyBond.findUnique({ where: { id } });
+  if (!bond) throw new Error("Bond not found.");
+  const kind = clean(String(formData.get("kind") || ""));
+  const serial = clean(String(formData.get("serialNo") || ""));
+  const serialNo = serial && Number.isFinite(Number(serial)) ? Math.trunc(Number(serial)) : null;
+  const data: Record<string, unknown> = {
+    kind: kind === "PERFORMANCE" ? "PERFORMANCE" : "EMD",
+    serialNo,
+  };
+  for (const key of BOND_TEXT) data[key] = clean(String(formData.get(key) || ""));
+  for (const key of BOND_MONEY) data[key] = formMoney(formData.get(key));
+  for (const key of BOND_DATES) data[key] = formDay(formData.get(key));
+  await db.suretyBond.update({ where: { id }, data });
+  await db.auditLog.create({
+    data: { actorId: actor.id, actorName: actor.name, action: "Updated ISB", entity: "SuretyBond", detail: `${data.bondNumber || bond.bondNumber} · ${data.kind}` },
+  });
+  return { id, bondNumber: String(data.bondNumber || bond.bondNumber || "ISB") };
+}
