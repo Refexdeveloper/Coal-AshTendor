@@ -82,11 +82,26 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
   const [allRows, setAllRows] = useState(false);
   const [draft, setDraft] = useState(params.get("q") ?? "");
   const today = useMemo(() => new Date(), []);
+  // Standalone /guarantees includes EMD in the type filter.
+  // Pipeline → Security Deposits → BG keeps EMD out (EMD stays on its own board menu).
+  const allowEmdFilter = !embedded && !onlyType;
   const everyBg = useMemo(() => {
     const rows = (data?.guarantees ?? []).map((bg) => enrich(bg, today));
     if (onlyType) return rows.filter((row) => row.bgType === onlyType);
-    return rows.filter((row) => row.bgType !== "EMD");
-  }, [data, today, onlyType]);
+    if (embedded) return rows.filter((row) => row.bgType !== "EMD");
+    return rows;
+  }, [data, today, onlyType, embedded]);
+  const typeTabs = useMemo(() => {
+    const tabs: Array<readonly [string, string, number]> = [
+      ["", "All", everyBg.length],
+      ["PBG", "PBG", everyBg.filter((row) => row.bgType === "PBG").length],
+      ["APBG", "APBG", everyBg.filter((row) => row.bgType === "APBG").length],
+    ];
+    if (allowEmdFilter) {
+      tabs.push(["EMD", "EMD", everyBg.filter((row) => row.bgType === "EMD").length]);
+    }
+    return tabs;
+  }, [everyBg, allowEmdFilter]);
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
 
   const get = (key: string) => params.get(key) ?? "";
@@ -117,9 +132,13 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
   const watch = rows.filter((row) => row.health === "watch");
   const claim = rows.filter((row) => row.health === "claim");
 
+  const emdRows = rows.filter((row) => CARD_ROWS.emd.match(row));
   const cards = [
-    ...(filter.type === "APBG" ? [] : [{ key: "pbg", label: "PBG", fx: "award" as CardFx, value: sum(pbg, (row) => row.amount), money: true, note: `${pbg.length} performance guarantees`, icon: "trophy", tone: "violet" }]),
-    ...(filter.type === "PBG" ? [] : [{ key: "abg", label: "APBG", fx: "trophy" as CardFx, value: sum(abg, (row) => row.current.amount), money: true, note: `${abg.length} advance guarantees`, icon: "target", tone: "blue" }]),
+    ...(filter.type === "APBG" || filter.type === "EMD" ? [] : [{ key: "pbg", label: "PBG", fx: "award" as CardFx, value: sum(pbg, (row) => row.amount), money: true, note: `${pbg.length} performance guarantees`, icon: "trophy", tone: "violet" }]),
+    ...(filter.type === "PBG" || filter.type === "EMD" ? [] : [{ key: "abg", label: "APBG", fx: "trophy" as CardFx, value: sum(abg, (row) => row.current.amount), money: true, note: `${abg.length} advance guarantees`, icon: "target", tone: "blue" }]),
+    ...(allowEmdFilter && filter.type !== "PBG" && filter.type !== "APBG"
+      ? [{ key: "emd", label: "EMD", fx: "pending" as CardFx, value: sum(emdRows, (row) => row.current.amount), money: true, note: `${emdRows.length} EMD guarantees`, icon: "shield", tone: "amber" }]
+      : []),
     { key: "active", label: "Active guarantees", fx: "ready" as CardFx, value: live.length, note: inr(sum(live, (row) => row.current.amount)), icon: "check", tone: "green" },
     { key: "soon", label: "Expiring in 30 days", fx: "hourglass" as CardFx, value: soon.length, note: soon.length ? inr(sum(soon, (row) => row.current.amount)) : "Nothing due", icon: "hourglass", tone: "red", hot: soon.length > 0 },
     { key: "watch", label: "Expiring in 90 days", fx: "pending" as CardFx, value: watch.length, note: watch.length ? inr(sum(watch, (row) => row.current.amount)) : "None", icon: "calendar", tone: "sky" },
@@ -130,7 +149,7 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
     { key: "total", label: "Total", fx: "docs" as CardFx, value: sum(rows, (row) => row.current.amount), money: true, note: `${rows.length} guarantees`, icon: "doc", tone: "teal" },
   ];
 
-  const card = filter.card === "emd" ? undefined : CARD_ROWS[filter.card];
+  const card = CARD_ROWS[filter.card];
   const needle = filter.q.trim().toLowerCase();
   const distinct = (pick: (row: Row) => string) => [...new Set(everyBg.map(pick).filter(Boolean))].sort().map((value) => ({ value, label: value }));
   const listed = rows
@@ -185,13 +204,7 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
           <h1>{onlyType === "EMD" ? "EMD bank guarantees" : "Bank guarantees"}</h1>
           {onlyType ? null : (
             <nav className="isb-switch" aria-label="BG type">
-              {(
-                [
-                  ["", "All", everyBg.length],
-                  ["PBG", "PBG", everyBg.filter((row) => row.bgType === "PBG").length],
-                  ["APBG", "APBG", everyBg.filter((row) => row.bgType === "APBG").length],
-                ] as const
-              ).map(([value, label, count]) => (
+              {typeTabs.map(([value, label, count]) => (
                 <button key={label} type="button" className={filter.type === value ? "is-on" : ""} onClick={() => setFilter("type", value)}>
                   {label}
                   <small>{count}</small>
@@ -224,6 +237,7 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
       {adding ? (
         <AddGuaranteeForm
           defaultType={onlyType}
+          hideEmd={embedded}
           onDone={() => {
             setAdding(false);
             void reload();
@@ -305,7 +319,7 @@ export default function GuaranteesPage({ embedded = false, toggle, onlyType }: {
         <div className="dk-filter">
           <span>BG type</span>
           <div className="seg">
-            {["", "PBG", "APBG"].map((value) => (
+            {(allowEmdFilter ? ["", "PBG", "APBG", "EMD"] : ["", "PBG", "APBG"]).map((value) => (
               <button key={value || "all"} type="button" className={filter.type === value ? "is-on" : ""} onClick={() => setFilter("type", value)}>
                 {value || "All"}
               </button>

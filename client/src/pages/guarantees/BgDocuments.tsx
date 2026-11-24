@@ -9,7 +9,8 @@ const PdfViewer = lazy(() => import("@client/components/feature/pdf-viewer"));
 /** Files per request; the server takes up to 20 files of 25 MB each, so small batches stay well inside that. */
 const BATCH = 8;
 
-export const docLabel = (doc: Pick<BgDocument, "kind" | "amendmentNo">) => (doc.kind === "AMENDMENT" ? `Amendment ${doc.amendmentNo ?? ""}`.trim() : "Issuance");
+export const docLabel = (doc: Pick<BgDocument, "kind" | "amendmentNo">) =>
+  doc.kind === "AMENDMENT" ? `Amendment ${doc.amendmentNo ?? ""}`.trim() : doc.kind === "CLOSURE" ? "Closure" : "Issuance";
 const size = (bytes: number) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
 /**
@@ -134,7 +135,7 @@ export function BgDocumentsPanel({ documents, bgNumber, canUpload, onChange, sel
             {documents.map((doc) => (
               <li key={doc.id} className={current?.id === doc.id ? "is-on" : ""}>
                 <button type="button" onClick={() => setSelected(doc.id)}>
-                  <span className={`bgdoc-kind ${doc.kind === "AMENDMENT" ? "amend" : "issue"}`}>{doc.kind === "AMENDMENT" ? `A${doc.amendmentNo ?? ""}` : "BG"}</span>
+                  <span className={`bgdoc-kind ${doc.kind === "AMENDMENT" ? "amend" : doc.kind === "CLOSURE" ? "amend" : "issue"}`}>{doc.kind === "AMENDMENT" ? `A${doc.amendmentNo ?? ""}` : doc.kind === "CLOSURE" ? "CL" : "BG"}</span>
                   <span className="bgdoc-name">
                     <strong>{docLabel(doc)}</strong>
                     <small title={doc.fileName}>

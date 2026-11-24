@@ -39,6 +39,7 @@ const ACTIONS: Record<string, Action> = {
   "update-bond": actions.updateBondAction,
   "convert-emd-sd": actions.convertEmdToSdAction,
   "update-guarantee": actions.updateGuaranteeAction,
+  "guarantee-status": actions.guaranteeStatusAction,
   "upload-bg-documents": actions.uploadBgDocumentsAction,
   gem: actions.gemAction,
   "site-watch": actions.siteWatchAction,

@@ -3369,3 +3369,14 @@ tr.site-detail-row > td { background: var(--paper); padding: 0; }
     margin-top: -12px; border-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; box-shadow: none;
   }
 }
+
+/* BG page: status picker in the header and the Closure row of the history table. */
+.bg-status-pick { display: inline-flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-radius: 12px; background: #fff; border: 1px solid #e2e8f0; box-shadow: 0 6px 16px -12px rgba(15, 23, 42, 0.4); }
+.bg-status-pick span { font-size: 0.74rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #64748b; }
+.bg-status-pick select { border: 0; background: #f8fafc; border-radius: 8px; padding: 6px 10px; font: inherit; font-weight: 700; color: #0f172a; cursor: pointer; }
+.bg-closure-row td { background: #f8fafc; border-top: 2px dashed #e2e8f0; }
+.bg-closure-row .dk-pill { vertical-align: middle; }
+.bg-closure-docs { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.bg-closure-add { cursor: pointer; }
+.bg-closure-remark { display: block; max-width: 260px; white-space: normal; }
+.bg-add-closure { border-color: #cbd5e1; background: #f8fafc; }

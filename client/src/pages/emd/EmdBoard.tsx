@@ -23,6 +23,7 @@ type Row = {
   portal: string;
   location: string;
   tenderRef: string;
+  externalId: string;
   method: string;
   amount: number | null;
   bank: string;
@@ -48,6 +49,8 @@ type Instrument = {
   amount: number | null;
   pendingAmount: number | null;
   days: number | null;
+  emd: boolean;
+  text: string;
   issueDate: Date | null;
   expiryDate: Date | null;
 };
@@ -205,6 +208,13 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
   const rows = data?.rows ?? [];
   const instruments = data?.instruments ?? [];
   const needle = query.trim().toLowerCase();
+  const compact = needle.replace(/[^a-z0-9]/g, "");
+  const matches = (parts: Array<string | number | null | undefined>) => {
+    if (!needle) return true;
+    const text = parts.map((part) => String(part ?? "")).join(" ").toLowerCase();
+    if (text.includes(needle)) return true;
+    return compact.length > 0 && text.replace(/[^a-z0-9]/g, "").includes(compact);
+  };
   const instrumentView = card === "BG" || card === "ISB";
   const listed = useMemo(() => {
     return rows.filter((row) => {
@@ -213,25 +223,27 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
       } else if (card === "WON" || card === "LOST" || card === "CANCELLED" || card === "EVALUATION") {
         if (row.result !== card) return false;
       }
-      if (!needle) return true;
-      return [row.recordId, row.project, row.customer, row.bank, row.instrument, row.tenderRef, row.portal].join(" ").toLowerCase().includes(needle);
+      return matches([row.recordId, row.project, row.customer, row.bank, row.instrument, row.tenderRef, row.externalId, row.portal, row.location]);
     });
-  }, [rows, card, needle]);
+  }, [rows, card, needle, compact]);
   const listedInstruments = useMemo(() => {
+    const onCard = card === "BG" || card === "ISB";
+    if (!onCard && !needle) return [];
+    if (card && !onCard) return [];
     return instruments.filter((row) => {
-      if (row.kind !== card) return false;
-      if (!needle) return true;
-      return [row.number, row.title, row.party, row.bank].join(" ").toLowerCase().includes(needle);
+      if (onCard && row.kind !== card) return false;
+      if (card === "BG" && !needle && !row.emd) return false;
+      return matches([row.number, row.title, row.party, row.bank, row.kind, row.text]);
     });
-  }, [instruments, card, needle]);
+  }, [instruments, card, needle, compact]);
 
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
 
   const sum = (match: (row: Row) => boolean, pick: (row: Row) => number = (row) => row.amount ?? 0) =>
     rows.filter(match).reduce((total, row) => total + pick(row), 0);
   const count = (match: (row: Row) => boolean) => rows.filter(match).length;
-  const instrumentSum = (kind: Instrument["kind"]) => instruments.filter((row) => row.kind === kind).reduce((total, row) => total + (row.amount ?? 0), 0);
-  const instrumentCount = (kind: Instrument["kind"]) => instruments.filter((row) => row.kind === kind).length;
+  const instrumentSum = (kind: Instrument["kind"]) => instruments.filter((row) => row.kind === kind && row.emd).reduce((total, row) => total + (row.amount ?? 0), 0);
+  const instrumentCount = (kind: Instrument["kind"]) => instruments.filter((row) => row.kind === kind && row.emd).length;
   const cards: { key: string; label: string; value: number; money?: boolean; note: string; tone: string; icon: string; fx: CardFx }[] = [
     { key: "BG", label: "BG", value: instrumentSum("BG"), money: true, note: `(${instrumentCount("BG")})`, tone: "violet", icon: "doc", fx: "shield" },
     { key: "ISB", label: "ISB", value: instrumentSum("ISB"), money: true, note: `(${instrumentCount("ISB")})`, tone: "sky", icon: "shield", fx: "shield" },
@@ -301,18 +313,20 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
             <h2>Tender EMD register</h2>
             <p>
               {instrumentView
-                ? `${listedInstruments.length} ${card === "BG" ? "EMD bank guarantees" : "EMD surety bonds"}`
-                : `${listed.length} of ${rows.length} · tender, customer, instrument and what happens to the money`}
+                ? `${listedInstruments.length} ${card === "BG" ? "bank guarantees" : "surety bonds"}`
+                : needle
+                  ? `${listed.length} tenders · ${listedInstruments.length} BG / ISB`
+                  : `${listed.length} of ${rows.length} · tender, customer, instrument and what happens to the money`}
             </p>
           </div>
           <label className="dk-search-box">
             <Icon name="search" />
-            <input type="search" placeholder="Tender, customer, instrument…" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <input type="search" placeholder="Tender, customer, BG or ISB number…" value={query} onChange={(event) => setQuery(event.target.value)} />
           </label>
         </header>
-        {instrumentView ? (
+        {instrumentView || listedInstruments.length > 0 ? (
           listedInstruments.length === 0 ? (
-            <p className="dk-empty">No EMD {card === "BG" ? "bank guarantees" : "surety bonds"} match this view.</p>
+            <p className="dk-empty">No {card === "ISB" ? "surety bonds" : "bank guarantees"} match this search.</p>
           ) : (
             listedInstruments.map((row, index) => (
               <article key={`${card}-${row.id}`} className="emd-row" style={{ "--r": Math.min(index, 12) } as CSSProperties}>
@@ -378,7 +392,7 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
             ))
           )
         ) : null}
-        {!instrumentView && listed.length === 0 ? <p className="dk-empty">No EMD submissions match this view.</p> : null}
+        {!instrumentView && listed.length === 0 && listedInstruments.length === 0 ? <p className="dk-empty">No EMD submissions match this view.</p> : null}
         {!instrumentView
           ? listed.map((row, index) => (
           <article key={`${card}-${row.tenderId}`} className="emd-row" style={{ "--r": Math.min(index, 12) } as CSSProperties}>

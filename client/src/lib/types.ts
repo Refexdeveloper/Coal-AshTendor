@@ -279,17 +279,22 @@ export type BankGuarantee = {
   expiryDate: Date | null;
   claimDate: Date | null;
   stampDuty: number | null;
+  bgStatus: string;
   amendments: string | null;
+  /** The closure step as JSON (BgClosure), or null. */
+  closure?: string | null;
   extra: string | null;
   sourceFile: string;
   importedAt: Date;
 };
 
 /** A scanned BG or amendment document, linked to its guarantee by BG number. */
+export type BgClosure = { date: string | null; amount: number | null; charges: number | null; chargesPercent: number | null; stampDuty: number | null; remark: string };
+
 export type BgDocument = {
   id: string;
   bgNumber: string;
-  kind: "ISSUANCE" | "AMENDMENT";
+  kind: "ISSUANCE" | "AMENDMENT" | "CLOSURE";
   amendmentNo: number | null;
   fileName: string;
   mimeType: string;

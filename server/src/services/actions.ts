@@ -570,9 +570,21 @@ export async function updateEmdRegisterAction(actor: User, formData: FormData): 
 export async function addGuaranteeAction(actor: User, formData: FormData): Promise<ActionState> {
   try {
     const { createGuarantee } = await import("./guarantees");
-    const result = await createGuarantee(actor, formData, await filesFrom(formData, "files"), await amendmentFilesFrom(formData));
+    const result = await createGuarantee(actor, formData, await filesFrom(formData, "files"), await amendmentFilesFrom(formData), await filesFrom(formData, "closure"));
     const notes = [`${result.bgNumber} added`, result.amendments ? `${result.amendments} amendment${result.amendments === 1 ? "" : "s"}` : "", result.documents ? `${result.documents} document${result.documents === 1 ? "" : "s"} stored` : ""].filter(Boolean);
     return { ok: `${notes.join(" · ")}.`, tenderId: result.id };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Sets the status of one bank guarantee from its page. */
+export async function guaranteeStatusAction(actor: User, formData: FormData): Promise<ActionState> {
+  try {
+    const { setGuaranteeStatus } = await import("./guarantees");
+    const result = await setGuaranteeStatus(actor, String(formData.get("id") || ""), formData.get("bgStatus"));
+    const label: Record<string, string> = { LIVE: "Live", EXPIRE: "Expired", CLOSED: "Closed", CLAIMED: "Claimed" };
+    return { ok: `${result.bgNumber} is now ${label[result.bgStatus] ?? result.bgStatus}.` };
   } catch (error) {
     return failure(error);
   }
@@ -582,7 +594,7 @@ export async function addGuaranteeAction(actor: User, formData: FormData): Promi
 export async function updateGuaranteeAction(actor: User, formData: FormData): Promise<ActionState> {
   try {
     const { updateGuarantee } = await import("./guarantees");
-    const result = await updateGuarantee(actor, formData, await filesFrom(formData, "files"), await amendmentFilesFrom(formData));
+    const result = await updateGuarantee(actor, formData, await filesFrom(formData, "files"), await amendmentFilesFrom(formData), await filesFrom(formData, "closure"));
     const notes = [`${result.bgNumber} updated`, `${result.amendments} amendment${result.amendments === 1 ? "" : "s"}`, result.documents ? `${result.documents} new document${result.documents === 1 ? "" : "s"} stored` : ""].filter(Boolean);
     return { ok: `${notes.join(" · ")}.`, tenderId: result.id };
   } catch (error) {
@@ -596,7 +608,8 @@ export async function uploadBgDocumentsAction(actor: User, formData: FormData): 
     const files = await filesFrom(formData, "files");
     if (!files.length) return { error: "Choose the BG documents to upload." };
     const { storeBgDocuments } = await import("./bg-documents");
-    const result = await storeBgDocuments(actor, files, String(formData.get("bgNumber") || ""));
+    // "Closure" on the BG page files the scans as the guarantee's closure documents.
+    const result = await storeBgDocuments(actor, files, String(formData.get("bgNumber") || ""), formData.get("kind") === "CLOSURE" ? "CLOSURE" : undefined);
     const notes = [
       `${result.stored} stored`,
       result.duplicate ? `${result.duplicate} already there` : "",

@@ -424,6 +424,7 @@ CREATE TABLE IF NOT EXISTS `BankGuarantee` (
   `expiryDate` DATETIME(3) NULL,
   `claimDate` DATETIME(3) NULL,
   `stampDuty` DOUBLE NULL,
+  `bgStatus` VARCHAR(16) NOT NULL DEFAULT '',
   `amendments` LONGTEXT NULL,
   `extra` LONGTEXT NULL,
   `sourceFile` VARCHAR(255) NOT NULL DEFAULT '',

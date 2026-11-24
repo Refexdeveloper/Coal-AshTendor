@@ -1,6 +1,6 @@
 import { Fragment, lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { formatWhen } from "@client/utils/calendar";
 import type { Portal } from "@client/lib/types";
 import { apiUrl } from "@client/api/client";
@@ -907,12 +907,20 @@ export function SiteWatch({
   const [repeatOnly, setRepeatOnly] = useState(false);
   const [handKind, setHandKind] = useState("");
   const [editing, setEditing] = useState(false);
-  const [resultView, setResultView] = useState<"" | "found" | "approved" | "conversion" | "rejected" | "ignored" | "excluded" | "today">("");
+  // ?results=found|approved|rejected|conversion|today (from the Pipeline's search-result cards) opens that list.
+  const [params] = useSearchParams();
+  const RESULT_KEYS = ["found", "approved", "conversion", "rejected", "ignored", "excluded", "today"] as const;
+  const askedView = RESULT_KEYS.find((key) => key === params.get("results")) ?? "";
+  const [resultView, setResultView] = useState<"" | (typeof RESULT_KEYS)[number]>(askedView);
   const [, tick] = useState(0);
 
   useEffect(() => {
     if (!resultView) return;
-    document.getElementById("search-mix")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const go = () => document.getElementById("search-mix")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    go();
+    // Arriving from a Pipeline card, the cards above are still settling: scroll again once they have.
+    const later = window.setTimeout(go, 700);
+    return () => window.clearTimeout(later);
   }, [resultView]);
 
   useEffect(() => {
@@ -1760,6 +1768,74 @@ export function SiteWatch({
             </span>
           </button>
         </div>
+        <h4 className="sk-heading">Search results</h4>
+        <div className="sk-grid sk-results">
+          {resultCards.map((card) => (
+            <div
+              key={card.key}
+              role="button"
+              tabIndex={0}
+              className={`sk-card tone-${card.tone}${resultView === card.key ? " is-active" : ""}`}
+              aria-pressed={resultView === card.key}
+              title={card.title}
+              onClick={card.open}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  card.open();
+                }
+              }}
+            >
+              <span className="sk-icon" aria-hidden>
+                {card.icon}
+              </span>
+              <b className="sk-value">{card.value}</b>
+              <span className="sk-label">{card.label}</span>
+              <small className="sk-sub">{card.sub}</small>
+              {card.chips.length ? (
+                <span className="sk-chips wrap">
+                  {card.chips.map((chip) => (
+                    <button
+                      key={chip.label}
+                      type="button"
+                      className="sk-chip"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        chip.open();
+                      }}
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </span>
+              ) : null}
+              {card.bar != null ? (
+                <span className="sk-split" aria-hidden>
+                  <i style={{ width: `${Math.min(100, card.bar)}%` }} />
+                </span>
+              ) : null}
+              <span className="sk-go" aria-hidden>
+                {card.go}
+              </span>
+            </div>
+          ))}
+        </div>
+        {resultView ? (
+          <SearchMix
+            view={resultView}
+            onView={showResults}
+            tenders={tenders}
+            bids={gem?.bids ?? []}
+            gemTenders={gem?.tenders ?? []}
+            siteOf={siteOf}
+            timeZone={timeZone}
+            todayKey={todayKey}
+            zoneDay={zoneDay}
+            canRun={canRun}
+            run={run}
+          />
+        ) : null}
+        <h4 className="sk-heading">Websites</h4>
         <div className="sk-grid">
           {(
             [
@@ -1868,73 +1944,6 @@ export function SiteWatch({
             );
           })}
         </div>
-        <h4 className="sk-heading">Search results</h4>
-        <div className="sk-grid sk-results">
-          {resultCards.map((card) => (
-            <div
-              key={card.key}
-              role="button"
-              tabIndex={0}
-              className={`sk-card tone-${card.tone}${resultView === card.key ? " is-active" : ""}`}
-              aria-pressed={resultView === card.key}
-              title={card.title}
-              onClick={card.open}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  card.open();
-                }
-              }}
-            >
-              <span className="sk-icon" aria-hidden>
-                {card.icon}
-              </span>
-              <b className="sk-value">{card.value}</b>
-              <span className="sk-label">{card.label}</span>
-              <small className="sk-sub">{card.sub}</small>
-              {card.chips.length ? (
-                <span className="sk-chips wrap">
-                  {card.chips.map((chip) => (
-                    <button
-                      key={chip.label}
-                      type="button"
-                      className="sk-chip"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        chip.open();
-                      }}
-                    >
-                      {chip.label}
-                    </button>
-                  ))}
-                </span>
-              ) : null}
-              {card.bar != null ? (
-                <span className="sk-split" aria-hidden>
-                  <i style={{ width: `${Math.min(100, card.bar)}%` }} />
-                </span>
-              ) : null}
-              <span className="sk-go" aria-hidden>
-                {card.go}
-              </span>
-            </div>
-          ))}
-        </div>
-        {resultView ? (
-          <SearchMix
-            view={resultView}
-            onView={showResults}
-            tenders={tenders}
-            bids={gem?.bids ?? []}
-            gemTenders={gem?.tenders ?? []}
-            siteOf={siteOf}
-            timeZone={timeZone}
-            todayKey={todayKey}
-            zoneDay={zoneDay}
-            canRun={canRun}
-            run={run}
-          />
-        ) : null}
         {categories.length ? (
           <>
             <h4 className="sk-heading">By classification</h4>

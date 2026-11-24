@@ -7,6 +7,11 @@ const run = (sql: string) => db.$queryRaw(Object.assign([sql], { raw: [sql] }) a
 const ADDED_COLUMNS: Record<string, [string, string][]> = {
   Tender: [["businessLine", "VARCHAR(191) NOT NULL DEFAULT 'ASH'"]],
   User: [["phone", "VARCHAR(32) NOT NULL DEFAULT ''"]],
+  BankGuarantee: [
+    ["bgStatus", "VARCHAR(16) NOT NULL DEFAULT ''"],
+    // The closure step as JSON: date, amount, charges, charges %, stamp duty, remark.
+    ["closure", "TEXT NULL"],
+  ],
   SuretyBond: [
     ["pendingAmount", "DOUBLE NULL"],
     ["bondDays", "INT NULL"],
@@ -153,6 +158,8 @@ const ADDED_TABLES: string[] = [
   \`expiryDate\` DATETIME(3) NULL,
   \`claimDate\` DATETIME(3) NULL,
   \`stampDuty\` DOUBLE NULL,
+  \`bgStatus\` VARCHAR(16) NOT NULL DEFAULT '',
+  \`closure\` TEXT NULL,
   \`amendments\` LONGTEXT NULL,
   \`extra\` LONGTEXT NULL,
   \`sourceFile\` VARCHAR(255) NOT NULL DEFAULT '',

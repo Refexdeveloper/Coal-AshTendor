@@ -216,7 +216,26 @@ function bgTypeOf(value: unknown, current = "") {
   return "PBG";
 }
 
-/** Issuance columns plus the latest amendment number, from the add and edit forms. */
+function bgStatusOf(value: unknown) {
+  const text = textOf(value).toUpperCase();
+  if (text === "EXPIRE" || text === "EXPIRED") return "EXPIRE";
+  if (text === "CLOSED" || text === "CLOSE" || text === "CLOSURE") return "CLOSED";
+  if (text === "CLAIMED" || text === "CLAIM") return "CLAIMED";
+  return "LIVE";
+}
+
+/** Changes only the status of one bank guarantee: Live, Expired or Closed. */
+export async function setGuaranteeStatus(actor: { id: string; name: string; role: string }, id: string, value: unknown) {
+  assertCanChange(actor);
+  const current = await db.bankGuarantee.findUnique({ where: { id } });
+  if (!current) throw new Error("Bank guarantee not found.");
+  const bgStatus = bgStatusOf(value);
+  await db.bankGuarantee.update({ where: { id }, data: { bgStatus } });
+  await db.auditLog.create({
+    data: { actorId: actor.id, actorName: actor.name, action: "Changed BG status", entity: "BankGuarantee", detail: `${current.bgNumber} · ${current.bgStatus || "—"} → ${bgStatus}` },
+  });
+  return { bgNumber: String(current.bgNumber ?? ""), bgStatus };
+}
 function guaranteeFields(formData: FormData, amendments: Amendment[], currentType = "") {
   const last = amendments[amendments.length - 1];
   return {
@@ -237,8 +256,25 @@ function guaranteeFields(formData: FormData, amendments: Amendment[], currentTyp
     expiryDate: date(textOf(formData.get("expiryDate"))),
     claimDate: date(textOf(formData.get("claimDate"))),
     stampDuty: number(textOf(formData.get("stampDuty"))),
+    bgStatus: bgStatusOf(formData.get("bgStatus")),
     amendments: JSON.stringify(amendments),
+    // Only forms that carry the closure section change it.
+    ...(formData.has("closureDate") ? { closure: closureFrom(formData) } : {}),
   };
+}
+
+/** The closure step from the form, as JSON; null when every closure field is empty. */
+function closureFrom(formData: FormData) {
+  const closure = {
+    date: iso(date(textOf(formData.get("closureDate")))),
+    amount: number(textOf(formData.get("closureAmount"))),
+    charges: number(textOf(formData.get("closureCharges"))),
+    chargesPercent: percent(textOf(formData.get("closureChargesPercent"))),
+    stampDuty: number(textOf(formData.get("closureStamp"))),
+    remark: textOf(formData.get("closureRemark")).slice(0, 500),
+  };
+  const empty = !closure.date && closure.amount == null && closure.charges == null && closure.chargesPercent == null && closure.stampDuty == null && !closure.remark;
+  return empty ? null : JSON.stringify(closure);
 }
 
 /**
@@ -286,7 +322,7 @@ function amendmentsFrom(formData: FormData, amendmentFiles: Upload[]) {
 }
 
 /** Adds one bank guarantee, with any amendment rows and the scans uploaded with the form. */
-export async function createGuarantee(actor: { id: string; role: string }, formData: FormData, issuanceFiles: Upload[], amendmentFiles: Upload[]) {
+export async function createGuarantee(actor: { id: string; role: string }, formData: FormData, issuanceFiles: Upload[], amendmentFiles: Upload[], closureFiles: Upload[] = []) {
   assertCanChange(actor);
   const bgNumber = textOf(formData.get("bgNumber"));
   if (bgNumber.length < 4) throw new Error("Enter the BG number.");
@@ -306,11 +342,12 @@ export async function createGuarantee(actor: { id: string; role: string }, formD
     },
   });
   const stored = await storeBgDocuments(actor, [...issuanceFiles, ...files], bgNumber);
-  return { id: saved.id as string, bgNumber, amendments: amendments.length, documents: stored.stored };
+  const closure = await storeBgDocuments(actor, closureFiles, bgNumber, "CLOSURE");
+  return { id: saved.id as string, bgNumber, amendments: amendments.length, documents: stored.stored + closure.stored };
 }
 
 /** Updates one bank guarantee already in the register. New scans are added; documents already stored stay. */
-export async function updateGuarantee(actor: { id: string; role: string }, formData: FormData, issuanceFiles: Upload[], amendmentFiles: Upload[]) {
+export async function updateGuarantee(actor: { id: string; role: string }, formData: FormData, issuanceFiles: Upload[], amendmentFiles: Upload[], closureFiles: Upload[] = []) {
   assertCanChange(actor);
   const id = textOf(formData.get("id"));
   const current = await db.bankGuarantee.findUnique({ where: { id } });
@@ -327,7 +364,8 @@ export async function updateGuarantee(actor: { id: string; role: string }, formD
     await db.bgDocument.updateMany({ where: { bgNumber: bgKey(String(current.bgNumber ?? "")) }, data: { bgNumber: bgKey(bgNumber) } });
   }
   const stored = await storeBgDocuments(actor, [...issuanceFiles, ...files], bgNumber);
-  return { id, bgNumber, amendments: amendments.length, documents: stored.stored };
+  const closure = await storeBgDocuments(actor, closureFiles, bgNumber, "CLOSURE");
+  return { id, bgNumber, amendments: amendments.length, documents: stored.stored + closure.stored };
 }
 
 export async function listGuarantees() {

@@ -1,7 +1,7 @@
-import { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { bgDocumentUrl, useApi } from "@client/api/client";
-import type { BankGuarantee, BgDocument } from "@client/lib/types";
+import { bgDocumentUrl, postAction, useApi } from "@client/api/client";
+import type { BankGuarantee, BgClosure, BgDocument } from "@client/lib/types";
 import { LoadFailed, Loading } from "@client/components/base/loading";
 import { Icon, PlantArt } from "@client/pages/executive/ExecutiveView";
 import { HEALTH, day } from "@client/pages/bonds/Bonds";
@@ -9,6 +9,18 @@ import { inr, inrFull } from "@client/utils/money";
 import { TYPE_LABEL, TYPE_TONE, asDate, enrich, pct } from "./Guarantees";
 import { BgDocumentsPanel } from "./BgDocuments";
 import { AddGuaranteeForm } from "./AddGuarantee";
+
+const STATUS_LABEL: Record<string, string> = { LIVE: "Live", EXPIRE: "Expired", CLOSED: "Closed", CLAIMED: "Claimed" };
+const STATUS_TONE: Record<string, string> = { LIVE: "green", EXPIRE: "amber", CLOSED: "blue", CLAIMED: "red" };
+
+/** The saved status, or else Live / Expired from the current expiry (the latest amendment's, not the issuance's). */
+function shownStatus(guarantee: BankGuarantee, currentExpiry?: Date | string | null) {
+  if (guarantee.bgStatus === "LIVE" || guarantee.bgStatus === "EXPIRE" || guarantee.bgStatus === "CLOSED" || guarantee.bgStatus === "CLAIMED") return guarantee.bgStatus;
+  const latest = currentExpiry ?? guarantee.expiryDate;
+  const expiry = latest ? new Date(latest) : null;
+  if (expiry && !Number.isNaN(expiry.getTime()) && expiry.getTime() < Date.now()) return "EXPIRE";
+  return "LIVE";
+}
 
 /** One bank guarantee on its own page: every stored field and the full issuance and amendment history. */
 export default function GuaranteeDetailPage() {
@@ -20,9 +32,51 @@ export default function GuaranteeDetailPage() {
   const today = useMemo(() => new Date(), []);
   const [activeDoc, setActiveDoc] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState("");
+  const [note, setNote] = useState<{ ok?: string; error?: string } | null>(null);
+  const closureInput = useRef<HTMLInputElement>(null);
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
   const row = enrich(data.guarantee, today);
+  const status = shownStatus(data.guarantee, row.current.expiry);
+  const closures = data.documents.filter((doc) => doc.kind === "CLOSURE");
   const health = HEALTH[row.health];
+
+  /** Live / Expired / Closed straight from the page. */
+  const changeStatus = async (value: string) => {
+    setSaving("status");
+    setNote(null);
+    const form = new FormData();
+    form.append("id", data.guarantee.id);
+    form.append("bgStatus", value);
+    const answer = await postAction("guarantee-status", form);
+    setSaving("");
+    setNote(answer?.error ? { error: answer.error } : { ok: answer?.ok ?? "Status saved." });
+    void reload();
+  };
+  /** Closure letters added from the Closure row of the table. */
+  const uploadClosure = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setSaving("closure");
+    setNote(null);
+    const form = new FormData();
+    form.append("bgNumber", row.bgNumber);
+    form.append("kind", "CLOSURE");
+    for (const file of Array.from(files)) form.append("files", file);
+    const answer = await postAction("upload-bg-documents", form);
+    setSaving("");
+    if (closureInput.current) closureInput.current.value = "";
+    setNote(answer?.error ? { error: answer.error } : { ok: `Closure document: ${answer?.ok ?? "stored"}.` });
+    void reload();
+  };
+  let closure: BgClosure | null = null;
+  try {
+    closure = data.guarantee.closure ? (JSON.parse(data.guarantee.closure) as BgClosure) : null;
+  } catch {
+    closure = null;
+  }
+  // The closure date entered on the form, else when the closure letter was uploaded.
+  const hasClosure = closures.length > 0 || Boolean(closure && (closure.date || closure.remark || closure.amount != null || closure.charges != null || closure.chargesPercent != null || closure.stampDuty != null));
+  const closedOn = closure?.date ? new Date(closure.date) : closures.length ? closures.map((doc) => new Date(doc.uploadedAt)).sort((a, b) => b.getTime() - a.getTime())[0] : null;
 
   // The scan for a step: the issuance document, or the one marked with that amendment number.
   const docFor = (index: number) =>
@@ -58,6 +112,7 @@ export default function GuaranteeDetailPage() {
       icon: "⛨",
       rows: [
         ["BG type", TYPE_LABEL[row.bgType] ? `${row.bgType} · ${TYPE_LABEL[row.bgType]}` : row.bgType || "—"],
+        ["Status", STATUS_LABEL[status]],
         ["BG number", row.bgNumber || "—"],
         ["Issuance bank", row.bank || "—"],
         ["Margin money", row.marginMoney || "—"],
@@ -100,6 +155,7 @@ export default function GuaranteeDetailPage() {
           </Link>
           <div className="bg-chips">
             <span className={`dk-pill ${TYPE_TONE[row.bgType] ?? ""}`}>{row.bgType || "BG"}</span>
+            <span className={`dk-pill ${STATUS_TONE[status] ?? "green"}`}>{STATUS_LABEL[status]}</span>
             <span className={`dk-pill ${health.tone}`}>{health.label}</span>
             <span className="bonds-number">{row.bgNumber}</span>
           </div>
@@ -110,12 +166,24 @@ export default function GuaranteeDetailPage() {
         </div>
         {data.canEdit ? (
           <div className="dk-hero-tools">
+            <label className="bg-status-pick">
+              <span>Status</span>
+              <select value={status} disabled={saving === "status"} onChange={(event) => void changeStatus(event.target.value)} aria-label="BG status">
+                <option value="LIVE">Live</option>
+                <option value="EXPIRE">Expired</option>
+                <option value="CLOSED">Closed</option>
+                {status === "CLAIMED" ? <option value="CLAIMED">Claimed</option> : null}
+              </select>
+            </label>
             <button type="button" className={`dk-btn${editing ? " is-on" : ""}`} onClick={() => setEditing((value) => !value)}>
               {editing ? "Close" : "Edit"}
             </button>
           </div>
         ) : null}
       </section>
+
+      {note?.ok ? <p className="banner good">{note.ok}</p> : null}
+      {note?.error ? <p className="banner bad">{note.error}</p> : null}
 
       {editing ? (
         <AddGuaranteeForm
@@ -223,8 +291,8 @@ export default function GuaranteeDetailPage() {
             <Icon name="doc" />
           </span>
           <div>
-            <h2>Issuance and amendments</h2>
-            <p>Every step with its amount, charges and dates, exactly as in the register</p>
+            <h2>Issuance, amendments and closure</h2>
+            <p>Every step with its amount, charges and dates, exactly as in the register, and the closure letter at the end</p>
           </div>
         </header>
         <div className="dk-table-wrap">
@@ -278,6 +346,55 @@ export default function GuaranteeDetailPage() {
                 </tr>
                 );
               })}
+              {hasClosure ? (
+              <tr className={`bg-closure-row${closures.length ? " is-link" : ""}${closures.some((doc) => doc.id === activeDoc) ? " is-on" : ""}`}
+                onClick={() => {
+                  if (!closures.length) return;
+                  setActiveDoc(closures[0].id);
+                  document.getElementById("documents")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                }}
+              >
+                <td>
+                  <b>Closure</b>
+                  <small> · </small>
+                  <span className={`dk-pill ${STATUS_TONE[status] ?? "green"}`}>{STATUS_LABEL[status]}</span>
+                </td>
+                <td>
+                  {closedOn ? day(closedOn) : "—"}
+                  {closure?.remark ? <small className="muted bg-closure-remark">{closure.remark}</small> : null}
+                </td>
+                <td className="num">{closure?.amount != null ? inrFull(closure.amount) : "—"}</td>
+                <td className="num">{closure?.charges != null ? inrFull(closure.charges) : "—"}</td>
+                <td className="num">{closure?.chargesPercent != null ? pct(closure.chargesPercent) : "—"}</td>
+                <td>—</td>
+                <td>—</td>
+                <td className="num">{closure?.stampDuty != null ? inrFull(closure.stampDuty) : "—"}</td>
+                <td>
+                  <span className="bg-closure-docs">
+                    {closures.map((doc, index) => (
+                      <a key={doc.id} className="bgdoc-link" href={bgDocumentUrl(doc.id)} target="_blank" rel="noreferrer" title={doc.fileName} onClick={(event) => event.stopPropagation()}>
+                        {closures.length > 1 ? `View PDF ${index + 1}` : "View PDF"}
+                      </a>
+                    ))}
+                    {data.canUpload ? (
+                      <label className="bgdoc-link bg-closure-add" onClick={(event) => event.stopPropagation()}>
+                        {saving === "closure" ? "Uploading…" : closures.length ? "+ Add" : "Upload closure"}
+                        <input
+                          ref={closureInput}
+                          type="file"
+                          multiple
+                          hidden
+                          accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.doc,.docx"
+                          disabled={saving === "closure"}
+                          onChange={(event) => void uploadClosure(event.target.files)}
+                        />
+                      </label>
+                    ) : null}
+                    {!closures.length && !data.canUpload ? <span className="muted">—</span> : null}
+                  </span>
+                </td>
+              </tr>
+              ) : null}
             </tbody>
             <tfoot>
               <tr>
@@ -285,11 +402,11 @@ export default function GuaranteeDetailPage() {
                   <b>Total</b>
                 </td>
                 <td className="num">
-                  <b>{inrFull(row.chargesTotal)}</b>
+                  <b>{inrFull((row.chargesTotal ?? 0) + (closure?.charges ?? 0))}</b>
                 </td>
                 <td colSpan={3} />
                 <td className="num">
-                  <b>{inrFull(row.stampTotal)}</b>
+                  <b>{inrFull((row.stampTotal ?? 0) + (closure?.stampDuty ?? 0))}</b>
                 </td>
                 <td />
               </tr>

@@ -2,7 +2,7 @@ import { useActionState, useEffect, useState } from "react";
 import { addGuaranteeAction, updateGuaranteeAction } from "@client/api/actions";
 import type { ActionState } from "@client/api/action-state";
 import { Submit } from "@client/components/base/submit";
-import type { BankGuarantee, BgAmendment } from "@client/lib/types";
+import type { BankGuarantee, BgAmendment, BgClosure } from "@client/lib/types";
 import { Icon } from "@client/pages/executive/ExecutiveView";
 
 /** A blank amendment row. The key only keeps React from reusing the inputs after one is removed. */
@@ -27,6 +27,23 @@ function dateInput(value: Date | string | null | undefined) {
   if (!value) return "";
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+function statusValue(guarantee?: BankGuarantee) {
+  const saved = guarantee?.bgStatus;
+  if (saved === "LIVE" || saved === "EXPIRE" || saved === "CLOSED" || saved === "CLAIMED") return saved;
+  // The latest amendment's expiry counts, not the issuance's.
+  let latest: Date | string | null | undefined = guarantee?.expiryDate;
+  try {
+    const list = JSON.parse(guarantee?.amendments || "[]") as BgAmendment[];
+    const last = [...list].sort((a, b) => a.no - b.no).filter((item) => item.expiry).pop();
+    if (last?.expiry) latest = last.expiry;
+  } catch {
+    /* keep the issuance expiry */
+  }
+  const expiry = latest ? new Date(latest) : null;
+  if (expiry && !Number.isNaN(expiry.getTime()) && expiry.getTime() < Date.now()) return "EXPIRE";
+  return "LIVE";
 }
 
 function numInput(value: number | null | undefined) {
@@ -56,13 +73,24 @@ function draftsFrom(guarantee?: BankGuarantee): AmendDraft[] {
     }));
 }
 
+function closureOf(guarantee?: BankGuarantee): BgClosure | null {
+  if (!guarantee?.closure) return null;
+  try {
+    return JSON.parse(guarantee.closure) as BgClosure;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Enter one bank guarantee, or edit one already in the register.
  * Issuance fields, extra scans, and each amendment (kept by its existing number) are saved together.
  */
-export function AddGuaranteeForm({ onDone, defaultType = "PBG", guarantee }: { onDone: () => void; defaultType?: string; guarantee?: BankGuarantee }) {
+export function AddGuaranteeForm({ onDone, defaultType = "PBG", guarantee, hideEmd = false }: { onDone: () => void; defaultType?: string; guarantee?: BankGuarantee; hideEmd?: boolean }) {
   const editing = Boolean(guarantee);
   const [amendments, setAmendments] = useState<AmendDraft[]>(() => draftsFrom(guarantee));
+  const saved = closureOf(guarantee);
+  const [closureOpen, setClosureOpen] = useState(Boolean(saved));
   const [state, action] = useActionState(async (previous: ActionState, formData: FormData) => {
     const result = await (editing ? updateGuaranteeAction : addGuaranteeAction)(previous, formData);
     if (result?.ok) onDone();
@@ -97,7 +125,7 @@ export function AddGuaranteeForm({ onDone, defaultType = "PBG", guarantee }: { o
           <select name="bgType" defaultValue={type}>
             <option value="PBG">PBG</option>
             <option value="APBG">APBG</option>
-            <option value="EMD">EMD</option>
+            {hideEmd ? null : <option value="EMD">EMD</option>}
             {guarantee && !known && guarantee.bgType ? <option value={guarantee.bgType}>{guarantee.bgType}</option> : null}
           </select>
         </label>
@@ -211,6 +239,70 @@ export function AddGuaranteeForm({ onDone, defaultType = "PBG", guarantee }: { o
               </button>
             </fieldset>
           ))}
+        </div>
+
+        <div className="wide bg-add-amendments">
+          <div className="bg-add-amend-head">
+            <strong>Closure</strong>
+            {closureOpen ? null : (
+              <button type="button" className="dk-ghost" onClick={() => setClosureOpen(true)}>
+                Add closure
+              </button>
+            )}
+          </div>
+          {closureOpen ? (
+            <fieldset className="bg-add-amend bg-add-closure">
+              <legend>Closure</legend>
+              <label>
+                Status
+                <select name="bgStatus" defaultValue={statusValue(guarantee)}>
+                  <option value="LIVE">Live</option>
+                  <option value="EXPIRE">Expired</option>
+                  <option value="CLOSED">Closed</option>
+                  {guarantee?.bgStatus === "CLAIMED" ? <option value="CLAIMED">Claimed</option> : null}
+                </select>
+              </label>
+              <label>
+                Closure date
+                <input name="closureDate" type="date" defaultValue={dateInput(saved?.date)} />
+              </label>
+              <label>
+                Amount
+                <input name="closureAmount" inputMode="decimal" defaultValue={numInput(saved?.amount)} />
+              </label>
+              <label>
+                Charges
+                <input name="closureCharges" inputMode="decimal" defaultValue={numInput(saved?.charges)} />
+              </label>
+              <label>
+                Charges %
+                <input name="closureChargesPercent" inputMode="decimal" defaultValue={numInput(saved?.chargesPercent)} />
+              </label>
+              <label>
+                Stamp duty
+                <input name="closureStamp" inputMode="decimal" defaultValue={numInput(saved?.stampDuty)} />
+              </label>
+              <label>
+                Remark
+                <input name="closureRemark" defaultValue={saved?.remark ?? ""} placeholder="Closure letter reference, reason…" />
+              </label>
+              <label>
+                {editing ? "Add closure document" : "Closure document"}
+                <input name="closure" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.webp,.doc,.docx" />
+              </label>
+              <button type="button" className="dk-ghost" onClick={() => setClosureOpen(false)}>
+                Remove
+              </button>
+            </fieldset>
+          ) : (
+            <>
+              <p className="muted">No closure yet. Add it when the bank releases or closes this guarantee; the status (Live, Expired, Closed) is set there.</p>
+              {/* Without the closure section the status stays as it is (a new guarantee starts Live, or Expired if already past expiry). */}
+              <input type="hidden" name="bgStatus" value={statusValue(guarantee)} />
+              {/* Removing a saved closure clears it on save; documents already stored stay in the Documents list. */}
+              {saved ? <input type="hidden" name="closureDate" value="" /> : null}
+            </>
+          )}
         </div>
 
         {state?.error ? <p className="banner bad wide">{state.error}</p> : null}

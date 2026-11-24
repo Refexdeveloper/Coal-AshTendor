@@ -32,13 +32,22 @@ export function parseBgFileName(fileName: string) {
  * Stores BG documents. A file already stored (same content) is skipped; a file whose name has no BG number is refused.
  * Files for a BG number that is not in the register yet are kept and show up once that BG is imported.
  */
-export async function storeBgDocuments(actor: { id: string; role: string }, files: { name: string; type: string; buffer: Buffer }[], forBg = "") {
+export async function storeBgDocuments(
+  actor: { id: string; role: string },
+  files: { name: string; type: string; buffer: Buffer }[],
+  forBg = "",
+  forceKind?: "CLOSURE",
+) {
   if (!BOND_MANAGERS.includes(actor.role) && actor.role !== "GROUP_CEO") throw new Error("Only Accounts, the ISB owner, coordinators, the Department Head, the Group CEO or an administrator can add BG documents.");
   const known = new Set((await db.bankGuarantee.findMany({})).map((row: { bgNumber: string }) => bgKey(row.bgNumber)));
   const result = { stored: 0, duplicate: 0, unmatched: [] as string[], unnamed: [] as string[], tooLarge: [] as string[] };
   for (const file of files) {
     const parsed = parseBgFileName(file.name);
     if (forBg) parsed.bgNumber = bgKey(forBg);
+    if (forceKind) {
+      parsed.kind = forceKind;
+      parsed.amendmentNo = null;
+    }
     if (!parsed.bgNumber) {
       result.unnamed.push(parsed.fileName);
       continue;
@@ -77,7 +86,11 @@ export async function documentsFor(bgNumber: string) {
   const rows = await db.bgDocument.findMany({ where: { bgNumber: bgKey(bgNumber) } });
   return rows
     .map(({ storedPath: _path, sha256: _hash, ...rest }: Record<string, unknown>) => rest)
-    .sort((a: any, b: any) => (a.kind === b.kind ? (a.amendmentNo ?? 0) - (b.amendmentNo ?? 0) : a.kind === "ISSUANCE" ? -1 : 1));
+    .sort((a: { kind?: string; amendmentNo?: number | null }, b: { kind?: string; amendmentNo?: number | null }) => {
+      const order = (kind?: string) => (kind === "ISSUANCE" ? 0 : kind === "AMENDMENT" ? 1 : 2);
+      const byKind = order(a.kind) - order(b.kind);
+      return byKind || (a.amendmentNo ?? 0) - (b.amendmentNo ?? 0);
+    });
 }
 
 /** How many documents each BG number has, for the register table. */

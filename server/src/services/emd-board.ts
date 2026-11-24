@@ -56,7 +56,9 @@ export type EmdInstrument = {
   bank: string;
   amount: number | null;
   pendingAmount: number | null;
-  days: number | null;
+      days: number | null;
+  emd: boolean;
+  text: string;
   issueDate: Date | null;
   expiryDate: Date | null;
 };
@@ -79,18 +81,18 @@ function pendingOf(row: Record<string, unknown>) {
 }
 async function emdInstruments(): Promise<EmdInstrument[]> {
   const [guarantees, bonds] = await Promise.all([db.bankGuarantee.findMany({}), db.suretyBond.findMany({})]);
-  const fromBg = (guarantees as Record<string, unknown>[])
-    .filter((row) => String(row.bgType ?? "").toUpperCase() === "EMD")
-    .map((row) => ({
+  const fromBg = (guarantees as Record<string, unknown>[]).map((row) => ({
       id: String(row.id),
       kind: "BG" as const,
       number: String(row.bgNumber ?? ""),
-      title: String(row.site || row.beneficiary || "EMD bank guarantee"),
+      title: String(row.site || row.beneficiary || "Bank guarantee"),
       party: String(row.beneficiary ?? ""),
       bank: String(row.bank ?? ""),
       amount: latestAmount((row.amount as number | null) ?? null, (row.amendments as string | null) ?? null),
       pendingAmount: null,
       days: null,
+      emd: String(row.bgType ?? "").toUpperCase() === "EMD",
+      text: [row.loiLoa, row.amendmentNumber, row.details, row.bgType].map((part) => String(part ?? "")).join(" "),
       issueDate: (row.issueDate as Date | null) ?? null,
       expiryDate: (row.expiryDate as Date | null) ?? null,
     }));
@@ -106,6 +108,8 @@ async function emdInstruments(): Promise<EmdInstrument[]> {
       amount: typeof row.amount === "number" && Number.isFinite(row.amount) ? row.amount : null,
       pendingAmount: pendingOf(row),
       days: typeof row.bondDays === "number" && Number.isFinite(row.bondDays) ? row.bondDays : daysUntil((row.ext2Date as Date | null) ?? (row.ext1ExpiryDate as Date | null) ?? (row.expiryDate as Date | null) ?? null),
+      emd: true,
+      text: [row.tenderRef, row.tenderDetails, row.mode, row.status].map((part) => String(part ?? "")).join(" "),
       issueDate: (row.issueDate as Date | null) ?? null,
       expiryDate: (row.ext1ExpiryDate as Date | null) ?? (row.expiryDate as Date | null) ?? null,
     }));
@@ -160,6 +164,7 @@ export async function listEmdBoard() {
         portal: String(tender.portalName ?? ""),
         location: String(tender.location ?? ""),
         tenderRef: String(tender.tenderRef ?? ""),
+        externalId: String(tender.externalTenderId ?? ""),
         method: METHODS.includes(method as (typeof METHODS)[number]) ? method : method || "UNCLEAR",
         amount,
         bank: String(record?.bankDetails ?? ""),
