@@ -3,6 +3,7 @@ import { updateBondAction } from "@client/api/actions";
 import type { ActionState } from "@client/api/action-state";
 import { Submit } from "@client/components/base/submit";
 import type { SuretyBond } from "@client/lib/types";
+import { bondFigures } from "./Bonds";
 
 const dateValue = (value: Date | string | null) => {
   if (!value) return "";
@@ -33,6 +34,7 @@ const MONEY: [keyof SuretyBond, string][] = [
   ["premium", "Premium"],
   ["premiumPercent", "Premium %"],
   ["stampDuty", "Stamp duty"],
+  ["pendingAmount", "Pending amount"],
 ];
 const DATES: [keyof SuretyBond, string][] = [
   ["issueDate", "Issue date"],
@@ -54,6 +56,7 @@ export function BondEditForm({ bond, onDone }: { bond: SuretyBond; onDone: () =>
     if (result?.ok) onDone();
     return result;
   }, null as ActionState);
+  const shown = bondFigures(bond);
   return (
     <form action={action} className="form-grid bg-add">
       <input type="hidden" name="id" value={bond.id} />
@@ -81,9 +84,13 @@ export function BondEditForm({ bond, onDone }: { bond: SuretyBond; onDone: () =>
       {MONEY.map(([key, label]) => (
         <label key={key}>
           {label}
-          <input name={key} inputMode="decimal" defaultValue={numValue(bond[key] as number | null)} />
+          <input name={key} inputMode="decimal" defaultValue={numValue(key === "pendingAmount" ? shown.pending : (bond[key] as number | null))} />
         </label>
       ))}
+      <label>
+        Days
+        <input name="bondDays" inputMode="numeric" defaultValue={numValue(shown.days)} />
+      </label>
       {DATES.map(([key, label]) => (
         <label key={key}>
           {label}

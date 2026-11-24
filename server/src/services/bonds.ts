@@ -186,7 +186,7 @@ export async function listBonds() {
 
 const BOND_EDITORS = [...BOND_MANAGERS, "GROUP_CEO", "REVIEWER"];
 const BOND_TEXT = ["state", "line", "tenderRef", "tenderDetails", "plant", "customer", "broker", "insurer", "bondNumber", "mode", "transferType", "status", "usedFor"] as const;
-const BOND_MONEY = ["amount", "onlineAmount", "isbAmount", "premium", "premiumPercent", "stampDuty"] as const;
+const BOND_MONEY = ["amount", "onlineAmount", "isbAmount", "premium", "premiumPercent", "stampDuty", "pendingAmount"] as const;
 const BOND_DATES = ["issueDate", "startDate", "expiryDate", "claimExpiryDate", "ext1IssueDate", "ext1StartDate", "ext1ExpiryDate", "ext1ClaimDate", "ext2Date", "ext2ClaimDate"] as const;
 
 function formMoney(value: unknown) {
@@ -217,6 +217,8 @@ export async function updateBond(actor: { id: string; name: string; role: string
   };
   for (const key of BOND_TEXT) data[key] = clean(String(formData.get(key) || ""));
   for (const key of BOND_MONEY) data[key] = formMoney(formData.get(key));
+  const days = clean(String(formData.get("bondDays") || ""));
+  data.bondDays = days && Number.isFinite(Number(days)) ? Math.trunc(Number(days)) : null;
   for (const key of BOND_DATES) data[key] = formDay(formData.get(key));
   await db.suretyBond.update({ where: { id }, data });
   await db.auditLog.create({

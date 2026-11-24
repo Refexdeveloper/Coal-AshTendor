@@ -7,6 +7,10 @@ const run = (sql: string) => db.$queryRaw(Object.assign([sql], { raw: [sql] }) a
 const ADDED_COLUMNS: Record<string, [string, string][]> = {
   Tender: [["businessLine", "VARCHAR(191) NOT NULL DEFAULT 'ASH'"]],
   User: [["phone", "VARCHAR(32) NOT NULL DEFAULT ''"]],
+  SuretyBond: [
+    ["pendingAmount", "DOUBLE NULL"],
+    ["bondDays", "INT NULL"],
+  ],
   EmdRecord: [
     ["bgRequest", "LONGTEXT NULL"],
     ["bankDetails", "VARCHAR(255) NOT NULL DEFAULT ''"],
@@ -117,6 +121,8 @@ const ADDED_TABLES: string[] = [
   \`premium\` DOUBLE NULL,
   \`premiumPercent\` DOUBLE NULL,
   \`stampDuty\` DOUBLE NULL,
+  \`pendingAmount\` DOUBLE NULL,
+  \`bondDays\` INT NULL,
   \`mode\` VARCHAR(191) NOT NULL DEFAULT '',
   \`transferType\` VARCHAR(191) NOT NULL DEFAULT '',
   \`status\` VARCHAR(191) NOT NULL DEFAULT '',

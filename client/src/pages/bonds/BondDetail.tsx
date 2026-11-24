@@ -5,7 +5,7 @@ import type { SuretyBond } from "@client/lib/types";
 import { LoadFailed, Loading } from "@client/components/base/loading";
 import { PlantArt } from "@client/pages/executive/ExecutiveView";
 import { inr, inrFull } from "@client/utils/money";
-import { HEALTH, day, enrich } from "./Bonds";
+import { HEALTH, bondFigures, day, enrich } from "./Bonds";
 import { BondDocumentsPanel, bondDocUrl, type BondDocument } from "./BondDocuments";
 import { BondEditForm } from "./BondEdit";
 
@@ -20,6 +20,7 @@ export default function BondDetailPage() {
   const today = useMemo(() => new Date(), []);
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
   const row = enrich(data.bond, today);
+  const money = bondFigures(data.bond, today);
   const health = HEALTH[row.health];
   const isEmd = row.kind === "EMD";
   const docFor = (kind: "ISSUANCE" | "EXTENSION", no?: number) => data.documents.find((doc) => doc.kind === kind && (kind === "ISSUANCE" || doc.extensionNo === no));
@@ -88,6 +89,8 @@ export default function BondDetailPage() {
         ["Premium", inrFull(row.premium)],
         ["Premium %", row.premiumPercent != null ? `${row.premiumPercent}%` : "—"],
         ["Stamp duty", inrFull(row.stampDuty)],
+        ["Pending amount", inrFull(money.pending)],
+        ["Days", money.days != null ? String(money.days) : "—"],
       ],
     },
   ];

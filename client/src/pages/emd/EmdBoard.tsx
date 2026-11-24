@@ -46,6 +46,8 @@ type Instrument = {
   party: string;
   bank: string;
   amount: number | null;
+  pendingAmount: number | null;
+  days: number | null;
   issueDate: Date | null;
   expiryDate: Date | null;
 };
@@ -348,8 +350,20 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
                   </div>
                   <div>
                     <dt>Expiry</dt>
-                  <dd>{day(row.expiryDate)}</dd>
-                </div>
+                    <dd>{day(row.expiryDate)}</dd>
+                  </div>
+                  {row.kind === "ISB" ? (
+                    <>
+                      <div>
+                        <dt>Pending amount</dt>
+                        <dd>{inr(row.pendingAmount)}</dd>
+                      </div>
+                      <div>
+                        <dt>Days</dt>
+                        <dd>{row.days == null ? "—" : row.days}</dd>
+                      </div>
+                    </>
+                  ) : null}
                 </dl>
                 {editingBond === row.id ? (
                   <IsbEditor

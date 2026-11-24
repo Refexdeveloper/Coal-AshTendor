@@ -43,6 +43,18 @@ export function enrich(bond: SuretyBond, today: Date) {
   const name = bond.kind === "EMD" ? bond.plant || bond.customer : bond.customer;
   return { ...bond, expiry, claim, days, health, extended, dateCheck, name };
 }
+
+/** Pending amount is the saved figure, or the EMD left after the online payment and the ISB amount. Days are the saved figure, or the days left until expiry. */
+export function bondFigures(bond: SuretyBond, today = new Date()) {
+  const pending =
+    bond.pendingAmount != null
+      ? bond.pendingAmount
+      : bond.amount == null
+        ? null
+        : Math.max(0, bond.amount - (bond.onlineAmount ?? 0) - (bond.isbAmount ?? 0));
+  const left = enrich(bond, today).days;
+  return { pending, days: bond.bondDays != null ? bond.bondDays : left };
+}
 export type Row = ReturnType<typeof enrich>;
 
 export const day = (date: Date | null) =>

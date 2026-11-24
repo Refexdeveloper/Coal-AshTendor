@@ -390,6 +390,8 @@ CREATE TABLE IF NOT EXISTS `SuretyBond` (
   `premium` DOUBLE NULL,
   `premiumPercent` DOUBLE NULL,
   `stampDuty` DOUBLE NULL,
+  `pendingAmount` DOUBLE NULL,
+  `bondDays` INT NULL,
   `mode` VARCHAR(191) NOT NULL DEFAULT '',
   `transferType` VARCHAR(191) NOT NULL DEFAULT '',
   `status` VARCHAR(191) NOT NULL DEFAULT '',

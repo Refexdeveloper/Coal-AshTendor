@@ -55,11 +55,28 @@ export type EmdInstrument = {
   party: string;
   bank: string;
   amount: number | null;
+  pendingAmount: number | null;
+  days: number | null;
   issueDate: Date | null;
   expiryDate: Date | null;
 };
 
-/** EMD bank guarantees and EMD surety bonds from the registers. Performance bonds stay on the BG and ISB boards. */
+function daysUntil(date: Date | null) {
+  if (!date || Number.isNaN(new Date(date).getTime())) return null;
+  const expiry = new Date(date);
+  const today = new Date();
+  const start = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const end = Date.UTC(expiry.getUTCFullYear(), expiry.getUTCMonth(), expiry.getUTCDate());
+  return Math.round((end - start) / 864e5);
+}
+
+function pendingOf(row: Record<string, unknown>) {
+  if (typeof row.pendingAmount === "number" && Number.isFinite(row.pendingAmount)) return row.pendingAmount;
+  if (typeof row.amount !== "number" || !Number.isFinite(row.amount)) return null;
+  const online = typeof row.onlineAmount === "number" && Number.isFinite(row.onlineAmount) ? row.onlineAmount : 0;
+  const isb = typeof row.isbAmount === "number" && Number.isFinite(row.isbAmount) ? row.isbAmount : 0;
+  return Math.max(0, row.amount - online - isb);
+}
 async function emdInstruments(): Promise<EmdInstrument[]> {
   const [guarantees, bonds] = await Promise.all([db.bankGuarantee.findMany({}), db.suretyBond.findMany({})]);
   const fromBg = (guarantees as Record<string, unknown>[])
@@ -72,6 +89,8 @@ async function emdInstruments(): Promise<EmdInstrument[]> {
       party: String(row.beneficiary ?? ""),
       bank: String(row.bank ?? ""),
       amount: latestAmount((row.amount as number | null) ?? null, (row.amendments as string | null) ?? null),
+      pendingAmount: null,
+      days: null,
       issueDate: (row.issueDate as Date | null) ?? null,
       expiryDate: (row.expiryDate as Date | null) ?? null,
     }));
@@ -85,6 +104,8 @@ async function emdInstruments(): Promise<EmdInstrument[]> {
       party: String(row.customer ?? ""),
       bank: String(row.insurer ?? ""),
       amount: typeof row.amount === "number" && Number.isFinite(row.amount) ? row.amount : null,
+      pendingAmount: pendingOf(row),
+      days: typeof row.bondDays === "number" && Number.isFinite(row.bondDays) ? row.bondDays : daysUntil((row.ext2Date as Date | null) ?? (row.ext1ExpiryDate as Date | null) ?? (row.expiryDate as Date | null) ?? null),
       issueDate: (row.issueDate as Date | null) ?? null,
       expiryDate: (row.ext1ExpiryDate as Date | null) ?? (row.expiryDate as Date | null) ?? null,
     }));

@@ -236,6 +236,8 @@ export type SuretyBond = {
   premium: number | null;
   premiumPercent: number | null;
   stampDuty: number | null;
+  pendingAmount: number | null;
+  bondDays: number | null;
   mode: string;
   transferType: string;
   status: string;
