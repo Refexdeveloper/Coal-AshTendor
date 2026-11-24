@@ -163,8 +163,11 @@ type TrackInput = {
 
 const SUBMITTED = ["BID_EVIDENCE_PENDING", "BID_EVIDENCE_RECORDED", "WON", "LOST"];
 
+/** What GeM has published for this tender. Absent until the lookup finishes. */
+export type GemProgress = { gem: boolean; technical: boolean; financial: boolean; status: string };
+
 /** Works out where a tender sits in the BRD lifecycle; costing and EMD are returned as one parallel pair. */
-export function stagesFor(t: TrackInput, crew: Crew, timeZone = "Asia/Kolkata"): (Step | [Step, Step])[] {
+export function stagesFor(t: TrackInput, crew: Crew, timeZone = "Asia/Kolkata", gem?: GemProgress | null): (Step | [Step, Step])[] {
   const validated = !["UPLOADED", "OCR_PROCESSING", "DATA_VALIDATION_REQUIRED"].includes(t.overallStatus);
   const rejected = t.relevanceStatus === "REJECTED";
   const approved = t.relevanceStatus === "APPROVED";
@@ -192,6 +195,12 @@ export function stagesFor(t: TrackInput, crew: Crew, timeZone = "Asia/Kolkata"):
           : "todo";
   const submitter = (crew.submitterId && crew.names.get(crew.submitterId)) || crew.planned("BID_SUBMISSION");
   const instrument = crew.planned("EMD_INSTRUMENT");
+  const stopped = missed || halted;
+  const resultsDone = Boolean(gem?.technical || gem?.financial);
+  const pricesDone = Boolean(gem?.financial);
+  const waitingResults = Boolean(submitted && gem?.gem && !resultsDone && !stopped);
+  const waitingPrices = Boolean(resultsDone && !pricesDone && !stopped);
+  const later = (done: boolean, waiting: boolean): StepState => (done ? "done" : stopped ? "skipped" : waiting ? "current" : "todo");
 
   return [
     { key: "upload", title: "Uploaded", note: creator ? `By ${creator}` : "Record created", state: "done" },
@@ -260,6 +269,18 @@ export function stagesFor(t: TrackInput, crew: Crew, timeZone = "Asia/Kolkata"):
       note: missed ? "Deadline missed" : mention(bidState, actorsFor(crew, ["BID_SUBMISSION"]), submitter, false) || (submitted ? labelOf(BID, t.bidStatus) : "Evidence required"),
       state: bidState,
     },
+    {
+      key: "results",
+      title: "Bid results",
+      note: resultsDone ? "On GeM" : waitingResults ? gem?.status || "Waiting for GeM" : "After the bid",
+      state: later(resultsDone, waitingResults),
+    },
+    {
+      key: "prices",
+      title: "Price matching",
+      note: pricesDone ? "Prices and ranks on GeM" : waitingPrices ? "Waiting for prices" : "After bid results",
+      state: later(pricesDone, waitingPrices),
+    },
   ];
 }
 
@@ -274,7 +295,7 @@ const MARK: Record<StepState, string> = { done: "✓", current: "●", failed: "
 
 const BRANCH_ICON: Record<string, string> = { costing: "∑", emd: "⛨" };
 
-/** Folds the costing/EMD pair into one rail node so the main line reads as six steps. */
+/** Folds the costing/EMD pair into one rail node so costing and EMD stay one step on the line. */
 function mergePair([a, b]: [Step, Step]): Step {
   const states = [a.state, b.state];
   const state: StepState = states.includes("failed")
@@ -334,13 +355,16 @@ export function StageTrack({
   users,
   plan,
   timeZone = "Asia/Kolkata",
+  gem,
 }: {
   tender: TrackInput & { tasks: WorkflowTask[]; approvals: ApprovalRecord[]; costings: { stage: string; createdById: string }[]; createdById: string; submitterId: string | null; emdType: string };
   users: PublicUser[];
   plan?: StagePlan;
   timeZone?: string;
+  /** GeM technical and financial results, once the tender page has looked them up. */
+  gem?: GemProgress | null;
 }) {
-  const steps = stagesFor(tender, crewFrom(users, tender, plan), timeZone);
+  const steps = stagesFor(tender, crewFrom(users, tender, plan), timeZone, gem);
   const pair = steps.find((step): step is [Step, Step] => Array.isArray(step));
   const rail = steps.map((step) => (Array.isArray(step) ? mergePair(step) : step));
   const subs = pair ? pair.flatMap((step) => step.subs ?? []) : [];

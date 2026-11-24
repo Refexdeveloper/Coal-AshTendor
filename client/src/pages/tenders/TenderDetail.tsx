@@ -48,7 +48,8 @@ import { Status } from "@client/components/base/pill";
 import { FieldEditor } from "@client/components/feature/field-editor";
 import { parseBgRequest } from "@client/components/feature/bg-request";
 import { Countdown } from "@client/components/feature/countdown";
-import { StageTrack, type StagePlan } from "@client/components/feature/stage-track";
+import { StageTrack, type GemProgress, type StagePlan } from "@client/components/feature/stage-track";
+import { GemResults } from "@client/components/feature/gem-results";
 import type { TaskContext } from "@client/components/feature/task-kit";
 import { AdminSendBack, ManagePanel, TaskCards, UploadForm } from "@client/components/feature/workbench";
 import { ExecutiveBrief, StageHistory } from "@client/pages/tenders/ExecutiveTender";
@@ -183,9 +184,13 @@ export default function TenderPage() {
   const { id = "" } = useParams();
   const [search] = useSearchParams();
   const actor = useActor();
+  const [gem, setGem] = useState<GemProgress | null>(null);
   const { data, error, reload } = useApi<Data>(`/tenders/${encodeURIComponent(id)}`);
   const readingOcr = Boolean(data?.tender.ocrStatus === "PROCESSING" || data?.tender.documents.some((document) => document.ocrJson?.trim() === "PENDING"));
   const focusTask = search.get("task");
+  useEffect(() => {
+    setGem(null);
+  }, [id]);
   useEffect(() => {
     if (!data || !focusTask) return;
     document.getElementById(`task-${focusTask}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -399,8 +404,9 @@ export default function TenderPage() {
       ) : null}
 
       <section className="panel track-panel journey-panel">
-        <StageTrack tender={tender} users={users} plan={data.plan} timeZone={tz} />
+        <StageTrack tender={tender} users={users} plan={data.plan} timeZone={tz} gem={gem} />
       </section>
+      <GemResults tenderId={tender.id} onSummary={setGem} onlyPublished />
 
       <section className="facts">
         {[

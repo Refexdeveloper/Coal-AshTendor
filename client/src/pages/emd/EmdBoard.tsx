@@ -1,7 +1,8 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Fragment, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useActionState } from "react";
-import { documentUrl, useApi } from "@client/api/client";
+import { documentUrl, postAction, useApi } from "@client/api/client";
+import { useActor } from "@client/api/session";
 import { convertEmdToSdAction, updateEmdRegisterAction } from "@client/api/actions";
 import type { ActionState } from "@client/api/action-state";
 import { LoadFailed, Loading } from "@client/components/base/loading";
@@ -200,6 +201,9 @@ function ConvertToSd({ row, onDone }: { row: Row; onDone: () => void }) {
 /** EMD while a tender is open: how it was paid, where the tender stands, and what happens to the money afterwards. */
 export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
   const { data, error, reload } = useApi<Data>("/emd-board");
+  const actor = useActor();
+  const admin = actor.role === "ADMIN";
+  const navigate = useNavigate();
   const [card, setCard] = useState("");
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
@@ -238,6 +242,16 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
   }, [instruments, card, needle, compact]);
 
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
+
+  const remove = async (intent: "delete-tender" | "delete-guarantee" | "delete-bond", id: string, label: string) => {
+    const detail = intent === "delete-tender" ? `${label} and everything stored with this tender` : `${label} and its documents`;
+    if (!window.confirm(`Remove ${detail}?`)) return;
+    const form = new FormData();
+    form.set(intent === "delete-tender" ? "tenderId" : "id", id);
+    const result = await postAction(intent, form);
+    if (result?.error) window.alert(result.error);
+    else void reload();
+  };
 
   const sum = (match: (row: Row) => boolean, pick: (row: Row) => number = (row) => row.amount ?? 0) =>
     rows.filter(match).reduce((total, row) => total + pick(row), 0);
@@ -325,187 +339,203 @@ export default function EmdBoard({ toggle }: { toggle?: ReactNode }) {
           </label>
         </header>
         {instrumentView || listedInstruments.length > 0 ? (
-          listedInstruments.length === 0 ? (
-            <p className="dk-empty">No {card === "ISB" ? "surety bonds" : "bank guarantees"} match this search.</p>
-          ) : (
-            listedInstruments.map((row, index) => (
-              <article key={`${card}-${row.id}`} className="emd-row" style={{ "--r": Math.min(index, 12) } as CSSProperties}>
-                <header>
-                  <div>
-                    <Link to={row.kind === "BG" ? `/guarantees/${row.id}` : `/bonds/${row.id}`} state={{ from: "/?board=emd" }}>
-                      {row.number || "No number"}
-                    </Link>
-                    <strong>{row.title}</strong>
-                    <small>{row.party || "No customer"}</small>
-                  </div>
-                  <span className={`dk-pill ${row.kind === "BG" ? "violet" : "blue"}`}>{row.kind === "BG" ? "EMD BG" : "EMD ISB"}</span>
-                  {data.canEdit && row.kind === "ISB" ? (
-                    <button
-                      type="button"
-                      className={`dk-ghost${editingBond === row.id ? " is-on" : ""}`}
-                      onClick={() => setEditingBond((current) => (current === row.id ? null : row.id))}
-                    >
-                      {editingBond === row.id ? "Close" : "Edit"}
-                    </button>
-                  ) : null}
-                </header>
-                <dl>
-                  <div>
-                    <dt>Amount</dt>
-                    <dd>{inr(row.amount)}</dd>
-                  </div>
-                  <div>
-                    <dt>{row.kind === "BG" ? "Bank" : "Insurer"}</dt>
-                    <dd>{row.bank || "—"}</dd>
-                  </div>
-                  <div>
-                    <dt>Issue</dt>
-                    <dd>{day(row.issueDate)}</dd>
-                  </div>
-                  <div>
-                    <dt>Expiry</dt>
-                    <dd>{day(row.expiryDate)}</dd>
-                  </div>
-                  {row.kind === "ISB" ? (
-                    <>
-                      <div>
-                        <dt>Pending amount</dt>
-                        <dd>{inr(row.pendingAmount)}</dd>
-                      </div>
-                      <div>
-                        <dt>Days</dt>
-                        <dd>{row.days == null ? "—" : row.days}</dd>
-                      </div>
-                    </>
-                  ) : null}
-                </dl>
-                {editingBond === row.id ? (
-                  <IsbEditor
-                    id={row.id}
-                    onDone={() => {
-                      setEditingBond(null);
-                      void reload();
-                    }}
-                  />
+          <div className="dk-table-wrap">
+            <table className="dk-table bonds-dk-table">
+              <thead>
+                <tr>
+                  <th>Number</th>
+                  <th>Title</th>
+                  <th>{card === "ISB" ? "Insurer" : "Bank"}</th>
+                  <th className="num">Amount</th>
+                  <th>Issue</th>
+                  <th>Expiry</th>
+                  <th className="num">Pending</th>
+                  <th>Days</th>
+                  <th className="act" style={{ width: 248 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {listedInstruments.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="dk-empty">
+                      No {card === "ISB" ? "surety bonds" : "bank guarantees"} match this search.
+                    </td>
+                  </tr>
                 ) : null}
-              </article>
-            ))
-          )
+                {listedInstruments.map((row) => {
+                  const open = row.kind === "BG" ? `/guarantees/${row.id}` : `/bonds/${row.id}`;
+                  return (
+                    <Fragment key={`${card}-${row.id}`}>
+                      <tr className="dk-row bg-row" onClick={() => navigate(open, { state: { from: "/?board=emd" } })}>
+                        <td>
+                          <span className="bonds-number">{row.number || "No number"}</span>
+                          <small className="muted bonds-ref">{row.kind === "BG" ? "EMD BG" : "EMD ISB"}</small>
+                        </td>
+                        <td className="dk-title">
+                          {row.title}
+                          <small className="muted bonds-ref">{row.party || "No customer"}</small>
+                        </td>
+                        <td>{row.bank || "—"}</td>
+                        <td className="num">
+                          <b>{inr(row.amount)}</b>
+                        </td>
+                        <td>{day(row.issueDate)}</td>
+                        <td>{day(row.expiryDate)}</td>
+                        <td className="num">{row.kind === "ISB" ? inr(row.pendingAmount) : "—"}</td>
+                        <td>{row.kind === "ISB" && row.days != null ? row.days : "—"}</td>
+                        <td className="act" onClick={(event) => event.stopPropagation()}>
+                          {data.canEdit && row.kind === "ISB" ? (
+                            <button type="button" className={`dk-ghost${editingBond === row.id ? " is-on" : ""}`} onClick={() => setEditingBond((current) => (current === row.id ? null : row.id))}>
+                              {editingBond === row.id ? "Close" : "Edit"}
+                            </button>
+                          ) : null}
+                          {admin ? (
+                            <button type="button" className="dk-ghost" onClick={() => void remove(row.kind === "BG" ? "delete-guarantee" : "delete-bond", row.id, row.number || (row.kind === "BG" ? "this bank guarantee" : "this ISB"))}>
+                              Delete
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                      {editingBond === row.id ? (
+                        <tr>
+                          <td colSpan={9}>
+                            <IsbEditor
+                              id={row.id}
+                              onDone={() => {
+                                setEditingBond(null);
+                                void reload();
+                              }}
+                            />
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : null}
         {!instrumentView && listed.length === 0 && listedInstruments.length === 0 ? <p className="dk-empty">No EMD submissions match this view.</p> : null}
-        {!instrumentView
-          ? listed.map((row, index) => (
-          <article key={`${card}-${row.tenderId}`} className="emd-row" style={{ "--r": Math.min(index, 12) } as CSSProperties}>
-            <header>
-              <div>
-                <Link to={`/tenders/${row.tenderId}?tab=emd`}>{row.recordId}</Link>
-                <strong>{row.project || "Untitled tender"}</strong>
-                <small>{[row.customer || "No customer", row.portal, row.location].filter(Boolean).join(" · ")}</small>
-              </div>
-              <span className={`dk-pill ${RESULT[row.result].tone}`}>{RESULT[row.result].label}</span>
-              {data.canEdit && !row.convertedToSd ? (
-                <button
-                  type="button"
-                  className={`dk-ghost${converting === row.tenderId ? " is-on" : ""}`}
-                  onClick={() => {
-                    setEditing(null);
-                    setConverting((current) => (current === row.tenderId ? null : row.tenderId));
-                  }}
-                >
-                  {converting === row.tenderId ? "Close" : "Convert to SD"}
-                </button>
-              ) : null}
-              {data.canEdit ? (
-                <button
-                  type="button"
-                  className={`dk-ghost${editing === row.tenderId ? " is-on" : ""}`}
-                  onClick={() => {
-                    setConverting(null);
-                    setEditing((current) => (current === row.tenderId ? null : row.tenderId));
-                  }}
-                >
-                  {editing === row.tenderId ? "Close" : "Edit"}
-                </button>
-              ) : null}
-            </header>
-            <dl>
-              <div>
-                <dt>Method</dt>
-                <dd>{METHOD[row.method] ?? row.method}</dd>
-              </div>
-              <div>
-                <dt>EMD amount</dt>
-                <dd>{inr(row.amount)}</dd>
-              </div>
-              <div>
-                <dt>Bank</dt>
-                <dd>{row.bank || "—"}</dd>
-              </div>
-              <div>
-                <dt>Instrument no.</dt>
-                <dd>{row.instrument || "—"}</dd>
-              </div>
-              <div>
-                <dt>Issue</dt>
-                <dd>{day(row.issueDate)}</dd>
-              </div>
-              <div>
-                <dt>Expiry</dt>
-                <dd>{day(row.expiryDate)}</dd>
-              </div>
-              <div>
-                <dt>Documents</dt>
-                <dd>
-                  {row.documents.length ? (
-                    row.documents.map((doc) => (
-                      <a key={doc.id} href={documentUrl(doc.id)} target="_blank" rel="noreferrer">
-                        {doc.fileName}
-                      </a>
-                    ))
-                  ) : (
-                    <Link to={`/tenders/${row.tenderId}?tab=emd`}>Add on the tender</Link>
-                  )}
-                </dd>
-              </div>
-              {row.result === "LOST" ? (
-                <div>
-                  <dt>Refund</dt>
-                  <dd>
-                    Requested {inr(row.refundRequested)} · received {inr(row.refundReceived)} · pending {inr(row.pending)}
-                  </dd>
-                </div>
-              ) : null}
-              {row.convertedToSd ? (
-                <div>
-                  <dt>Security deposit</dt>
-                  <dd>
-                    Converted · {METHOD[row.method] ?? row.method} · {inr(row.sdAmount ?? row.amount)}
-                    {row.remark ? ` · ${row.remark}` : ""}
-                  </dd>
-                </div>
-              ) : null}
-            </dl>
-            {converting === row.tenderId ? (
-              <ConvertToSd
-                row={row}
-                onDone={() => {
-                  setConverting(null);
-                  void reload();
-                }}
-              />
-            ) : null}
-            {editing === row.tenderId ? (
-              <EditRow
-                row={row}
-                onDone={() => {
-                  setEditing(null);
-                  void reload();
-                }}
-              />
-            ) : null}
-          </article>
-        ))
-          : null}
+        {!instrumentView && listed.length > 0 ? (
+          <div className="dk-table-wrap">
+            <table className="dk-table bonds-dk-table">
+              <thead>
+                <tr>
+                  <th>Record</th>
+                  <th>Project</th>
+                  <th>Method</th>
+                  <th className="num">Amount</th>
+                  <th>Bank</th>
+                  <th>Instrument</th>
+                  <th>Expiry</th>
+                  <th>Status</th>
+                  <th className="act" style={{ width: 248 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {listed.map((row) => (
+                  <Fragment key={`${card}-${row.tenderId}`}>
+                    <tr className="dk-row bg-row" onClick={() => navigate(`/tenders/${row.tenderId}?tab=emd`)}>
+                      <td>
+                        <span className="bonds-number">{row.recordId}</span>
+                      </td>
+                      <td className="dk-title">
+                        {row.project || "Untitled tender"}
+                        <small className="muted bonds-ref">{[row.customer || "No customer", row.portal, row.location].filter(Boolean).join(" · ")}</small>
+                      </td>
+                      <td>{METHOD[row.method] ?? row.method}</td>
+                      <td className="num">
+                        <b>{inr(row.amount)}</b>
+                        {row.result === "LOST" ? <small className="muted bonds-ref">Pending {inr(row.pending)}</small> : null}
+                        {row.convertedToSd ? <small className="muted bonds-ref">SD {inr(row.sdAmount ?? row.amount)}</small> : null}
+                      </td>
+                      <td>{row.bank || "—"}</td>
+                      <td>
+                        {row.instrument || "—"}
+                        <small className="muted bonds-ref">
+                          {row.documents.length ? (
+                            row.documents.map((doc) => (
+                              <a key={doc.id} href={documentUrl(doc.id)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+                                {doc.fileName}
+                              </a>
+                            ))
+                          ) : (
+                            <Link to={`/tenders/${row.tenderId}?tab=emd`} onClick={(event) => event.stopPropagation()}>
+                              Add on the tender
+                            </Link>
+                          )}
+                        </small>
+                      </td>
+                      <td>
+                        {day(row.expiryDate)}
+                        <small className="muted bonds-ref">Issued {day(row.issueDate)}</small>
+                      </td>
+                      <td>
+                        <span className={`dk-pill ${RESULT[row.result].tone}`}>{RESULT[row.result].label}</span>
+                      </td>
+                      <td className="act" onClick={(event) => event.stopPropagation()}>
+                        {data.canEdit && !row.convertedToSd ? (
+                          <button
+                            type="button"
+                            className={`dk-ghost${converting === row.tenderId ? " is-on" : ""}`}
+                            onClick={() => {
+                              setEditing(null);
+                              setConverting((current) => (current === row.tenderId ? null : row.tenderId));
+                            }}
+                          >
+                            {converting === row.tenderId ? "Close" : "Convert to SD"}
+                          </button>
+                        ) : null}
+                        {data.canEdit ? (
+                          <button
+                            type="button"
+                            className={`dk-ghost${editing === row.tenderId ? " is-on" : ""}`}
+                            onClick={() => {
+                              setConverting(null);
+                              setEditing((current) => (current === row.tenderId ? null : row.tenderId));
+                            }}
+                          >
+                            {editing === row.tenderId ? "Close" : "Edit"}
+                          </button>
+                        ) : null}
+                        {admin ? (
+                          <button type="button" className="dk-ghost" onClick={() => void remove("delete-tender", row.tenderId, row.recordId)}>
+                            Delete
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                    {converting === row.tenderId || editing === row.tenderId ? (
+                      <tr>
+                        <td colSpan={9}>
+                          {converting === row.tenderId ? (
+                            <ConvertToSd
+                              row={row}
+                              onDone={() => {
+                                setConverting(null);
+                                void reload();
+                              }}
+                            />
+                          ) : null}
+                          {editing === row.tenderId ? (
+                            <EditRow
+                              row={row}
+                              onDone={() => {
+                                setEditing(null);
+                                void reload();
+                              }}
+                            />
+                          ) : null}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </section>
     </div>
   );

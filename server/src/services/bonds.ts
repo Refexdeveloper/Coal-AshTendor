@@ -89,70 +89,158 @@ function headerRow(sheet: Sheet, must: string[]) {
 
 type BondRow = Record<string, unknown>;
 
+/**
+ * Which column holds each field, read from the header row rather than fixed letters, so an added, removed or
+ * renamed column (a new "Plant" column, "Customer" for "Company Name") does not shift the data. Fields are matched
+ * left to right, each after the previous one found, so repeated headers ("Expiry Dt.", "Claim Expiry") land on the
+ * issue and the extension in order. A field whose header is missing is left blank.
+ */
+function columnsOf(sheet: Sheet, at: number, fields: [string, RegExp][]) {
+  const header = Object.entries(sheet.rows[at])
+    .map(([letter, cell]) => ({ letter, text: clean(cell).toLowerCase(), index: letterIndex(letter) }))
+    .filter((cell) => cell.text)
+    .sort((a, b) => a.index - b.index);
+  const map: Record<string, string> = {};
+  let after = -1;
+  for (const [field, pattern] of fields) {
+    const hit = header.find((cell) => cell.index > after && pattern.test(cell.text));
+    if (!hit) continue;
+    map[field] = hit.letter;
+    after = hit.index;
+  }
+  return map;
+}
+
+function letterIndex(letter: string) {
+  return [...letter.toUpperCase()].reduce((total, char) => total * 26 + (char.charCodeAt(0) - 64), 0);
+}
+
+const CLAIM = /c+l+a+i+m+/;
+const EMD_FIELDS: [string, RegExp][] = [
+  ["serialNo", /^s\.?\s*no|^sl\.?\s*no|^sr\.?\s*no/],
+  ["state", /^state/],
+  ["line", /^type$|^line$|ash|coal/],
+  ["tenderRef", /tender\s*(id|no|number)/],
+  ["tenderDetails", /tender\s*details|description/],
+  ["plant", /plant/],
+  ["customer", /customer|company name/],
+  ["amount", /emd\s*amount|^amount/],
+  ["onlineAmount", /online/],
+  ["isbAmount", /^isb/],
+  ["broker", /broker/],
+  ["insurer", /insurance company|issued by|insurer/],
+  ["bondNumber", /bond\s*(no|number)/],
+  ["issueDate", /issue/],
+  ["startDate", /start/],
+  ["expiryDate", /expiry/],
+  ["claimExpiryDate", CLAIM],
+  ["ext1IssueDate", /ext|tension/],
+  ["ext1StartDate", /start/],
+  ["ext1ExpiryDate", /expiry/],
+  ["ext1ClaimDate", CLAIM],
+  ["premium", /^premium\s*(amount)?$/],
+  ["premiumPercent", /premium\s*(%|percent)/],
+  ["stampDuty", /stamp/],
+  ["mode", /^mode/],
+  ["transferType", /transfer/],
+  ["status", /status/],
+];
+const PERFORMANCE_FIELDS: [string, RegExp][] = [
+  ["serialNo", /^s\.?\s*no|^sl\.?\s*no|^sr\.?\s*no/],
+  ["plant", /plant/],
+  ["customer", /customer|company name/],
+  ["tenderRef", /tender/],
+  ["broker", /broker/],
+  ["insurer", /issued by|insurance company|insurer/],
+  ["bondNumber", /bond\s*(no|number)/],
+  ["amount", /bond\s*value|amount/],
+  ["issueDate", /issue/],
+  ["startDate", /start/],
+  ["expiryDate", /expiry/],
+  ["claimExpiryDate", CLAIM],
+  ["ext1IssueDate", /ext|tension/],
+  ["ext1ExpiryDate", /expiry/],
+  ["ext1ClaimDate", CLAIM],
+  ["ext2Date", /ext|tension/],
+  ["ext2ClaimDate", CLAIM],
+  ["premium", /^premium\s*(amount)?$/],
+  ["premiumPercent", /premium\s*(%|percent)/],
+  ["stampDuty", /stamp/],
+  ["usedFor", /used\s*for/],
+];
+
 function emdRows(sheet: Sheet): BondRow[] {
-  const start = headerRow(sheet, ["tender id", "emd amount", "bond no"]) + 1;
+  const at = headerRow(sheet, ["emd amount", "bond no"]);
+  const col = columnsOf(sheet, at, EMD_FIELDS);
   return sheet.rows
-    .slice(start)
-    .filter((row) => (row.D || row.E || row.G) && number(row.H) != null)
-    .map((row) => ({
+    .slice(at + 1)
+    .map((row) => (field: string) => (col[field] ? row[col[field]] : undefined))
+    .filter((get) => (get("tenderRef") || get("tenderDetails") || get("customer")) && number(get("amount")) != null)
+    .map((get) => ({
       kind: "EMD",
-      serialNo: number(row.A),
-      state: state(row.B),
-      line: line(row.C),
-      tenderRef: clean(row.D),
-      tenderDetails: clean(row.E),
-      plant: clean(row.F),
-      customer: clean(row.G),
-      amount: number(row.H),
-      onlineAmount: number(row.I),
-      isbAmount: number(row.J),
-      broker: clean(row.K),
-      insurer: clean(row.L),
-      bondNumber: bondNumber(row.M),
-      issueDate: date(row.N),
-      startDate: date(row.O),
-      expiryDate: date(row.P),
-      claimExpiryDate: date(row.Q),
-      ext1IssueDate: date(row.R),
-      ext1StartDate: date(row.S),
-      ext1ExpiryDate: date(row.T),
-      ext1ClaimDate: date(row.U),
-      premium: number(row.V),
-      premiumPercent: percent(row.W),
-      stampDuty: number(row.X),
-      mode: clean(row.Y),
-      transferType: clean(row.Z),
-      status: clean(row.AA),
+      serialNo: number(get("serialNo")),
+      state: state(get("state")),
+      line: line(get("line")),
+      tenderRef: clean(get("tenderRef")),
+      tenderDetails: clean(get("tenderDetails")),
+      plant: clean(get("plant")),
+      customer: clean(get("customer")),
+      amount: number(get("amount")),
+      onlineAmount: number(get("onlineAmount")),
+      isbAmount: number(get("isbAmount")),
+      broker: clean(get("broker")),
+      insurer: clean(get("insurer")),
+      bondNumber: bondNumber(get("bondNumber")),
+      issueDate: date(get("issueDate")),
+      startDate: date(get("startDate")),
+      expiryDate: date(get("expiryDate")),
+      claimExpiryDate: date(get("claimExpiryDate")),
+      ext1IssueDate: date(get("ext1IssueDate")),
+      ext1StartDate: date(get("ext1StartDate")),
+      ext1ExpiryDate: date(get("ext1ExpiryDate")),
+      ext1ClaimDate: date(get("ext1ClaimDate")),
+      premium: number(get("premium")),
+      premiumPercent: percent(get("premiumPercent")),
+      stampDuty: number(get("stampDuty")),
+      mode: clean(get("mode")),
+      transferType: clean(get("transferType")),
+      status: clean(get("status")),
     }));
 }
 
 function performanceRows(sheet: Sheet): BondRow[] {
-  const start = headerRow(sheet, ["company name", "bond number", "bond value"]) + 1;
+  const at = headerRow(sheet, ["bond number", "bond value"]);
+  const col = columnsOf(sheet, at, PERFORMANCE_FIELDS);
   return sheet.rows
-    .slice(start)
-    .filter((row) => clean(row.B) && !/^total/i.test(clean(row.B)) && number(row.G) != null)
-    .map((row) => ({
+    .slice(at + 1)
+    .map((row) => (field: string) => (col[field] ? row[col[field]] : undefined))
+    .filter((get) => {
+      const who = clean(get("customer")) || clean(get("plant"));
+      return who && !/^total/i.test(who) && !/^total/i.test(clean(get("serialNo"))) && number(get("amount")) != null;
+    })
+    .map((get) => ({
       kind: "PERFORMANCE",
-      serialNo: number(row.A),
-      customer: clean(row.B),
-      tenderRef: clean(row.C),
-      broker: clean(row.D),
-      insurer: clean(row.E),
-      bondNumber: bondNumber(row.F),
-      amount: number(row.G),
-      issueDate: date(row.H),
-      startDate: date(row.I),
-      expiryDate: date(row.J),
-      claimExpiryDate: date(row.K),
-      ext1IssueDate: date(row.L),
-      ext1ExpiryDate: date(row.M),
-      ext1ClaimDate: date(row.N),
-      ext2Date: date(row.O),
-      ext2ClaimDate: date(row.P),
-      premium: number(row.Q),
-      premiumPercent: percent(row.R),
-      stampDuty: number(row.S),
-      usedFor: clean(row.T),
+      serialNo: number(get("serialNo")),
+      plant: clean(get("plant")),
+      customer: clean(get("customer")),
+      tenderRef: clean(get("tenderRef")),
+      broker: clean(get("broker")),
+      insurer: clean(get("insurer")),
+      bondNumber: bondNumber(get("bondNumber")),
+      amount: number(get("amount")),
+      issueDate: date(get("issueDate")),
+      startDate: date(get("startDate")),
+      expiryDate: date(get("expiryDate")),
+      claimExpiryDate: date(get("claimExpiryDate")),
+      ext1IssueDate: date(get("ext1IssueDate")),
+      ext1ExpiryDate: date(get("ext1ExpiryDate")),
+      ext1ClaimDate: date(get("ext1ClaimDate")),
+      ext2Date: date(get("ext2Date")),
+      ext2ClaimDate: date(get("ext2ClaimDate")),
+      premium: number(get("premium")),
+      premiumPercent: percent(get("premiumPercent")),
+      stampDuty: number(get("stampDuty")),
+      usedFor: clean(get("usedFor")),
       // The performance bond sheet has no Ash/Coal or state column; they stay blank rather than guessed.
       line: "",
       state: "",
@@ -160,6 +248,8 @@ function performanceRows(sheet: Sheet): BondRow[] {
 }
 
 /** Reads the workbook and replaces the register. Returns how many bonds of each kind were stored. */
+export { emdRows, performanceRows };
+
 export async function importBonds(actor: { id: string; role: string }, file: { name: string; buffer: Buffer }) {
   if (!BOND_MANAGERS.includes(actor.role)) throw new Error("Only Accounts, the ISB owner, coordinators, the Department Head or an administrator can import bonds.");
   if (!/\.xlsx$/i.test(file.name)) throw new Error("Upload the bond register as an Excel .xlsx file.");

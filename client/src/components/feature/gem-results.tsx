@@ -18,6 +18,23 @@ type GemResult = {
 
 export const GEM_NUMBER = /GEM\/\d{4}\/[BR]\/\d+/i;
 
+export type GemSummary = { gem: boolean; technical: boolean; financial: boolean; status: string };
+
+/** Technical tables are the bid results. Financial tables (prices and L1, L2…) are the price matching. */
+export function summariseGem(data: GemResult | null): GemSummary {
+  if (!data) return { gem: false, technical: false, financial: false, status: "" };
+  const has = (pattern: RegExp) => data.pages.some((page) => page.sections.some((section) => pattern.test(section.title) && section.tables.some((table) => table.rows.length)));
+  const financial = has(/financial/i);
+  const technical = has(/technical/i) || financial;
+  return { gem: true, technical, financial, status: data.status };
+}
+
+const sectionTitle = (title: string) => {
+  if (/financial/i.test(title)) return "Price matching";
+  if (/technical/i.test(title)) return "Bid results";
+  return title.toLowerCase().replace(/^\w/, (letter) => letter.toUpperCase());
+};
+
 /** Bid facts worth showing up front; the rest of GeM's bid details stay on GeM. */
 const BID_FACTS = ["Bid Status", "Quantity", "Bid Start Date / Time", "Bid End Date / Time", "Bid Opening Date / Time", "Ministry", "Department", "Organisation"];
 
@@ -69,17 +86,25 @@ function ResultTable({ table }: { table: GemTable }) {
  * GeM bid results for a tender in the pipeline: the technical evaluation (sellers that took part and who qualified)
  * and the financial evaluation (prices and L1, L2… ranks), read from GeM's public result page.
  */
-export function GemResults({ tenderId, gemBidId }: { tenderId?: string; gemBidId?: string }) {
+export function GemResults({ tenderId, gemBidId, onSummary, onlyPublished = false }: { tenderId?: string; gemBidId?: string; onSummary?: (summary: GemSummary) => void; onlyPublished?: boolean }) {
   const [state, setState] = useState<{ loading: boolean; data?: GemResult | null; error?: string }>({ loading: true });
   const load = (refresh = false) => {
     setState((current) => ({ ...current, loading: true, error: undefined }));
     apiGet<GemResult | null>(`${gemBidId ? `/gem-bids/${gemBidId}/result` : `/tenders/${tenderId}/gem-result`}${refresh ? "?refresh=1" : ""}`)
-      .then((data) => setState({ loading: false, data }))
-      .catch((error: unknown) => setState({ loading: false, error: error instanceof Error ? error.message : String(error) }));
+      .then((data) => {
+        setState({ loading: false, data });
+        onSummary?.(summariseGem(data));
+      })
+      .catch((error: unknown) => {
+        setState({ loading: false, error: error instanceof Error ? error.message : String(error) });
+        onSummary?.({ gem: false, technical: false, financial: false, status: "" });
+      });
   };
   useEffect(() => load(), [tenderId, gemBidId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const data = state.data;
+  const summary = data ? summariseGem(data) : null;
+  if (onlyPublished && (state.loading || !summary?.technical)) return null;
   if (!state.loading && !state.error && data === null)
     return (
       <section className="gem-res gem-res-none">
@@ -133,7 +158,7 @@ export function GemResults({ tenderId, gemBidId }: { tenderId?: string; gemBidId
               .filter((section) => section !== details)
               .map((section) => (
                 <div key={section.title} className="gem-res-section">
-                  <h4>{section.title.toLowerCase().replace(/^\w/, (c) => c.toUpperCase())}</h4>
+                  <h4>{sectionTitle(section.title)}</h4>
                   {section.tables.length === 0 ? <p className="muted">Nothing published in this step yet.</p> : null}
                   {section.tables.map((table, index) => (
                     <ResultTable key={index} table={table} />
