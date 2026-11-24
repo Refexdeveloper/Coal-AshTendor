@@ -108,7 +108,24 @@ export default function BondDetailPage() {
           <h1>{row.name || "Surety bond"}</h1>
           <p>{[row.customer !== row.name ? row.customer : "", row.state, row.insurer].filter(Boolean).join(" · ")}</p>
         </div>
+        {data.canEdit ? (
+          <div className="dk-hero-tools">
+            <button type="button" className={`dk-btn${editing ? " is-on" : ""}`} onClick={() => setEditing((open) => !open)}>
+              {editing ? "Close" : "Edit"}
+            </button>
+          </div>
+        ) : null}
       </section>
+
+      {editing && data.canEdit ? (
+        <BondEditForm
+          bond={data.bond}
+          onDone={() => {
+            setEditing(false);
+            void reload();
+          }}
+        />
+      ) : null}
 
       <section className="exec-metrics">
         {figures.map((figure, index) => (
@@ -137,22 +154,8 @@ export default function BondDetailPage() {
                 <h2>Bond details</h2>
                 <p className="muted">Every field stored from the ISB register</p>
               </div>
-              {data.canEdit ? (
-                <button type="button" className="btn ghost" onClick={() => setEditing((open) => !open)}>
-                  {editing ? "Close" : "Edit"}
-                </button>
-              ) : null}
             </header>
-            {editing && data.canEdit ? (
-              <BondEditForm
-                bond={data.bond}
-                onDone={() => {
-                  setEditing(false);
-                  void reload();
-                }}
-              />
-            ) : (
-              <div className="exec-field-groups">
+            <div className="exec-field-groups">
               {groups.map((group) => (
                 <section key={group.title} className="exec-field-group">
                   <h3>
@@ -169,8 +172,7 @@ export default function BondDetailPage() {
                   </dl>
                 </section>
               ))}
-              </div>
-            )}
+            </div>
           </section>
         </div>
 
