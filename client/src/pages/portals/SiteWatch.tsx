@@ -819,6 +819,8 @@ function SearchWords({
 }) {
   const [heading, setHeading] = useState(groups[0]?.heading ?? OTHER_HEADING);
   const [openAll, setOpenAll] = useState<boolean | null>(null);
+  // The heading list and exclude chips open on demand, so the tender table stays right under the add / exclude row.
+  const [manage, setManage] = useState(false);
   const total = groups.reduce((sum, group) => sum + group.keywords.length, 0);
   const headings: KeywordGroup[] = groups.some((group) => group.heading === OTHER_HEADING) ? groups : [...groups, { heading: OTHER_HEADING, keywords: [], minCrore: 0, type: "Other" }];
   const remove = (intent: string, word: string, label: string) =>
@@ -895,6 +897,18 @@ function SearchWords({
             </button>
           </form>
         ) : null}
+        {canEdit ? (
+          <form action={run} className="sw-add sw-add-exclude">
+            <input type="hidden" name="intent" value="search-exclude" />
+            <input name="word" placeholder="Exclude word, e.g. spares" aria-label="New exclude word" required maxLength={120} />
+            <button type="submit" className="btn ghost">
+              Exclude word
+            </button>
+          </form>
+        ) : null}
+        <button type="button" className="btn ghost sw-manage" aria-expanded={manage} onClick={() => setManage((value) => !value)}>
+          {manage ? "Hide keywords ▴" : `Keywords (${total}) · Excluding (${excludes.length}) ▾`}
+        </button>
         <form action={run} className="sw-run">
           <input type="hidden" name="intent" value="search-run" />
           <button type="submit" className="btn" disabled={running}>
@@ -903,6 +917,8 @@ function SearchWords({
         </form>
       </div>
 
+      {manage ? (
+      <div className="sw-panel">
       <div className="sw-groups-head">
         <span className="gem-chip-label">
           Searching {total} keywords under {groups.length} headings
@@ -930,15 +946,6 @@ function SearchWords({
       })}
 
       <div className="sw-excludes">
-        {canEdit ? (
-          <form action={run} className="sw-add">
-            <input type="hidden" name="intent" value="search-exclude" />
-            <input name="word" placeholder="Exclude word, e.g. spares" aria-label="New exclude word" required maxLength={120} />
-            <button type="submit" className="btn ghost">
-              Exclude word
-            </button>
-          </form>
-        ) : null}
         <div className="gem-chips sw-chips">
           <span className="gem-chip-label">Excluding ({excludes.length})</span>
           {excludes.length ? (
@@ -957,6 +964,8 @@ function SearchWords({
         The websites and GeM are searched with these same headings, amounts and exclude words (a GeM bid&apos;s value is its Estimated Bid Value). A heading&apos;s tenders are kept only above its value. An exclude word hides matching results straight away; a new keyword is
         searched when you re-run.
       </small>
+      </div>
+      ) : null}
     </section>
   );
 }
@@ -985,7 +994,7 @@ function SearchMix({
   setType: (value: string) => void;
   groups: KeywordGroup[];
   organisations: string[];
-  /** The search-keyword box, shown under the tender table. */
+  /** The search-keyword row, shown between the list title and its filters. */
   words?: ReactNode;
   view: string;
   onView: (view: "found" | "approved" | "rejected" | "today") => void;
@@ -1127,6 +1136,8 @@ function SearchMix({
           </small>
         </div>
       </div>
+      {/* One compact row (add keyword, exclude word, re-run); the full keyword list opens only on request. */}
+      {words}
       <div className="tabs gem-tabs" role="tablist" aria-label="Tender list filter">
         {RESULT_VIEWS.map(([key, label]) => (
           <button key={key} type="button" role="tab" aria-selected={filterOn(key)} className={`tab ${filterOn(key) ? "active" : ""}`} onClick={() => onView(key)}>
@@ -1417,8 +1428,6 @@ function SearchMix({
         </table>
       </div>
       {pager}
-      {/* Keywords sit under the table so card clicks land on the tender list, not the keyword editor. */}
-      {words}
     </div>
   );
 }

@@ -3448,3 +3448,12 @@ tr.site-detail-row > td { background: var(--paper); padding: 0; }
 .search-words .sw-type-block { display: grid; gap: 6px; }
 .search-words .sw-type-title { margin: 6px 0 0; font-size: 0.82rem; letter-spacing: 0.04em; text-transform: uppercase; }
 .search-words .sw-type-title small { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.search-words { padding: 10px 12px; gap: 8px; }
+.search-words .sw-add-keyword { flex: 3 1 520px; }
+.search-words .sw-add-exclude { flex: 1 1 260px; }
+.search-words .sw-manage { white-space: nowrap; }
+.search-words .sw-run { margin-left: 0; }
+.search-words .sw-panel { display: grid; gap: 8px; padding-top: 8px; border-top: 1px dashed var(--line, rgba(0, 0, 0, 0.1)); }
+.search-words .sw-panel .sw-excludes { border-top: 0; padding-top: 0; }
+/* Card clicks scroll to the result list; keep its title clear of the fixed top bar. */
+#search-results-table { scroll-margin-top: 84px; }

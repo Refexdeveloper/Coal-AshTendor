@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { db, type User } from "../db";
 import { WorkflowError } from "./domain";
 import * as domain from "./domain";
-import { mailRejectedSearch, TEMPLATES } from "./notify";
+import { TEMPLATES } from "./notify";
 import { SAMPLE_NOTICE } from "./extract";
 import { textToPdf } from "./pdf";
 import { TENDER_FIELDS } from "../utils/fields";
@@ -42,9 +42,6 @@ const IGNORE_REASONS = [
   "Tender closed or cancelled",
   "Other",
 ];
-const whenText = (value: Date | string | null | undefined) =>
-  value ? new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value)) : "";
-
 function ignoreFields(formData: FormData, actor: { id: string; name: string }, intent: string) {
   if (intent !== "ignore") return { ignoreReason: "", ignoreComment: null, ignoredById: "", ignoredByName: "", ignoredAt: null };
   const reason = String(formData.get("ignoreReason") || "").trim();
@@ -720,27 +717,8 @@ export async function gemAction(actor: User, formData: FormData): Promise<Action
       };
     }
     if (intent === "ignore" || intent === "restore") {
-      const ignored = ignoreFields(formData, actor, intent);
-      await db.gemBid.update({ where: { id: bidId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "", ...ignored } });
-      if (intent === "ignore") {
-        const bid = await db.gemBid.findUnique({ where: { id: bidId } });
-        if (bid) {
-          const organisation = [bid.department, bid.ministry].filter((part) => part && part !== "NA").join(", ");
-          await mailRejectedSearch({
-            source: "GeM",
-            number: String(bid.bidNumber || ""),
-            title: String(bid.title || ""),
-            organisation,
-            keyword: String(bid.keyword || ""),
-            closes: whenText(bid.endAt),
-            reason: ignored.ignoreReason,
-            comment: String(ignored.ignoreComment || ""),
-            byName: actor.name,
-            byEmail: actor.email,
-          });
-        }
-      }
-      return { ok: intent === "ignore" ? "Bid ignored. Vishesh has been mailed the reason." : "Bid moved back to the review list." };
+      await db.gemBid.update({ where: { id: bidId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "", ...ignoreFields(formData, actor, intent) } });
+      return { ok: intent === "ignore" ? "Bid ignored." : "Bid moved back to the review list." };
     }
     throw new WorkflowError("Unknown GeM action.");
   } catch (error) {
@@ -903,27 +881,8 @@ export async function siteWatchAction(actor: User, formData: FormData): Promise<
       return { ok, tenderId: result.tenderId };
     }
     if (intent === "ignore" || intent === "restore") {
-      const ignored = ignoreFields(formData, actor, intent);
-      await db.siteTender.update({ where: { id: tenderId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "", ...ignored } });
-      if (intent === "ignore") {
-        const row = await db.siteTender.findUnique({ where: { id: tenderId } });
-        if (row) {
-          const site = row.siteId ? await db.watchSite.findUnique({ where: { id: row.siteId } }) : null;
-          await mailRejectedSearch({
-            source: site?.name || "Website",
-            number: String(row.portalTenderId || row.refNo || ""),
-            title: String(row.title || ""),
-            organisation: String(row.organisation || ""),
-            keyword: String(row.keyword || ""),
-            closes: whenText(row.closingAt),
-            reason: ignored.ignoreReason,
-            comment: String(ignored.ignoreComment || ""),
-            byName: actor.name,
-            byEmail: actor.email,
-          });
-        }
-      }
-      return { ok: intent === "ignore" ? "Tender ignored. Vishesh has been mailed the reason." : "Tender moved back to the review list." };
+      await db.siteTender.update({ where: { id: tenderId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "", ...ignoreFields(formData, actor, intent) } });
+      return { ok: intent === "ignore" ? "Tender ignored." : "Tender moved back to the review list." };
     }
     throw new WorkflowError("Unknown tender sites action.");
   } catch (error) {
