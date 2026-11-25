@@ -470,7 +470,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                         {tender.recordId}
                       </Link>
                     ) : null}
-                    {canRun && bid.status !== "IMPORTED" ? (
+                    {canRun && bid.status !== "IMPORTED" && !bid.tenderId ? (
                       <form action={run("gem")} className="site-import-form">
                         <input type="hidden" name="intent" value="import" />
                         <input type="hidden" name="bidId" value={bid.id} />
@@ -495,11 +495,11 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                     {canRun && bid.status === "NEW" ? (
                       <IgnoreForm action={run("gem")} idName="bidId" id={bid.id} />
                     ) : null}
-                    {canRun && bid.status === "IGNORED" ? (
+                    {canRun && (bid.status === "IGNORED" || bid.status === "IMPORTED") ? (
                       <form action={run("gem")}>
                         <input type="hidden" name="intent" value="restore" />
                         <input type="hidden" name="bidId" value={bid.id} />
-                        <button className="btn ghost" type="submit">
+                        <button className="btn ghost" type="submit" title="Put this search result back on the review list. The tender already created stays as it is.">
                           Restore
                         </button>
                       </form>

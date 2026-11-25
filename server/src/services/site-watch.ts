@@ -582,7 +582,7 @@ export async function importSiteTender(actor: Actor, id: string, uploads: Upload
   const fromPortal = docToken ? await sessionFiles(id, docToken) : { files: [], skipped: [] as string[] };
   const files = [...uploads, ...fromPortal.files];
   if (docToken && !files.length) throw new Error(`None of the portal's documents can be read for extraction${fromPortal.skipped.length ? ` (${fromPortal.skipped.join(", ")})` : ""}. Download them and upload the PDF instead.`);
-  if (found.status === "IMPORTED" && found.tenderId) {
+  if (found.tenderId) {
     if (files.length) {
       await addDocuments(actor, found.tenderId as string, files, "NOTICE");
       await db.siteTender.update({ where: { id }, data: { error: "" } });

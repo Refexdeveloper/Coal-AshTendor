@@ -1320,7 +1320,7 @@ function SearchMix({
                           Get documents
                         </button>
                       ) : null}
-                      {canRun && item.status !== "IMPORTED" ? (
+                      {canRun && item.status !== "IMPORTED" && !item.tenderId ? (
                         <form action={run("site-watch")} className="site-import-form">
                           <input type="hidden" name="intent" value="import" />
                           <input type="hidden" name="siteTenderId" value={item.id} />
@@ -1345,11 +1345,11 @@ function SearchMix({
                       ) : null}
                       {canRun && item.status !== "IGNORED" && item.status !== "EXCLUDED" ? <SendLine action={run("site-watch")} idName="siteTenderId" id={item.id} sent={item.sentLine} /> : null}
                       {canRun && item.status === "NEW" ? <IgnoreForm action={run("site-watch")} idName="siteTenderId" id={item.id} /> : null}
-                      {canRun && item.status === "IGNORED" ? (
+                      {canRun && (item.status === "IGNORED" || item.status === "IMPORTED") ? (
                         <form action={run("site-watch")}>
                           <input type="hidden" name="intent" value="restore" />
                           <input type="hidden" name="siteTenderId" value={item.id} />
-                          <button className="btn ghost" type="submit">
+                          <button className="btn ghost" type="submit" title="Put this search result back on the review list. The tender already created stays as it is.">
                             Restore
                           </button>
                         </form>
@@ -1411,7 +1411,7 @@ function SearchMix({
                         {tender.recordId}
                       </Link>
                     ) : null}
-                    {canRun && bid.status !== "IMPORTED" ? (
+                    {canRun && bid.status !== "IMPORTED" && !bid.tenderId ? (
                       <form action={run("gem")} className="site-import-form">
                         <input type="hidden" name="intent" value="import" />
                         <input type="hidden" name="bidId" value={bid.id} />
@@ -1435,11 +1435,11 @@ function SearchMix({
                     ) : null}
                     {canRun && bid.status !== "IGNORED" && bid.status !== "EXCLUDED" ? <SendLine action={run("gem")} idName="bidId" id={bid.id} sent={bid.sentLine} /> : null}
                     {canRun && bid.status === "NEW" ? <IgnoreForm action={run("gem")} idName="bidId" id={bid.id} /> : null}
-                    {canRun && bid.status === "IGNORED" ? (
+                    {canRun && (bid.status === "IGNORED" || bid.status === "IMPORTED") ? (
                       <form action={run("gem")}>
                         <input type="hidden" name="intent" value="restore" />
                         <input type="hidden" name="bidId" value={bid.id} />
-                        <button className="btn ghost" type="submit">
+                        <button className="btn ghost" type="submit" title="Put this search result back on the review list. The tender already created stays as it is.">
                           Restore
                         </button>
                       </form>
@@ -2387,7 +2387,7 @@ export function SiteWatch({
                           Get documents
                         </button>
                       ) : null}
-                      {canRun && item.status !== "IMPORTED" ? (
+                      {canRun && item.status !== "IMPORTED" && !item.tenderId ? (
                         <form action={run("site-watch")} className="site-import-form">
                           <input type="hidden" name="intent" value="import" />
                           <input type="hidden" name="siteTenderId" value={item.id} />
@@ -2414,11 +2414,11 @@ export function SiteWatch({
                       {canRun && item.status === "NEW" ? (
                         <IgnoreForm action={run("site-watch")} idName="siteTenderId" id={item.id} />
                       ) : null}
-                      {canRun && item.status === "IGNORED" ? (
+                      {canRun && (item.status === "IGNORED" || item.status === "IMPORTED") ? (
                         <form action={run("site-watch")}>
                           <input type="hidden" name="intent" value="restore" />
                           <input type="hidden" name="siteTenderId" value={item.id} />
-                          <button className="btn ghost" type="submit">
+                          <button className="btn ghost" type="submit" title="Put this search result back on the review list. The tender already created stays as it is.">
                             Restore
                           </button>
                         </form>

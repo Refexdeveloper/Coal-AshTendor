@@ -400,7 +400,7 @@ function gemBidPage(doc: GemDoc, bidId: string) {
 export async function importGemBid(actor: Actor, gemBidId: string, uploads: { name: string; type: string; buffer: Buffer }[] = [], line?: "ASH" | "COAL") {
   const bid = await db.gemBid.findUnique({ where: { id: gemBidId } });
   if (!bid) throw new Error("That GeM bid is not in the list.");
-  if (bid.status === "IMPORTED" && bid.tenderId) {
+  if (bid.tenderId) {
     if (uploads.length) await attachSourceDocuments(actor, bid.tenderId, uploads, "NOTICE");
     if (line) await db.tender.update({ where: { id: bid.tenderId }, data: { businessLine: line } });
     return { tenderId: bid.tenderId, recordId: "", already: true, note: line ? `Sent to ${line === "COAL" ? "Coal" : "Ash"}.` : uploads.length ? "The tender file was added." : "" };
