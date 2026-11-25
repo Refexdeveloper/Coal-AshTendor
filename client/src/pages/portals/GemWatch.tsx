@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { apiUrl } from "@client/api/client";
 import { formatWhen } from "@client/utils/calendar";
 import { GemResults } from "@client/components/feature/gem-results";
-import { IgnoreForm, IgnoredNote } from "@client/components/feature/ignore-form";
+import { ErrorNote, IgnoreForm, IgnoredNote } from "@client/components/feature/ignore-form";
 import type { Portal } from "@client/lib/types";
 
 const PdfViewer = lazy(() => import("@client/components/feature/pdf-viewer"));
@@ -454,7 +454,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                   </td>
                   <td>
                     <span className={`pill ${STATUS[bid.status].tone}`}>{STATUS[bid.status].label}</span>
-                    {bid.error ? <small className="muted gem-error">{bid.error}</small> : null}
+                    {bid.error ? <ErrorNote text={bid.error} /> : null}
                     {bid.status === "IGNORED" ? <IgnoredNote item={bid} /> : null}
                   </td>
                   <td className="gem-row-actions">
@@ -466,7 +466,7 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                         {tender.recordId}
                       </Link>
                     ) : null}
-                    {canRun && (bid.status === "NEW" || bid.status === "FAILED" || bid.status === "EXCLUDED") ? (
+                    {canRun && bid.status !== "IMPORTED" ? (
                       <form action={run("gem")}>
                         <input type="hidden" name="intent" value="import" />
                         <input type="hidden" name="bidId" value={bid.id} />

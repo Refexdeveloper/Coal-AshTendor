@@ -320,14 +320,31 @@ export async function gemPortal() {
   });
 }
 
+/** The bid's own page on GeM (its PDF), for people to open when the app could not download it. */
+function gemBidPage(doc: GemDoc, bidId: string) {
+  const id = String(first(doc, "b_id") ?? doc.id ?? bidId);
+  const type = Number(first(doc, "b_bid_type") ?? 1);
+  const evalType = Number(first(doc, "b_eval_type") ?? 0);
+  const path = type === 5 ? "showdirectradocumentPdf" : type === 2 && evalType > 0 ? "showradocumentPdf" : "showbidDocument";
+  return `${BASE}/${path}/${id}`;
+}
+
 /** Creates the tender for one stored GeM bid. Used by auto-import and by the admin's Import button. */
 export async function importGemBid(actor: Actor, gemBidId: string) {
   const bid = await db.gemBid.findUnique({ where: { id: gemBidId } });
   if (!bid) throw new Error("That GeM bid is not in the list.");
   if (bid.status === "IMPORTED" && bid.tenderId) return { tenderId: bid.tenderId, recordId: "", already: true };
   const doc = JSON.parse(bid.raw || "{}") as GemDoc;
+  const bidPage = gemBidPage(doc, bid.bidId);
   try {
-    const file = await downloadBidDocument(doc);
+    // When GeM does not give the bid PDF, the tender is still created from the listing, with the link to fetch it by hand.
+    let file: { name: string; type: string; buffer: Buffer } | null = null;
+    let missing = "";
+    try {
+      file = await downloadBidDocument(doc);
+    } catch (error) {
+      missing = `Bid document not downloaded from GeM (${error instanceof Error ? error.message : String(error)}). Visit GeM to get it: ${bidPage}`;
+    }
     const buyer = bid.department && bid.department !== "NA" ? bid.department : bid.ministry;
     const end = gemTime(first(doc, "final_end_date_sort"));
     const result = await createTender(actor, {
@@ -337,7 +354,8 @@ export async function importGemBid(actor: Actor, gemBidId: string) {
       tenderRef: bid.bidNumber,
       externalTenderId: bid.bidNumber,
       source: "CRAWLER",
-      files: [file],
+      files: file ? [file] : [],
+      sourceUrl: bidPage,
       // What the GeM listing already states; OCR fills the rest from the bid document.
       known: {
         work_description: bid.title,
@@ -349,7 +367,7 @@ export async function importGemBid(actor: Actor, gemBidId: string) {
     });
     // The documents the bid PDF links to (ATC, BOQ, specification, buyer uploads) go on the tender too.
     let linkNote = "";
-    if (!result.duplicate) {
+    if (!result.duplicate && file) {
       const links = await bidLinks(file.buffer);
       await db.gemBid.update({ where: { id: bid.id }, data: { links: JSON.stringify(links) } });
       const fetched: { name: string; type: string; buffer: Buffer }[] = [];
@@ -363,10 +381,11 @@ export async function importGemBid(actor: Actor, gemBidId: string) {
         }
       }
       if (fetched.length) await attachSourceDocuments(actor, result.tenderId, fetched, "GEM_LINKED");
-      if (failed.length) linkNote = `Linked documents not fetched: ${failed.join(", ")}.`;
+      if (failed.length) linkNote = `Linked documents not fetched: ${failed.join(", ")}. Visit GeM to get them: ${bidPage}`;
     }
+    if (missing) linkNote = missing;
     await db.gemBid.update({ where: { id: bid.id }, data: { status: "IMPORTED", tenderId: result.tenderId, error: result.duplicate ? `Already on tender ${result.recordId}.` : linkNote } });
-    return { tenderId: result.tenderId, recordId: result.recordId, already: result.duplicate };
+    return { tenderId: result.tenderId, recordId: result.recordId, already: result.duplicate, note: linkNote };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await db.gemBid.update({ where: { id: bid.id }, data: { status: "FAILED", error: message.slice(0, 1000) } });

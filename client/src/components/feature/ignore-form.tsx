@@ -3,6 +3,8 @@ import { useState } from "react";
 /** The reasons a search result can be ignored for. The server accepts only these. */
 export const IGNORE_REASONS = [
   "Not our scope of work",
+  "Tender value less than 2 Cr",
+  "SOW not as per strategy",
   "Location not serviceable",
   "Value too low or too high",
   "Eligibility not met",
@@ -71,5 +73,28 @@ export function IgnoredNote({ item }: { item: { ignoreReason?: string; ignoreCom
         </small>
       ) : null}
     </span>
+  );
+}
+
+/**
+ * A row's note (why an import failed, or what was not fetched). A link written in the note, or `href`, becomes a
+ * "Visit website" link so the documents can be fetched by hand.
+ */
+export function ErrorNote({ text, href = "" }: { text: string; href?: string }) {
+  const found = /https?:\/\/\S+/.exec(text)?.[0]?.replace(/[).,]+$/, "") ?? "";
+  const link = found || href;
+  const shown = found ? text.replace(/\s*(Visit GeM to get (it|them):|\()?\s*https?:\/\/\S+\)?/, "").trim() : text;
+  return (
+    <small className="muted gem-error">
+      {shown}
+      {link ? (
+        <>
+          {" "}
+          <a href={link} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+            {/gem\.gov\.in/.test(link) ? "Visit GeM →" : "Visit website →"}
+          </a>
+        </>
+      ) : null}
+    </small>
   );
 }

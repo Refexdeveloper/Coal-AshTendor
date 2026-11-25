@@ -301,7 +301,7 @@ views.get("/portals", async (_req, res) => {
     db.siteTender.findMany({ orderBy: { firstSeenAt: "desc" } }),
     db.crawlerRun.findMany({ where: { portalId: sitePortal.id }, orderBy: { startedAt: "desc" }, take: 200 }),
   ]);
-  // Totals and the keyword ranking cover every match ever found; the table itself gets the latest 500.
+  // Totals, the keyword ranking and the table all cover every match ever found, so each one can be imported.
   const keywordRank = new Map<string, { keyword: string; total: number; open: number; added: number; sites: Set<string> }>();
   const statusCount: Record<string, number> = {};
   for (const item of allSiteTenders) {
@@ -325,13 +325,14 @@ views.get("/portals", async (_req, res) => {
     today: todayKey,
     keywords: [...keywordRank.values()].sort((a, b) => b.total - a.total || a.keyword.localeCompare(b.keyword)).map(({ sites, ...rest }) => ({ ...rest, sites: sites.size })),
   };
-  const siteTenders = allSiteTenders.slice(0, 500);
+  // The portal page read for a row is fetched when the row is opened, so it is not sent with the list.
+  const siteTenders = allSiteTenders.map(({ details: _details, ...item }: Record<string, unknown>) => item);
   const [portals, exceptions, calendar, gemRuns, gemBids] = await Promise.all([
     db.portal.findMany({ orderBy: { name: "asc" }, include: { runs: { orderBy: { startedAt: "desc" }, take: 1 } } }),
     db.crawlerException.findMany({ orderBy: { createdAt: "desc" }, take: 30 }),
     getCalendar(),
     db.crawlerRun.findMany({ where: { portalId: gem.id }, orderBy: { startedAt: "desc" }, take: 10 }),
-    db.gemBid.findMany({ orderBy: { firstSeenAt: "desc" }, take: 300 }),
+    db.gemBid.findMany({ orderBy: { firstSeenAt: "desc" } }),
   ]);
   const tenderIds = [...gemBids, ...siteTenders].map((bid: { tenderId: string }) => bid.tenderId).filter(Boolean);
   const tenders = tenderIds.length ? await db.tender.findMany({ where: { id: { in: tenderIds } }, select: { id: true, recordId: true, overallStatus: true } }) : [];

@@ -25,6 +25,8 @@ export type Tender = {
   bidStatus: string;
   approvalStatus: string;
   source: string;
+  /** The page the tender was found on (GeM bid page or tender website). */
+  sourceUrl?: string;
   ocrStatus: string;
   duplicateOfId: string | null;
   duplicateWarning: string;

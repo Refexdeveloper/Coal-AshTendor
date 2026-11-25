@@ -32,6 +32,8 @@ async function filesFrom(formData: FormData, name: string) {
 /** Ignoring a search result needs a reason and a comment; both are kept with who ignored it and when. */
 const IGNORE_REASONS = [
   "Not our scope of work",
+  "Tender value less than 2 Cr",
+  "SOW not as per strategy",
   "Location not serviceable",
   "Value too low or too high",
   "Eligibility not met",
@@ -693,7 +695,12 @@ export async function gemAction(actor: User, formData: FormData): Promise<Action
     const bidId = String(formData.get("bidId") || "");
     if (intent === "import") {
       const result = await gem.importGemBid(actor, bidId);
-      return { ok: result.already ? "This bid was already on a tender." : `${result.recordId} created from the GeM bid and sent for data validation.`, tenderId: result.tenderId };
+      return {
+        ok: result.already
+          ? "This bid was already on a tender."
+          : `${result.recordId} created from the GeM bid${result.note ? `. ${result.note}` : "; Unfyd is extracting the tender data from the bid document."}`,
+        tenderId: result.tenderId,
+      };
     }
     if (intent === "ignore" || intent === "restore") {
       await db.gemBid.update({ where: { id: bidId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "", ...ignoreFields(formData, actor, intent) } });
@@ -739,8 +746,17 @@ export async function siteWatchAction(actor: User, formData: FormData): Promise<
     }
     const tenderId = String(formData.get("siteTenderId") || "");
     if (intent === "import") {
-      const result = await sites.importSiteTender(actor, tenderId);
-      return { ok: result.already ? "This tender was already registered." : `${result.recordId} created from the portal listing. Add its documents from the portal.`, tenderId: result.tenderId };
+      const uploads = (await filesFrom(formData, "files")).filter((file) => file.buffer.length);
+      const result = await sites.importSiteTender(actor, tenderId, uploads, String(formData.get("docToken") || ""));
+      const skipped = result.skipped.length ? ` Not sent for extraction: ${result.skipped.join(", ")}.` : "";
+      const ok = result.already
+        ? result.files
+          ? `${result.files} document${result.files === 1 ? "" : "s"} added to the tender; Unfyd is reading ${result.files === 1 ? "it" : "them"}.${skipped}`
+          : "This tender was already registered."
+        : result.files
+          ? `${result.recordId} created with ${result.files} document${result.files === 1 ? "" : "s"}; Unfyd is extracting the tender data.${skipped}`
+          : `${result.recordId} created from the portal listing. No documents were fetched: visit the website to download them (${result.sourceUrl}), then add them to the tender.`;
+      return { ok, tenderId: result.tenderId };
     }
     if (intent === "ignore" || intent === "restore") {
       await db.siteTender.update({ where: { id: tenderId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "", ...ignoreFields(formData, actor, intent) } });

@@ -10,6 +10,11 @@ export function useNoticeAction(page: string) {
   const [search] = useSearchParams();
   const run = (name: string) => async (formData: FormData) => {
     const result = await postAction(name, formData);
+    // An import that asks for it opens the new tender, where its documents and the Unfyd extract show.
+    if (!result?.error && result?.tenderId && formData.get("openTender") === "1") {
+      navigate(`/tenders/${result.tenderId}${result.ok ? `?notice=${encodeURIComponent(result.ok)}` : ""}`);
+      return;
+    }
     const query = new URLSearchParams();
     if (result?.error) query.set("error", result.error);
     else if (result?.ok) query.set("notice", result.ok);

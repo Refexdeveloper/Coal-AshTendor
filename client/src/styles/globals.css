@@ -3382,3 +3382,12 @@ tr.site-detail-row > td { background: var(--paper); padding: 0; }
 .bg-closure-add { cursor: pointer; }
 .bg-closure-remark { display: block; max-width: 260px; white-space: normal; }
 .bg-add-closure { border-color: #cbd5e1; background: #f8fafc; }
+
+/* Portals: import a website tender with its documents for Unfyd extraction */
+.site-import-form { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.site-import-files { position: relative; cursor: pointer; white-space: nowrap; }
+.site-import-files::after { content: attr(data-count); }
+.site-import-files input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.site-doc-import { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
+.site-doc-import small { flex: 1 1 260px; }
+.tender-source-link { margin: 0 0 12px; font-size: 13px; }

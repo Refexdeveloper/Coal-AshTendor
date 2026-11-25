@@ -408,6 +408,8 @@ export async function createTender(
     files: { name: string; type: string; buffer: Buffer }[];
     /** Field values already known from the source (e.g. the GeM listing); they are kept over what OCR reads. */
     known?: Record<string, string>;
+    /** The page the tender was found on, shown on the tender so its documents can be fetched by hand. */
+    sourceUrl?: string;
   },
 ) {
   if (input.source === "MANUAL" && !CREATOR_ROLES.includes(actor.role)) {
@@ -493,6 +495,7 @@ export async function createTender(
       tenderRef: input.tenderRef.trim(),
       externalTenderId: input.externalTenderId.trim(),
       source: input.source,
+      ...(input.sourceUrl ? { sourceUrl: input.sourceUrl.slice(0, 1000) } : {}),
       overallStatus: "OCR_PROCESSING",
       ocrStatus: "PROCESSING",
       createdById: actor.id,

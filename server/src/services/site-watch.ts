@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { db } from "../db";
-import { createTender, type Actor } from "./domain";
+import { addDocuments, createTender, type Actor } from "./domain";
+import { allowedUpload } from "./files";
 import { GEM_EXCLUDES, GEM_KEYWORDS } from "./gem-keywords";
 import { SITE_SEEDS } from "./site-list";
 
@@ -440,26 +441,65 @@ async function scan(onlySiteId?: string) {
   }
 }
 
-/** Creates a tender from a found listing. The documents stay on the portal (their download needs a CAPTCHA), so they are added by hand. */
-export async function importSiteTender(actor: Actor, id: string) {
+type Upload = { name: string; type: string; buffer: Buffer };
+
+/** The files of an unlocked portal document session that can go on a tender (PDF, image, Excel, text; not ZIP), at most 20 MB each. */
+async function sessionFiles(id: string, token: string) {
+  const session = docSession(token, id);
+  if (!session.unlocked) throw new Error("Type the portal's code first, then import.");
+  const files: Upload[] = [];
+  const skipped: string[] = [];
+  for (let index = 0; index < session.documents.length; index += 1) {
+    try {
+      const file = await tenderDocument(id, token, index);
+      const name = file.name.replace(/\s*\(zip\)$/i, "");
+      if (file.body.length > 20 * 1024 * 1024 || !allowedUpload(name, file.type.split(";")[0])) {
+        skipped.push(name);
+        continue;
+      }
+      files.push({ name, type: file.type.split(";")[0], buffer: file.body });
+    } catch {
+      skipped.push(session.documents[index].name);
+    }
+  }
+  return { files, skipped };
+}
+
+/**
+ * Creates a tender from a found listing. Its documents come from an upload, or from the portal documents a person
+ * opened here with the portal's code (`docToken`); they are sent to Unfyd OCR like any tender upload. With no
+ * documents the tender is created from the listing alone. A tender already imported gets the new documents added.
+ */
+export async function importSiteTender(actor: Actor, id: string, uploads: Upload[] = [], docToken = "") {
   const found = await db.siteTender.findUnique({ where: { id } });
   if (!found) throw new Error("That tender is not in the list.");
-  if (found.status === "IMPORTED" && found.tenderId) return { tenderId: found.tenderId as string, recordId: "", already: true };
+  const fromPortal = docToken ? await sessionFiles(id, docToken) : { files: [], skipped: [] as string[] };
+  const files = [...uploads, ...fromPortal.files];
+  if (docToken && !files.length) throw new Error(`None of the portal's documents can be read for extraction${fromPortal.skipped.length ? ` (${fromPortal.skipped.join(", ")})` : ""}. Download them and upload the PDF instead.`);
+  if (found.status === "IMPORTED" && found.tenderId) {
+    if (files.length) {
+      await addDocuments(actor, found.tenderId as string, files, "NOTICE");
+      await db.siteTender.update({ where: { id }, data: { error: "" } });
+    }
+    return { tenderId: found.tenderId as string, recordId: "", already: true, files: files.length, skipped: fromPortal.skipped, sourceUrl: "" };
+  }
   const site = await db.watchSite.findUnique({ where: { id: found.siteId } });
   const buyer = String(found.organisation || site?.name || "").split(" › ")[0];
   const closing = found.closingAt ? new Date(found.closingAt) : null;
   const closingText = closing
     ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(closing).replace(",", "")
     : "";
+  const sourceUrl = site ? (site.method === "NIC" ? `${site.url}?page=FrontEndTendersByOrganisation&service=page` : String(found.link || site.url)) : String(found.link || "");
   try {
     const result = await createTender(actor, {
+      sourceUrl,
       projectName: String(found.title).slice(0, 250),
       clientName: buyer.slice(0, 190),
       portalName: site ? `${siteName(site.name)} (${site.host})` : "Tender website",
       tenderRef: String(found.refNo || found.portalTenderId).slice(0, 190),
       externalTenderId: String(found.portalTenderId || found.tenderKey).slice(0, 190),
       source: "CRAWLER",
-      files: [],
+      files,
       known: {
         work_description: String(found.title),
         submission_mode: "Electronic",
@@ -467,8 +507,9 @@ export async function importSiteTender(actor: Actor, id: string) {
         ...(closingText ? { bid_submission_end: closingText } : {}),
       },
     });
-    await db.siteTender.update({ where: { id }, data: { status: "IMPORTED", tenderId: result.tenderId, error: result.duplicate ? `Already on tender ${result.recordId}.` : "" } });
-    return { tenderId: result.tenderId as string, recordId: result.recordId as string, already: result.duplicate };
+    const note = result.duplicate ? `Already on tender ${result.recordId}.` : files.length ? "" : site?.method === "NIC" ? "No documents fetched: the website asks for a security code (or open them here with the code)." : "No documents fetched: this website only lists its tenders.";
+    await db.siteTender.update({ where: { id }, data: { status: "IMPORTED", tenderId: result.tenderId, error: note } });
+    return { tenderId: result.tenderId as string, recordId: result.recordId as string, already: result.duplicate, files: files.length, skipped: fromPortal.skipped, sourceUrl };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await db.siteTender.update({ where: { id }, data: { status: "FAILED", error: message.slice(0, 1000) } });

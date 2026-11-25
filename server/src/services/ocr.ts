@@ -166,6 +166,10 @@ export function overlayHits(base: Record<string, FieldHit>, extra?: Record<strin
 
 export async function extractUploadedFile(storedPath: string, fileName: string, documentId = "ocr") {
   const documentUrl = ocrFileUrl(storedPath, fileName);
+  // Unfyd downloads the file from this link. When the link does not answer (a stopped tunnel on a local machine),
+  // Unfyd only says "Empty file" or "No document content", so say what is actually wrong instead.
+  const unreachable = await linkProblem(documentUrl);
+  if (unreachable) return { hits: {} as Record<string, FieldHit>, note: unreachable, raw: unreachable };
   const body = {
     BotId: BOT_ID,
     InteractionId: randomUUID(),
@@ -187,6 +191,26 @@ export async function extractUploadedFile(storedPath: string, fileName: string, 
   const hits = fieldsFromOcrResponse(payload, documentId);
   const note = Object.keys(hits).length ? "" : ocrErrorNote(payload) || "OCR returned no fields.";
   return { hits, note, raw };
+}
+
+/** Why Unfyd could not download `url`, or "" when the link serves the file. */
+async function linkProblem(url: string) {
+  const base = new URL(url).origin;
+  // Only local addresses are checked; a live server's own domain is left to Unfyd even if this server cannot reach itself.
+  if (!/localhost|127\.0\.0\.1|trycloudflare\.com/.test(base)) return "";
+  const fix = /localhost|127\.0\.0\.1/.test(base)
+    ? "This server has no public address, so Unfyd cannot download the file. Locally, keep `npm run tunnel -- 4000` running (or set OCR_PUBLIC_BASE_URL), then upload the document again."
+    : /trycloudflare\.com/.test(base)
+      ? "The tunnel to this machine is not running. Start `npm run tunnel -- 4000` and keep it open, then upload the document again."
+      : "";
+  if (/localhost|127\.0\.0\.1/.test(base)) return `Unfyd could not download the document from ${base}. ${fix}`;
+  try {
+    const response = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(15_000) });
+    if (response.ok) return "";
+    return `Unfyd could not download the document: ${base} answered ${response.status}. ${fix}`;
+  } catch {
+    return `Unfyd could not download the document: ${base} did not answer. ${fix}`;
+  }
 }
 
 const ATTEMPT_MS = 10 * 60 * 1000;

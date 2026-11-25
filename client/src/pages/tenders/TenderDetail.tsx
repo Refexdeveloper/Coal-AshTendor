@@ -378,6 +378,20 @@ export default function TenderPage() {
       {query.error ? <p className="banner bad">{query.error}</p> : null}
       {query.notice ? <p className="banner good">{query.notice}</p> : null}
       {tender.duplicateWarning ? <p className="banner warn">{tender.duplicateWarning}</p> : null}
+      {tender.sourceUrl && !tender.documents.length ? (
+        <p className="banner warn">
+          No tender documents yet: they could not be fetched from the portal automatically. Visit the website to download them, then add them under Documents; Unfyd extracts the data when they are added.{" "}
+          <a href={tender.sourceUrl} target="_blank" rel="noreferrer">
+            Visit website →
+          </a>
+        </p>
+      ) : tender.sourceUrl ? (
+        <p className="tender-source-link">
+          <a href={tender.sourceUrl} target="_blank" rel="noreferrer">
+            Open this tender on the website →
+          </a>
+        </p>
+      ) : null}
       {tender.ocrStatus === "FAILED" ? (
         <p className="banner bad">Text could not be read from the upload. Enter the fields in Tender details, or upload a readable copy. The workflow stays open.</p>
       ) : null}

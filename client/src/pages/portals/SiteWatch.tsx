@@ -1,11 +1,11 @@
-import { Fragment, lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { formatWhen } from "@client/utils/calendar";
 import type { Portal } from "@client/lib/types";
-import { apiUrl } from "@client/api/client";
+import { apiUrl, postAction } from "@client/api/client";
 import { downloadXlsx } from "@client/utils/xlsx";
-import { IgnoreForm, IgnoredNote } from "@client/components/feature/ignore-form";
+import { ErrorNote, IgnoreForm, IgnoredNote } from "@client/components/feature/ignore-form";
 import { BidDocuments, type GemBid, type GemData } from "@client/pages/portals/GemWatch";
 import { GemResults } from "@client/components/feature/gem-results";
 
@@ -245,6 +245,8 @@ const post = async (path: string, body?: Record<string, string>) => {
  * downloads; its code image is shown here, the person types it, and the server passes it on in the portal session.
  */
 function DocumentAccess({ item }: { item: SiteTender }) {
+  const navigate = useNavigate();
+  const [importing, setImporting] = useState(false);
   const [state, setState] = useState<DocState | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -288,6 +290,20 @@ function DocumentAccess({ item }: { item: SiteTender }) {
     }
   };
   const fileUrl = (index: number, download = false) => apiUrl(`${base}/${state?.token}/${index}${download ? "?download=1" : ""}`);
+  /** Creates the tender (or adds to it) with every document opened here; Unfyd OCR reads them, and the tender page opens. */
+  const importWithDocuments = async () => {
+    if (!state) return;
+    setImporting(true);
+    setError("");
+    const form = new FormData();
+    form.set("intent", "import");
+    form.set("siteTenderId", item.id);
+    form.set("docToken", state.token);
+    const result = await postAction("site-watch", form);
+    setImporting(false);
+    if (result?.error) return setError(result.error);
+    if (result?.tenderId) navigate(`/tenders/${result.tenderId}?notice=${encodeURIComponent(result.ok ?? "")}`);
+  };
   const current = state && viewing !== null ? state.documents[viewing] : null;
 
   if (!state) {
@@ -321,6 +337,13 @@ function DocumentAccess({ item }: { item: SiteTender }) {
           </button>
         </form>
       ) : (
+        <>
+        <div className="site-doc-import">
+          <button type="button" className="btn" onClick={() => void importWithDocuments()} disabled={importing}>
+            {importing ? "Importing and sending to Unfyd…" : item.tenderId ? "Add these documents to the tender" : "Import as tender with these documents"}
+          </button>
+          <small className="muted">The documents go on the tender and Unfyd extracts the tender data from them. The tender page opens with the documents and the extracted data.</small>
+        </div>
         <ul className="site-doc-files">
           {state.documents.map((doc) => (
             <li key={doc.index}>
@@ -337,6 +360,7 @@ function DocumentAccess({ item }: { item: SiteTender }) {
             </li>
           ))}
         </ul>
+        </>
       )}
       {error ? <p className="gem-error">{error}</p> : null}
       {current ? (
@@ -592,7 +616,7 @@ function SearchMix({
   canRun: boolean;
   run: (name: string) => (formData: FormData) => Promise<void>;
 }) {
-  const rows = [
+  const statusRows = [
     ...tenders
       .filter((item) => matchesResult(view, item.status, item.firstSeenAt, todayKey, zoneDay))
       .map((item) => ({ kind: "site" as const, at: new Date(item.firstSeenAt).getTime(), item })),
@@ -600,14 +624,30 @@ function SearchMix({
       .filter((bid) => matchesResult(view, bid.status, bid.firstSeenAt, todayKey, zoneDay))
       .map((bid) => ({ kind: "gem" as const, at: new Date(bid.firstSeenAt).getTime(), bid })),
   ].sort((a, b) => b.at - a.at);
-  const gemCount = rows.filter((row) => row.kind === "gem").length;
-  const siteCount = rows.length - gemCount;
-  const filterOn = (key: string) => view === key || (key === "approved" && view === "conversion") || (key === "rejected" && (view === "ignored" || view === "excluded"));
   const [openKey, setOpenKey] = useState("");
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(25);
+  const [source, setSource] = useState<"" | "site" | "gem">("");
+  const [keyword, setKeyword] = useState("");
+  const [q, setQ] = useState("");
+  const needle = q.trim().toLowerCase();
+  const keywords = [...new Set(statusRows.map((row) => (row.kind === "site" ? row.item.keyword : row.bid.keyword)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const rows = statusRows.filter((row) => {
+    if (source && row.kind !== source) return false;
+    const word = row.kind === "site" ? row.item.keyword : row.bid.keyword;
+    if (keyword && word !== keyword) return false;
+    if (!needle) return true;
+    const text =
+      row.kind === "site"
+        ? [row.item.title, row.item.organisation, row.item.keyword, row.item.portalTenderId, row.item.refNo, siteOf(row.item.siteId)?.name, siteOf(row.item.siteId)?.host].join(" ")
+        : [row.bid.title, row.bid.department, row.bid.ministry, row.bid.keyword, row.bid.bidNumber].join(" ");
+    return text.toLowerCase().includes(needle);
+  });
+  const gemCount = rows.filter((row) => row.kind === "gem").length;
+  const siteCount = rows.length - gemCount;
+  const filterOn = (key: string) => view === key || (key === "approved" && view === "conversion") || (key === "rejected" && (view === "ignored" || view === "excluded"));
   // A new filter starts again on the first page.
-  useEffect(() => setPage(1), [view]);
+  useEffect(() => setPage(1), [view, source, keyword, q]);
   const pages = Math.max(1, Math.ceil(rows.length / size));
   const current = Math.min(page, pages);
   const shownRows = rows.slice((current - 1) * size, current * size);
@@ -681,6 +721,24 @@ function SearchMix({
           </button>
         ))}
       </div>
+      <div className="gem-toolbar">
+        <div className="gem-toolbar-end">
+          <select value={source} onChange={(event) => setSource(event.target.value as "" | "site" | "gem")} aria-label="Source">
+            <option value="">All sources</option>
+            <option value="site">Websites</option>
+            <option value="gem">GeM</option>
+          </select>
+          <select value={keyword} onChange={(event) => setKeyword(event.target.value)} aria-label="Keyword">
+            <option value="">All keywords</option>
+            {keywords.map((word) => (
+              <option key={word} value={word}>
+                {word}
+              </option>
+            ))}
+          </select>
+          <input type="search" placeholder="Search title, organisation, number…" value={q} onChange={(event) => setQ(event.target.value)} aria-label="Search these results" />
+        </div>
+      </div>
       <div className="table-wrap flat">
         <table className="gem-table">
           <thead>
@@ -747,7 +805,7 @@ function SearchMix({
                     </td>
                     <td>
                       <span className={`pill ${STATUS[item.status].tone}`}>{STATUS[item.status].label}</span>
-                      {item.error ? <small className="muted gem-error">{item.error}</small> : null}
+                      {item.error ? <ErrorNote text={item.error} href={item.status === "IMPORTED" ? portalLink(siteOf(item.siteId), item) : ""} /> : null}
                       {item.status === "IGNORED" ? <IgnoredNote item={item} /> : null}
                     </td>
                     <td className="gem-row-actions">
@@ -756,10 +814,24 @@ function SearchMix({
                           Open tender
                         </Link>
                       ) : null}
-                      {canRun && (item.status === "NEW" || item.status === "FAILED" || item.status === "EXCLUDED") ? (
-                        <form action={run("site-watch")}>
+                      {canRun && item.status !== "IMPORTED" ? (
+                        <form action={run("site-watch")} className="site-import-form">
                           <input type="hidden" name="intent" value="import" />
                           <input type="hidden" name="siteTenderId" value={item.id} />
+                          <input type="hidden" name="openTender" value="1" />
+                          <label className="btn ghost site-import-files" title="Tender documents for Unfyd to extract (optional)" data-count="">
+                            Attach documents
+                            <input
+                              type="file"
+                              name="files"
+                              multiple
+                              accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.xlsx,.xls,.txt"
+                              onChange={(event) => {
+                                const count = event.currentTarget.files?.length ?? 0;
+                                event.currentTarget.parentElement!.dataset.count = count ? ` (${count})` : "";
+                              }}
+                            />
+                          </label>
                           <button className="btn" type="submit">
                             {item.status === "FAILED" ? "Retry" : "Add as tender"}
                           </button>
@@ -822,7 +894,7 @@ function SearchMix({
                   </td>
                   <td>
                     <span className={`pill ${STATUS[bid.status].tone}`}>{STATUS[bid.status].label}</span>
-                    {bid.error ? <small className="muted gem-error">{bid.error}</small> : null}
+                    {bid.error ? <ErrorNote text={bid.error} /> : null}
                     {bid.status === "IGNORED" ? <IgnoredNote item={bid} /> : null}
                   </td>
                   <td className="gem-row-actions">
@@ -831,7 +903,7 @@ function SearchMix({
                         {tender.recordId}
                       </Link>
                     ) : null}
-                    {canRun && (bid.status === "NEW" || bid.status === "FAILED" || bid.status === "EXCLUDED") ? (
+                    {canRun && bid.status !== "IMPORTED" ? (
                       <form action={run("gem")}>
                         <input type="hidden" name="intent" value="import" />
                         <input type="hidden" name="bidId" value={bid.id} />
@@ -911,17 +983,22 @@ export function SiteWatch({
   const [params] = useSearchParams();
   const RESULT_KEYS = ["found", "approved", "conversion", "rejected", "ignored", "excluded", "today"] as const;
   const askedView = RESULT_KEYS.find((key) => key === params.get("results")) ?? "";
-  const [resultView, setResultView] = useState<"" | (typeof RESULT_KEYS)[number]>(askedView);
+  const [resultView, setResultView] = useState<"" | (typeof RESULT_KEYS)[number]>(askedView || "found");
   const [, tick] = useState(0);
+  const skipScroll = useRef(true);
 
   useEffect(() => {
+    if (skipScroll.current) {
+      skipScroll.current = false;
+      if (!askedView) return;
+    }
     if (!resultView) return;
     const go = () => document.getElementById("search-mix")?.scrollIntoView({ behavior: "smooth", block: "start" });
     go();
     // Arriving from a Pipeline card, the cards above are still settling: scroll again once they have.
     const later = window.setTimeout(go, 700);
     return () => window.clearTimeout(later);
-  }, [resultView]);
+  }, [resultView, askedView]);
 
   useEffect(() => {
     if (!running) return;
@@ -1702,7 +1779,7 @@ export function SiteWatch({
                     </td>
                     <td>
                       <span className={`pill ${STATUS[item.status].tone}`}>{STATUS[item.status].label}</span>
-                      {item.error ? <small className="muted gem-error">{item.error}</small> : null}
+                      {item.error ? <ErrorNote text={item.error} href={item.status === "IMPORTED" ? portalLink(siteOf(item.siteId), item) : ""} /> : null}
                       {item.status === "IGNORED" ? <IgnoredNote item={item} /> : null}
                     </td>
                     <td className="gem-row-actions">
@@ -1711,10 +1788,24 @@ export function SiteWatch({
                           Open tender
                         </Link>
                       ) : null}
-                      {canRun && (item.status === "NEW" || item.status === "FAILED" || item.status === "EXCLUDED") ? (
-                        <form action={run("site-watch")}>
+                      {canRun && item.status !== "IMPORTED" ? (
+                        <form action={run("site-watch")} className="site-import-form">
                           <input type="hidden" name="intent" value="import" />
                           <input type="hidden" name="siteTenderId" value={item.id} />
+                          <input type="hidden" name="openTender" value="1" />
+                          <label className="btn ghost site-import-files" title="Tender documents for Unfyd to extract (optional)" data-count="">
+                            Attach documents
+                            <input
+                              type="file"
+                              name="files"
+                              multiple
+                              accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.xlsx,.xls,.txt"
+                              onChange={(event) => {
+                                const count = event.currentTarget.files?.length ?? 0;
+                                event.currentTarget.parentElement!.dataset.count = count ? ` (${count})` : "";
+                              }}
+                            />
+                          </label>
                           <button className="btn" type="submit">
                             {item.status === "FAILED" ? "Retry" : "Add as tender"}
                           </button>
@@ -1835,7 +1926,7 @@ export function SiteWatch({
             run={run}
           />
         ) : null}
-        <h4 className="sk-heading">Websites</h4>
+        <h4 className="sk-heading">Website results ({sites.length})</h4>
         <div className="sk-grid">
           {(
             [
@@ -1944,6 +2035,76 @@ export function SiteWatch({
             );
           })}
         </div>
+      </div>
+        </section>
+      </TopSlot>
+
+      <div className="site-list site-history">
+        <div className="site-list-head">
+          <div>
+            <h3>Search history ({runs.length})</h3>
+            <small className="muted">Every pass over the websites, newest first.</small>
+          </div>
+        </div>
+        <div className="table-wrap flat site-scroll">
+          <table className="gem-table">
+            <thead>
+              <tr>
+                <th>Started</th>
+                <th>Result</th>
+                <th>Took</th>
+                <th>Websites</th>
+                <th>Organisation lists</th>
+                <th>Tenders checked</th>
+                <th>Matching</th>
+                <th>New</th>
+                <th>Problems</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="empty">
+                    No passes yet. Press Run now to search the websites.
+                  </td>
+                </tr>
+              ) : null}
+              {runs.map((item) => {
+                const numbers = runNumbers(item.errorSummary || "");
+                return (
+                  <tr key={item.id}>
+                    <td>{formatWhen(item.startedAt, timeZone)}</td>
+                    <td>
+                      <span className={`pill ${RUN_TONE[item.status] ?? "neutral"}`}>{item.status.toLowerCase()}</span>
+                    </td>
+                    <td>{duration(item.startedAt, item.finishedAt) || (item.status === "RUNNING" ? "running…" : "—")}</td>
+                    <td>{fmt(numbers.sites)}</td>
+                    <td>{fmt(numbers.organisations)}</td>
+                    <td>{fmt(numbers.checked)}</td>
+                    <td>
+                      <b>{fmt(numbers.matched)}</b>
+                    </td>
+                    <td>{fmt(numbers.fresh)}</td>
+                    <td>
+                      {numbers.note ? <small className="muted">{numbers.note}</small> : null}
+                      {numbers.problems.length ? (
+                        <small className="muted gem-error" title={numbers.problems.join("\n")}>
+                          {numbers.problems.length === 1 ? numbers.problems[0] : `${numbers.problems.length} sites: ${numbers.problems.map((line) => line.split(":")[0]).join(", ")}`}
+                        </small>
+                      ) : !numbers.note ? (
+                        "—"
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <section className="panel gem-watch site-watch" aria-label="All websites">
+        <div className="site-list">
         {categories.length ? (
           <>
             <h4 className="sk-heading">By classification</h4>
@@ -2332,73 +2493,8 @@ export function SiteWatch({
             </ul>
           </>
         )}
-      </div>
-        </section>
-      </TopSlot>
-
-      <div className="site-list site-history">
-        <div className="site-list-head">
-          <div>
-            <h3>Search history ({runs.length})</h3>
-            <small className="muted">Every pass over the websites, newest first.</small>
-          </div>
         </div>
-        <div className="table-wrap flat site-scroll">
-          <table className="gem-table">
-            <thead>
-              <tr>
-                <th>Started</th>
-                <th>Result</th>
-                <th>Took</th>
-                <th>Websites</th>
-                <th>Organisation lists</th>
-                <th>Tenders checked</th>
-                <th>Matching</th>
-                <th>New</th>
-                <th>Problems</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="empty">
-                    No passes yet. Press Run now to search the websites.
-                  </td>
-                </tr>
-              ) : null}
-              {runs.map((item) => {
-                const numbers = runNumbers(item.errorSummary || "");
-                return (
-                  <tr key={item.id}>
-                    <td>{formatWhen(item.startedAt, timeZone)}</td>
-                    <td>
-                      <span className={`pill ${RUN_TONE[item.status] ?? "neutral"}`}>{item.status.toLowerCase()}</span>
-                    </td>
-                    <td>{duration(item.startedAt, item.finishedAt) || (item.status === "RUNNING" ? "running…" : "—")}</td>
-                    <td>{fmt(numbers.sites)}</td>
-                    <td>{fmt(numbers.organisations)}</td>
-                    <td>{fmt(numbers.checked)}</td>
-                    <td>
-                      <b>{fmt(numbers.matched)}</b>
-                    </td>
-                    <td>{fmt(numbers.fresh)}</td>
-                    <td>
-                      {numbers.note ? <small className="muted">{numbers.note}</small> : null}
-                      {numbers.problems.length ? (
-                        <small className="muted gem-error" title={numbers.problems.join("\n")}>
-                          {numbers.problems.length === 1 ? numbers.problems[0] : `${numbers.problems.length} sites: ${numbers.problems.map((line) => line.split(":")[0]).join(", ")}`}
-                        </small>
-                      ) : !numbers.note ? (
-                        "—"
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      </section>
     </section>
   );
 }

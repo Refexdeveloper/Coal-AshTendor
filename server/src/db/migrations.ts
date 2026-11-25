@@ -5,7 +5,11 @@ const run = (sql: string) => db.$queryRaw(Object.assign([sql], { raw: [sql] }) a
 
 /** Columns added after the first release. New databases get them from schema.sql; existing ones here. */
 const ADDED_COLUMNS: Record<string, [string, string][]> = {
-  Tender: [["businessLine", "VARCHAR(191) NOT NULL DEFAULT 'ASH'"]],
+  Tender: [
+    ["businessLine", "VARCHAR(191) NOT NULL DEFAULT 'ASH'"],
+    // Where the tender was found (GeM bid page, tender website), so its documents can be fetched by hand.
+    ["sourceUrl", "VARCHAR(1000) NOT NULL DEFAULT ''"],
+  ],
   User: [["phone", "VARCHAR(32) NOT NULL DEFAULT ''"]],
   BankGuarantee: [
     ["bgStatus", "VARCHAR(16) NOT NULL DEFAULT ''"],
