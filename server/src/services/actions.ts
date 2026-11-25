@@ -491,6 +491,17 @@ export async function logExceptionAction(_actor: User, formData: FormData): Prom
   return { ok: "Exception recorded" };
 }
 
+/** Sends a tender's unread documents to Unfyd again. */
+export async function reextractDocumentsAction(actor: User, formData: FormData): Promise<ActionState> {
+  try {
+    const tenderId = String(formData.get("tenderId") || "");
+    const count = await domain.reextractDocuments(actor, tenderId);
+    return { ok: `${count} document${count === 1 ? "" : "s"} sent to Unfyd again. The extracted data appears here when it returns.`, tenderId };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 /** Replaces the bond register from the uploaded "Performance Bond & EMD ISB" workbook. */
 export async function importBondsAction(actor: User, formData: FormData): Promise<ActionState> {
   try {

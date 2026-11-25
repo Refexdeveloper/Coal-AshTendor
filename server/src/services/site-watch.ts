@@ -2,7 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { db } from "../db";
 import { addDocuments, createTender, type Actor } from "./domain";
 import { allowedUpload } from "./files";
-import { GEM_EXCLUDES, GEM_KEYWORDS } from "./gem-keywords";
+import { GEM_EXCLUDES } from "./gem-keywords";
+import { isYellowKeyword, keywordList, minimumRupees, SITE_KEYWORD_SHEET, SITE_KEYWORDS } from "./site-keywords";
 import { mailNewSearchTenders, type FreshTender } from "./notify";
 import { SITE_SEEDS } from "./site-list";
 
@@ -81,6 +82,16 @@ export function siteExcludedBy(title: string, excludes: string[]) {
   return excludes.find((word) => new RegExp(`(^|[^a-z0-9])${escape(word.toLowerCase())}($|[^a-z0-9])`).test(text)) ?? null;
 }
 
+/** "₹12.5 Cr" for an amount in rupees. */
+const crore = (rupees: number) => `₹${(rupees / 1e7).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
+
+/** The "Tender Value (₹)" on a NIC tender page, in rupees; null when the portal shows NA or nothing. */
+export function tenderValueOf(fields: [string, string][]) {
+  const text = fields.find(([label]) => /^tender value/i.test(label))?.[1] ?? "";
+  const amount = Number(text.replace(/[^\d.]/g, ""));
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
 /** "27-Nov-2026 05:00 PM" (India time) → the date, and the dd/mm/yyyy HH:MM text the tender form reads. */
 const MONTHS: Record<string, number> = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
 export function nicTime(value: string) {
@@ -119,7 +130,19 @@ function session(base: string) {
   };
 }
 
-export type FoundTender = { key: string; tenderId: string; refNo: string; title: string; organisation: string; link: string; published: string; closing: string; opening: string };
+export type FoundTender = {
+  key: string;
+  tenderId: string;
+  refNo: string;
+  title: string;
+  organisation: string;
+  link: string;
+  published: string;
+  closing: string;
+  opening: string;
+  /** A NIC row's "View Tender" page (only opens inside the session that listed it): it holds the tender value. */
+  viewHref?: string;
+};
 
 /** The organisations listed on a NIC portal's "Tenders by Organisation" page, with their open-tender counts. */
 export function nicOrganisations(html: string) {
@@ -154,6 +177,7 @@ export function nicTenders(html: string, host: string): FoundTender[] {
       title,
       organisation: decode(cells[5]).replace(/\|\|/g, " › "),
       link: "",
+      viewHref: /href="([^"]*FrontEndViewTender[^"]*)"/.exec(titleCell)?.[1]?.replace(/&amp;/g, "&") ?? "",
       published: decode(cells[1]),
       closing: decode(cells[2]),
       opening: decode(cells[3]),
@@ -242,14 +266,27 @@ export function pageTenders(html: string, base: string): FoundTender[] {
 /** The settings row (keywords, exclude words, frequency) and the site list, created from the sheets the first time. */
 export async function siteWatchPortal() {
   let portal = await db.portal.findFirst({ where: { accessMethod: "SITE_WATCH" } });
+  if (portal && portal.keywordSheet !== SITE_KEYWORD_SHEET) {
+    // A new copy of the sourcing sheet: the watch takes its keywords (one per line, as some hold commas), MDO work is
+    // no longer excluded (the sheet searches it), and every earlier result goes except the tenders already added
+    // to the pipeline, so the list holds only what the new keywords and amounts find.
+    const excludes = splitList(portal.excludeWords || "").filter((word) => !/^(mdo|mine developer)$/i.test(word));
+    await db.siteTender.deleteMany({ where: { status: { not: "IMPORTED" } } });
+    await db.watchSite.updateMany({ where: {}, data: { matched: 0 } }).catch(() => undefined);
+    portal = await db.portal.update({
+      where: { id: portal.id },
+      data: { keywords: SITE_KEYWORDS.join("\n"), excludeWords: excludes.join(", "), keywordSheet: SITE_KEYWORD_SHEET },
+    });
+  }
   if (!portal) {
     portal = await db.portal.create({
       data: {
         name: SITE_WATCH_NAME,
         url: "",
         category: "Tender websites",
-        keywords: GEM_KEYWORDS.join(", "),
-        excludeWords: GEM_EXCLUDES.join(", "),
+        keywords: SITE_KEYWORDS.join("\n"),
+        excludeWords: GEM_EXCLUDES.filter((word) => !/^(mdo|mine developer)$/i.test(word)).join(", "),
+        keywordSheet: SITE_KEYWORD_SHEET,
         frequencyHours: 12,
         enabled: true,
         autoImport: false,
@@ -323,7 +360,7 @@ type Site = { id: string; host: string; name: string; url: string; method: strin
 async function scan(onlySiteId?: string) {
   await clearStaleSiteRuns(true).catch(() => undefined);
   const portal = await siteWatchPortal();
-  const keywords = splitList(portal.keywords || "");
+  const keywords = keywordList(portal.keywords || "").filter((word) => !isYellowKeyword(word));
   const excludes = splitList(portal.excludeWords || "");
   const sites = ((await db.watchSite.findMany({ where: { enabled: true }, orderBy: { host: "asc" } })) as Site[]).filter(
     (site) => site.method !== "MANUAL" && (!onlySiteId || site.id === onlySiteId),
@@ -334,12 +371,31 @@ async function scan(onlySiteId?: string) {
   const fresh: FreshTender[] = [];
   progress = { startedAt: new Date(), sites: sites.length, done: 0, active: [], organisations: 0, checked: 0, matched: 0 };
 
-  const keep = async (site: Site, found: FoundTender) => {
+  const keep = async (site: Site, found: FoundTender, get?: (path: string) => Promise<string>) => {
     summary.checked += 1;
     progress!.checked = summary.checked;
-    const keyword = keywords.find((word) => siteMatches(found.title, word));
+    const hits = keywords.filter((word) => siteMatches(found.title, word));
+    const keyword = hits[0];
     if (!keyword) return false;
-    const exclude = siteExcludedBy(found.title, excludes);
+    const known = await db.siteTender.findFirst({ where: { tenderKey: found.key } });
+    // The sheet asks for a tender value above an amount per heading; the lowest amount of the matching keywords counts.
+    const minimum = Math.min(...hits.map(minimumRupees));
+    let value: number | null = known?.tenderValue == null ? null : Number(known.tenderValue);
+    let details: string | null = null;
+    if (minimum > 0 && value === null && !known?.detailsAt && get && found.viewHref) {
+      try {
+        await sleep(PAUSE_MS);
+        const view = nicTenderView(await get(found.viewHref));
+        value = tenderValueOf(view.fields);
+        const portalUrl = `${site.url}?page=FrontEndTendersByOrganisation&service=page`;
+        details = JSON.stringify({ fetchedAt: new Date().toISOString(), ...view, portalUrl });
+      } catch {
+        /* the value stays unknown; the tender is kept */
+      }
+    }
+    const below = minimum > 0 && value !== null && value <= minimum;
+    const exclude = siteExcludedBy(found.title, excludes) ?? (below ? "value" : null);
+    const excludeNote = below ? `Tender value ${crore(value!)} is not above the ${crore(minimum)} the sheet asks for "${keyword}".` : exclude ? `Title mentions "${exclude}".` : "";
     if (exclude) summary.excluded += 1;
     else summary.matched += 1;
     progress!.matched = summary.matched;
@@ -354,14 +410,17 @@ async function scan(onlySiteId?: string) {
       closingAt: nicTime(found.closing).date,
       openingAt: nicTime(found.opening).date,
       lastSeenAt: new Date(),
+      ...(value !== null ? { tenderValue: value } : {}),
+      ...(details ? { details, detailsAt: new Date() } : {}),
     };
-    const known = await db.siteTender.findFirst({ where: { tenderKey: found.key } });
     if (known) {
-      await db.siteTender.update({ where: { id: known.id }, data: fields });
+      // A tender still to review whose value turns out below the amount leaves the list; reviewed ones stay as they are.
+      const drop = below && known.status === "NEW";
+      await db.siteTender.update({ where: { id: known.id }, data: { ...fields, ...(drop ? { status: "EXCLUDED", error: excludeNote } : {}) } });
       return !exclude;
     }
     const created = await db.siteTender
-      .create({ data: { ...fields, tenderKey: found.key.slice(0, 250), keyword, status: exclude ? "EXCLUDED" : "NEW", error: exclude ? `Title mentions "${exclude}".` : "" } })
+      .create({ data: { ...fields, tenderKey: found.key.slice(0, 250), keyword, status: exclude ? "EXCLUDED" : "NEW", error: excludeNote } })
       .catch(() => null);
     if (created && !exclude) {
       summary.newMatches += 1;
@@ -399,7 +458,7 @@ async function scan(onlySiteId?: string) {
             progress!.organisations = summary.organisations;
             for (const row of rows) {
               checked += 1;
-              if (await keep(site, { ...row, organisation: row.organisation || org.name })) matched += 1;
+              if (await keep(site, { ...row, organisation: row.organisation || org.name }, get)) matched += 1;
             }
           } catch (error) {
             errors.push(`${org.name}: ${error instanceof Error ? error.message : error}`);
@@ -805,6 +864,30 @@ export async function unlockTenderDocuments(id: string, token: string, code: str
     if (links.length) session.documents = links;
   }
   return { unlocked: true, captcha: "", documents: session.documents.map((doc, index) => ({ index, name: doc.name })) };
+}
+
+/**
+ * Adds one document of an unlocked portal session to the tender made from this listing (which must be imported),
+ * and sends it to Unfyd. Each file is its own request, so one file that cannot be used (an archive, a file over
+ * 20 MB, a download the portal refuses) is reported on its own and does not stop the others.
+ */
+export async function attachSessionDocument(actor: Actor, id: string, token: string, index: number) {
+  const found = await db.siteTender.findUnique({ where: { id } });
+  if (!found) throw new Error("That tender is not in the list.");
+  if (!found.tenderId) throw new Error("Add the tender first, then its documents.");
+  const file = await tenderDocument(id, token, index);
+  const name = file.name.replace(/\s*\(zip\)$/i, "");
+  const type = file.type.split(";")[0];
+  if (/\.(rar|zip|7z|tar|gz)$/i.test(name) || /zip|rar|compressed/i.test(type)) {
+    return { status: "SKIPPED" as const, name, note: "Archive (RAR/ZIP): Unfyd cannot read it. Download it, extract it, and upload the files inside." };
+  }
+  if (file.body.length > 20 * 1024 * 1024) return { status: "SKIPPED" as const, name, note: "Larger than 20 MB. Download it and upload a smaller copy." };
+  if (!allowedUpload(name, type)) return { status: "SKIPPED" as const, name, note: "This file type cannot be stored on a tender." };
+  const same = await db.tenderDocument.findFirst({ where: { tenderId: found.tenderId as string, sha256: createHash("sha256").update(file.body).digest("hex") } });
+  if (same) return { status: "EXISTS" as const, name, note: "Already on the tender." };
+  await addDocuments(actor, found.tenderId as string, [{ name, type, buffer: file.body }], "NOTICE");
+  await db.siteTender.update({ where: { id }, data: { error: "" } });
+  return { status: "ADDED" as const, name, note: "Added; Unfyd is reading it." };
 }
 
 /** One document from an unlocked session, as the portal sends it. */

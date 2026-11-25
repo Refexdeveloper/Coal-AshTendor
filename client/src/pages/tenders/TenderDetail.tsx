@@ -1,9 +1,12 @@
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { lazy, Suspense, Fragment, useEffect, useActionState, useState, type CSSProperties } from "react";
-import { documentUrl, toCalendar, useApi } from "@client/api/client";
+import { documentUrl, postAction, toCalendar, useApi } from "@client/api/client";
 import { convertEmdToSdAction, taskAction } from "@client/api/actions";
 import { fxToast } from "@client/components/feature/fx";
 import type { ActionState } from "@client/api/action-state";
+
+// The portal-document panel (security code, then the files) from Portals, loaded only for website tenders without documents.
+const PortalDocuments = lazy(() => import("@client/pages/portals/SiteWatch").then((module) => ({ default: module.DocumentAccess })));
 import { Submit } from "@client/components/base/submit";
 import { useActor } from "@client/api/session";
 import type {
@@ -92,6 +95,8 @@ type Data = {
   fieldEditor: boolean;
   checklist: ChecklistItem[];
   plan: StagePlan;
+  /** The website listing this tender was added from, when there is one. */
+  siteTender?: { id: string; tenderId: string; portalTenderId: string; title: string; nic: boolean; host: string; url: string } | null;
 };
 
 const SD_EDITORS = ["ADMIN", "ACCOUNTS", "EMD_ISB", "COORDINATOR", "DEPT_HEAD", "GROUP_CEO", "REVIEWER"];
@@ -228,6 +233,9 @@ export default function TenderPage() {
   const adminExtend = closed && tender.overallStatus === "NOT_BID_DEADLINE_MISSED" && actor.role === "ADMIN";
   const checklist = data.checklist;
   const notice = tender.documents.find((document) => document.docType === "NOTICE");
+  // Where the tender was found (newer imports keep it on the tender; older website imports take it from the listing).
+  const sourceLink = tender.sourceUrl || data.siteTender?.url || "";
+  const canAddDocs = EDITOR_ROLES.includes(actor.role) || actor.id === tender.createdById;
   const bidSubmitted = ["BID_SUBMITTED_EVIDENCE_PENDING", "BID_SUBMITTED_EVIDENCE_RECORDED"].includes(tender.bidStatus);
   const assigned = (ids: string) => JSON.parse(ids) as string[];
   const openTasks = tender.tasks
@@ -378,21 +386,33 @@ export default function TenderPage() {
       {query.error ? <p className="banner bad">{query.error}</p> : null}
       {query.notice ? <p className="banner good">{query.notice}</p> : null}
       {tender.duplicateWarning ? <p className="banner warn">{tender.duplicateWarning}</p> : null}
-      {tender.sourceUrl && !tender.documents.length ? (
-        <p className="banner warn">
-          No tender documents yet: they could not be fetched from the portal automatically. Visit the website to download them, then add them under Documents; Unfyd extracts the data when they are added.{" "}
-          <a href={tender.sourceUrl} target="_blank" rel="noreferrer">
-            Visit website →
-          </a>
-        </p>
-      ) : tender.sourceUrl ? (
+      {sourceLink && !tender.documents.length ? (
+        <div className="banner warn tender-get-docs">
+          <p>
+            <b>No tender documents yet.</b> The portal did not let them be fetched automatically. Download them from the website, then upload them
+            here; they are stored on this tender and Unfyd extracts the data.{" "}
+            <a href={sourceLink} target="_blank" rel="noreferrer">
+              Download from the website →
+            </a>
+          </p>
+          {canAddDocs ? <SourceDocumentsUpload tenderId={tender.id} reload={() => void reload()} /> : null}
+          {data.siteTender?.nic ? (
+            <>
+              <p className="muted">Or get them here with the portal's security code (no download needed):</p>
+              <Suspense fallback={<p className="muted">Loading…</p>}>
+                <PortalDocuments item={data.siteTender} onImported={() => void reload()} />
+              </Suspense>
+            </>
+          ) : null}
+        </div>
+      ) : sourceLink ? (
         <p className="tender-source-link">
-          <a href={tender.sourceUrl} target="_blank" rel="noreferrer">
+          <a href={sourceLink} target="_blank" rel="noreferrer">
             Open this tender on the website →
           </a>
         </p>
       ) : null}
-      {tender.ocrStatus === "FAILED" ? (
+      {tender.ocrStatus === "FAILED" && tender.documents.length ? (
         <p className="banner bad">Text could not be read from the upload. Enter the fields in Tender details, or upload a readable copy. The workflow stays open.</p>
       ) : null}
       {adminExtend ? (
@@ -609,7 +629,7 @@ export default function TenderPage() {
               justUploaded={query.new === "1"}
             />
           </div>
-          <OcrResults documents={tender.documents} />
+          <OcrResults documents={tender.documents} tenderId={tender.id} canRun={canAddDocs} reload={() => void reload()} />
         </>
       ) : null}
 
@@ -671,7 +691,7 @@ export default function TenderPage() {
                 </div>
               </section>
             ) : null}
-            <OcrResults documents={tender.documents} />
+            <OcrResults documents={tender.documents} tenderId={tender.id} canRun={canAddDocs} reload={() => void reload()} />
           </div>
           <aside>
             {EDITOR_ROLES.includes(actor.role) || actor.id === tender.createdById ? (
@@ -982,15 +1002,39 @@ function formatOcr(raw: string) {
   }
 }
 
-function OcrResults({ documents }: { documents: TenderDocument[] }) {
+function OcrResults({ documents, tenderId, canRun, reload }: { documents: TenderDocument[]; tenderId: string; canRun: boolean; reload: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: string; text: string } | null>(null);
   const shown = documents.filter((document) => {
     const raw = document.ocrJson?.trim();
     return Boolean(raw && raw !== "PENDING");
   });
   if (!shown.length) return null;
+  // A document whose last Unfyd answer holds no extract (file not downloaded, service error, no fields).
+  const unread = shown.filter((document) => !/"Extracted_Data"\s*:\s*\[\s*\{/.test(document.ocrJson ?? "")).length;
+  const runAgain = async () => {
+    setBusy(true);
+    const form = new FormData();
+    form.set("tenderId", tenderId);
+    const result = await postAction("reextract-documents", form);
+    setBusy(false);
+    setMessage(result?.error ? { tone: "bad", text: result.error } : { tone: "good", text: result?.ok ?? "Sent to Unfyd again." });
+    reload();
+  };
   return (
     <section className="panel stack">
       <h2>OCR result</h2>
+      {unread && canRun ? (
+        <div className="ocr-rerun">
+          <span>
+            Unfyd did not read {unread} of {shown.length} document{shown.length === 1 ? "" : "s"}.
+          </span>
+          <button type="button" className="btn" onClick={() => void runAgain()} disabled={busy}>
+            {busy ? "Sending…" : "Run Unfyd again"}
+          </button>
+        </div>
+      ) : null}
+      {message ? <p className={`banner ${message.tone}`}>{message.text}</p> : null}
       <p className="muted">This JSON is also emailed to sathishkumar.r@refex.co.in.</p>
       {shown.map((document) => (
         <div key={document.id}>
@@ -999,6 +1043,29 @@ function OcrResults({ documents }: { documents: TenderDocument[] }) {
         </div>
       ))}
     </section>
+  );
+}
+
+/** Upload of documents downloaded from the tender's website; they become the tender documents and go to Unfyd. */
+function SourceDocumentsUpload({ tenderId, reload }: { tenderId: string; reload: () => void }) {
+  const [state, action] = useActionState(async (previous: ActionState, formData: FormData) => {
+    const result = await taskAction(previous, formData);
+    if (result?.ok) reload();
+    return result;
+  }, null as ActionState);
+  return (
+    <form action={action} className="tender-docs-upload">
+      <input type="hidden" name="tenderId" value={tenderId} />
+      <input type="hidden" name="docType" value="NOTICE" />
+      <label>
+        Downloaded tender documents
+        <input name="files" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.xls,.xlsx,.txt" required />
+      </label>
+      <Submit name="intent" value="add-docs">
+        Upload and extract
+      </Submit>
+      {state?.error ? <p className="banner bad">{state.error}</p> : null}
+    </form>
   );
 }
 

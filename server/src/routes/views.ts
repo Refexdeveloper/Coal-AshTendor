@@ -273,6 +273,16 @@ views.post("/site-tenders/:id/documents/unlock", async (req, res) => {
     res.status(502).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
+views.post("/site-tenders/:id/documents/:token/:index/attach", async (req, res) => {
+  const { attachSessionDocument } = await import("../services/site-watch");
+  try {
+    res.json(await attachSessionDocument(req.actor!, req.params.id, req.params.token, Number(req.params.index)));
+  } catch (error) {
+    const message = error instanceof Error ? (error.name === "TimeoutError" ? "The portal did not answer in time." : error.message) : String(error);
+    console.error("Attach portal document failed", req.params.id, req.params.index, message);
+    res.status(502).json({ error: message, ...((error as { captcha?: string }).captcha ? { captcha: (error as { captcha?: string }).captcha } : {}) });
+  }
+});
 views.get("/site-tenders/:id/documents/:token/:index", async (req, res) => {
   const { tenderDocument } = await import("../services/site-watch");
   try {
@@ -294,6 +304,8 @@ views.get("/portals", async (_req, res) => {
   const gem = await gemPortal();
   const sw = await import("../services/site-watch");
   const { SHEET_LINKS } = await import("../services/site-list");
+  const { SITE_KEYWORD_HEADINGS, SITE_ORGANISATION_FILTERS } = await import("../services/site-keywords");
+  const siteKeywordGroups = SITE_KEYWORD_HEADINGS;
   await sw.clearStaleSiteRuns().catch(() => undefined);
   const sitePortal = await sw.siteWatchPortal();
   const [watchSites, allSiteTenders, siteRuns] = await Promise.all([
@@ -336,13 +348,19 @@ views.get("/portals", async (_req, res) => {
   ]);
   const tenderIds = [...gemBids, ...siteTenders].map((bid: { tenderId: string }) => bid.tenderId).filter(Boolean);
   const tenders = tenderIds.length ? await db.tender.findMany({ where: { id: { in: tenderIds } }, select: { id: true, recordId: true, overallStatus: true } }) : [];
+  // How many documents each imported website tender has, so a tender without any offers "Get documents".
+  const siteTenderIds = siteTenders.map((item: Record<string, unknown>) => String(item.tenderId || "")).filter(Boolean);
+  const docRows = siteTenderIds.length ? await db.tenderDocument.findMany({ where: { tenderId: { in: siteTenderIds } }, select: { tenderId: true } }) : [];
+  const docCount = new Map<string, number>();
+  for (const row of docRows as { tenderId: string }[]) docCount.set(row.tenderId, (docCount.get(row.tenderId) ?? 0) + 1);
+  for (const item of siteTenders as Record<string, unknown>[]) if (item.tenderId) item.docCount = docCount.get(String(item.tenderId)) ?? 0;
   res.json({
     portals: portals.filter((portal: { id: string }) => portal.id !== gem.id && portal.id !== sitePortal.id),
     exceptions,
     calendar: calendarJson(calendar),
     // The raw GeM record is only needed to download the document, so it stays on the server.
     gem: { portal: gem, runs: gemRuns, bids: gemBids.map(({ raw: _raw, ...bid }: Record<string, unknown>) => bid), tenders, running: gemRunning(), progress: gemProgress() },
-    sites: { portal: sitePortal, sites: watchSites, tenders: siteTenders, runs: siteRuns, stats: siteStats, links: SHEET_LINKS, running: sw.siteWatchRunning(), progress: sw.siteWatchProgress() },
+    sites: { keywordGroups: siteKeywordGroups, organisationFilters: SITE_ORGANISATION_FILTERS, portal: sitePortal, sites: watchSites, tenders: siteTenders, runs: siteRuns, stats: siteStats, links: SHEET_LINKS, running: sw.siteWatchRunning(), progress: sw.siteWatchProgress() },
   });
 });
 
@@ -474,8 +492,22 @@ views.get("/tenders/:id", async (req, res) => {
     canEditFields(actor, tender.id),
     plannedOwners(tender),
   ]);
+  // A tender added from a website listing: which listing, so its documents can be opened with the portal's code here.
+  const listing = tender.source === "CRAWLER" ? await db.siteTender.findFirst({ where: { tenderId: tender.id } }).catch(() => null) : null;
+  const listingSite = listing ? await db.watchSite.findUnique({ where: { id: listing.siteId } }) : null;
   res.json({
     tender,
+    siteTender: listing
+      ? {
+          id: listing.id,
+          tenderId: tender.id,
+          portalTenderId: listing.portalTenderId,
+          title: listing.title,
+          nic: listingSite?.method === "NIC",
+          host: listingSite?.host ?? "",
+          url: listingSite ? (listingSite.method === "NIC" ? `${listingSite.url}?page=FrontEndTendersByOrganisation&service=page` : String(listing.link || listingSite.url)) : String(listing.link || ""),
+        }
+      : null,
     users: users.map(publicUser),
     calendar: calendarJson(calendar),
     bgRequiresBoth: Boolean(settings?.bgRequiresBoth),

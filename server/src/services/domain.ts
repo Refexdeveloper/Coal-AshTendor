@@ -2145,6 +2145,51 @@ export async function addDocuments(
   await audit(db, { tenderId, actor, action: "Uploaded documents", entity: "TenderDocument", detail: files.map((file) => file.name).join(", ") });
 }
 
+/**
+ * Sends a tender's documents to Unfyd again: every document whose last answer was not an extract (the file could
+ * not be downloaded, the service failed, or no fields came back). Used after the cause is fixed, such as a stopped tunnel.
+ */
+export async function reextractDocuments(actor: Actor, tenderId: string) {
+  const tender = await db.tender.findUnique({ where: { id: tenderId } });
+  if (!tender) throw new WorkflowError("Tender not found.");
+  if (!canEdit(actor) && actor.id !== tender.createdById) throw new WorkflowError("You cannot run the extraction on this tender.");
+  const documents = (await db.tenderDocument.findMany({ where: { tenderId } })) as {
+    id: string;
+    fileName: string;
+    storedPath: string;
+    textExtract?: string | null;
+    ocrJson?: string | null;
+  }[];
+  const failed = documents.filter((document) => {
+    const raw = (document.ocrJson ?? "").trim();
+    if (!document.storedPath || raw === "PENDING") return false;
+    return !/"Extracted_Data"\s*:\s*\[\s*\{/.test(raw);
+  });
+  if (!failed.length) throw new WorkflowError("Every document already has an Unfyd extract.");
+  await db.tenderDocument.updateMany({ where: { id: { in: failed.map((document) => document.id) } }, data: { ocrJson: "PENDING" } });
+  for (const document of failed) {
+    const pageTexts = String(document.textExtract ?? "")
+      .split("\n\f")
+      .filter((text) => text.trim())
+      .map((text, index) => ({ documentId: document.id, page: index + 1, text }));
+    void extractUploadedFile(document.storedPath, document.fileName, document.id)
+      .then(async (remote) => {
+        const ocrJson = remote.raw || remote.note || "OCR returned no response.";
+        await db.tenderDocument.update({ where: { id: document.id }, data: { ocrJson } });
+        if (remote.raw) await mailOcrResult(tenderId, document.fileName, remote.raw);
+        const hits = Object.fromEntries(Object.entries(remote.hits).filter(([, hit]) => hit.value));
+        if (pageTexts.length || Object.keys(hits).length) await applyExtraction(tenderId, pageTexts, actor, hits);
+        if (Object.keys(hits).length) await db.tender.update({ where: { id: tenderId }, data: { ocrStatus: "COMPLETED" } });
+      })
+      .catch(async (error) => {
+        console.error(error);
+        await db.tenderDocument.update({ where: { id: document.id }, data: { ocrJson: error instanceof Error ? error.message : "OCR request failed." } }).catch(() => undefined);
+      });
+  }
+  await audit(db, { tenderId, actor, action: "Sent documents to Unfyd again", entity: "TenderDocument", detail: failed.map((document) => document.fileName).join(", ").slice(0, 900) });
+  return failed.length;
+}
+
 async function extendMissedDeadline(actor: Actor, tenderId: string) {
   const tender = await db.tender.findUnique({ where: { id: tenderId } });
   if (!tender || tender.overallStatus !== "NOT_BID_DEADLINE_MISSED") return false;

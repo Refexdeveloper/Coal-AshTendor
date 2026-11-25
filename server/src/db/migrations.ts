@@ -48,9 +48,13 @@ const ADDED_COLUMNS: Record<string, [string, string][]> = {
     ["ignoredById", "VARCHAR(191) NOT NULL DEFAULT ''"],
     ["ignoredByName", "VARCHAR(191) NOT NULL DEFAULT ''"],
     ["ignoredAt", "DATETIME(3) NULL"],
+    // The tender value on the portal's tender page, in rupees (empty when the portal gives none).
+    ["tenderValue", "DECIMAL(20,2) NULL"],
   ],
   Portal: [
     ["excludeWords", "TEXT NULL"],
+    // Which copy of the sourcing-keyword sheet the tender sites watch was last set from.
+    ["keywordSheet", "VARCHAR(64) NOT NULL DEFAULT ''"],
     ["autoImport", "BOOLEAN NOT NULL DEFAULT true"],
     ["maxPages", "INTEGER NOT NULL DEFAULT 30"],
     ["maxImports", "INTEGER NOT NULL DEFAULT 25"],

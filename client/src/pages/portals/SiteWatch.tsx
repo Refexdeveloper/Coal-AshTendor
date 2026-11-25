@@ -30,6 +30,8 @@ export type WatchSite = {
 };
 export type SiteTender = {
   id: string;
+  /** Documents on the imported tender (sent only for imported rows). */
+  docCount?: number;
   ignoreReason?: string;
   ignoreComment?: string | null;
   ignoredByName?: string;
@@ -43,6 +45,8 @@ export type SiteTender = {
   publishedAt: Date | null;
   closingAt: Date | null;
   keyword: string;
+  /** The tender value on the portal's tender page, in rupees (null when the portal gives none). */
+  tenderValue?: number | string | null;
   status: "NEW" | "IMPORTED" | "IGNORED" | "EXCLUDED" | "FAILED";
   tenderId: string;
   error: string;
@@ -55,7 +59,17 @@ type Run = {
   status: string;
   errorSummary: string;
 };
+/** A heading of the "Tender Sourcing Keywords" sheet and its searched keywords (the yellow rows are left out). */
+export type KeywordGroup = { heading: string; keywords: string[]; /** Tenders found by this heading must be worth more than this. */ minCrore?: number };
+
+/** "₹12.5 Cr" for a tender value in rupees, or a note when the portal gives none. */
+const valueText = (value: SiteTender["tenderValue"]) =>
+  value == null || value === "" || !Number(value) ? "Value not given" : `₹${(Number(value) / 1e7).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
+
 export type SitesData = {
+  keywordGroups?: KeywordGroup[];
+  /** The sheet's regional organisations (TVNL, CCL, Patratu…), filtered on the tender's organisation. */
+  organisationFilters?: string[];
   portal: Portal & { excludeWords: string };
   sites: WatchSite[];
   tenders: SiteTender[];
@@ -244,9 +258,20 @@ const post = async (path: string, body?: Record<string, string>) => {
  * Opens a tender's documents from its NIC portal. The portal asks a person for its security code before any file
  * downloads; its code image is shown here, the person types it, and the server passes it on in the portal session.
  */
-function DocumentAccess({ item }: { item: SiteTender }) {
+/** Scrolls to an element once it is on the page (the tender's portal details load after the row opens). */
+function scrollWhenReady(id: string, tries = 40) {
+  const element = document.getElementById(id);
+  if (element) return element.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (tries > 0) window.setTimeout(() => scrollWhenReady(id, tries - 1), 400);
+}
+
+/** What the document panel needs from a website tender; the tender page passes the same shape. */
+export type DocItem = { id: string; tenderId?: string | null; portalTenderId: string };
+
+export function DocumentAccess({ item, onImported }: { item: DocItem; onImported?: () => void }) {
   const navigate = useNavigate();
   const [importing, setImporting] = useState(false);
+  const [added, setAdded] = useState<Record<number, { status: string; note: string }>>({});
   const [state, setState] = useState<DocState | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -262,7 +287,10 @@ function DocumentAccess({ item }: { item: SiteTender }) {
     try {
       const next = (await post(`${base}/start`)) as DocState;
       setState(next);
-      if (next.unlocked) setViewing(0);
+      if (next.unlocked) {
+        setViewing(0);
+        if (item.tenderId) void importWithDocuments(next.documents, next.token);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -277,7 +305,10 @@ function DocumentAccess({ item }: { item: SiteTender }) {
       const next = await post(`${base}/unlock`, { token: state.token, code });
       if (next.unlocked) {
         setState({ ...state, unlocked: true, captcha: "", documents: next.documents });
-        setViewing(next.documents.findIndex((doc: { name: string }) => /\.pdf$/i.test(doc.name)) >= 0 ? next.documents.findIndex((doc: { name: string }) => /\.pdf$/i.test(doc.name)) : null);
+        const firstPdf = next.documents.findIndex((doc: { name: string }) => /\.pdf$/i.test(doc.name));
+        setViewing(firstPdf >= 0 ? firstPdf : null);
+        // On a tender, the code is all the person has to do: the files go on the tender and Unfyd extracts them.
+        if (item.tenderId) void importWithDocuments(next.documents, state.token);
       } else {
         setState({ ...state, captcha: next.captcha });
         setError(next.error || "The portal did not accept that code.");
@@ -291,18 +322,42 @@ function DocumentAccess({ item }: { item: SiteTender }) {
   };
   const fileUrl = (index: number, download = false) => apiUrl(`${base}/${state?.token}/${index}${download ? "?download=1" : ""}`);
   /** Creates the tender (or adds to it) with every document opened here; Unfyd OCR reads them, and the tender page opens. */
-  const importWithDocuments = async () => {
-    if (!state) return;
+  /**
+   * Adds the portal's files to the tender one at a time (creating the tender first when it is not added yet), so each
+   * file shows its own result: added, skipped with the reason (an archive, too large), or the portal's error.
+   */
+  const importWithDocuments = async (documents = state?.documents, token = state?.token) => {
+    if (!documents || !token) return;
     setImporting(true);
     setError("");
-    const form = new FormData();
-    form.set("intent", "import");
-    form.set("siteTenderId", item.id);
-    form.set("docToken", state.token);
-    const result = await postAction("site-watch", form);
+    let tenderId = item.tenderId ?? "";
+    if (!tenderId) {
+      const form = new FormData();
+      form.set("intent", "import");
+      form.set("siteTenderId", item.id);
+      const result = await postAction("site-watch", form);
+      if (result?.error || !result?.tenderId) {
+        setImporting(false);
+        return setError(result?.error || "The tender could not be added.");
+      }
+      tenderId = result.tenderId;
+    }
+    let addedCount = 0;
+    for (const doc of documents) {
+      if (added[doc.index]?.status === "ADDED" || added[doc.index]?.status === "EXISTS") continue;
+      setAdded((current) => ({ ...current, [doc.index]: { status: "WORKING", note: "Downloading and adding…" } }));
+      try {
+        const result = (await post(`${base}/${token}/${doc.index}/attach`)) as { status: string; note: string };
+        if (result.status === "ADDED") addedCount += 1;
+        setAdded((current) => ({ ...current, [doc.index]: result }));
+      } catch (reason) {
+        setAdded((current) => ({ ...current, [doc.index]: { status: "FAILED", note: reason instanceof Error ? reason.message : String(reason) } }));
+      }
+    }
     setImporting(false);
-    if (result?.error) return setError(result.error);
-    if (result?.tenderId) navigate(`/tenders/${result.tenderId}?notice=${encodeURIComponent(result.ok ?? "")}`);
+    if (!addedCount) return setError("No document was added. See the reason next to each file; download those and upload them on the tender instead.");
+    if (onImported) return onImported();
+    navigate(`/tenders/${tenderId}?notice=${encodeURIComponent(`${addedCount} document${addedCount === 1 ? "" : "s"} added from the portal; Unfyd is extracting the tender data.`)}`);
   };
   const current = state && viewing !== null ? state.documents[viewing] : null;
 
@@ -310,9 +365,11 @@ function DocumentAccess({ item }: { item: SiteTender }) {
     return (
       <div className="site-doc-access">
         <button type="button" className="btn" onClick={start} disabled={busy}>
-          {busy ? "Opening the portal…" : "Open the documents here"}
+          {busy ? "Opening the portal…" : item.tenderId ? "Get these documents into the tender" : "Open the documents here"}
         </button>
-        <small className="muted">The portal asks for its security code (CAPTCHA) before any file downloads. You will see the code here and type it once for this tender.</small>
+        <small className="muted">
+          The portal asks for its security code (CAPTCHA) before any file downloads. The code is shown here; type it once{item.tenderId ? " and the documents are added to the tender automatically" : ", then view the files or import the tender with them"}. Unfyd extracts the tender data from them.
+        </small>
         {error ? <p className="gem-error">{error}</p> : null}
       </div>
     );
@@ -340,7 +397,7 @@ function DocumentAccess({ item }: { item: SiteTender }) {
         <>
         <div className="site-doc-import">
           <button type="button" className="btn" onClick={() => void importWithDocuments()} disabled={importing}>
-            {importing ? "Importing and sending to Unfyd…" : item.tenderId ? "Add these documents to the tender" : "Import as tender with these documents"}
+            {importing ? "Adding the documents and extracting…" : item.tenderId ? "Add these documents to the tender" : "Import as tender with these documents"}
           </button>
           <small className="muted">The documents go on the tender and Unfyd extracts the tender data from them. The tender page opens with the documents and the extracted data.</small>
         </div>
@@ -357,6 +414,7 @@ function DocumentAccess({ item }: { item: SiteTender }) {
               <a className="btn ghost" href={fileUrl(doc.index, true)}>
                 Download
               </a>
+              {added[doc.index] ? <small className={`site-doc-added ${added[doc.index].status.toLowerCase()}`}>{added[doc.index].note}</small> : null}
             </li>
           ))}
         </ul>
@@ -435,6 +493,11 @@ function TenderDetailPanel({ item, site }: { item: SiteTender; site: WatchSite |
           <div className="site-detail-cols">
             <div>
               <h4>Documents{fileCount ? ` (${fileCount})` : ""}</h4>
+              {site?.method === "NIC" && details.documents.length ? (
+                <div id={`docs-${item.id}`}>
+                  <DocumentAccess item={item} />
+                </div>
+              ) : null}
               {details.documents.length ? (
                 details.documents.map((group) => (
                   <div key={group.section} className="site-doc-group">
@@ -459,7 +522,6 @@ function TenderDetailPanel({ item, site }: { item: SiteTender; site: WatchSite |
                 <p className="muted">{details.note || "The portal lists no documents for this tender."}</p>
               )}
               {details.documents.length && details.note ? <p className="gem-error">{details.note}</p> : null}
-              {site?.method === "NIC" && details.documents.length ? <DocumentAccess item={item} /> : null}
               <div className="site-detail-actions">
                 {portalUrl ? (
                   <a className="btn" href={portalUrl} target="_blank" rel="noopener noreferrer">
@@ -593,6 +655,103 @@ function GemBidDetail({ bid, timeZone }: { bid: GemBid; timeZone: string }) {
   );
 }
 
+const lower = (value: string) => value.trim().toLowerCase();
+/** The heading's keywords, or null when no heading is picked. */
+const headingWords = (groups: KeywordGroup[], heading: string) => {
+  const group = groups.find((item) => item.heading === heading);
+  return group ? new Set(group.keywords.map(lower)) : null;
+};
+/** The organisation name as a whole word ("CCL" is not inside "NCCL"). */
+const fromOrganisation = (text: string, name: string) =>
+  !name || new RegExp(`(^|[^a-z0-9])${name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9])`).test(text.toLowerCase());
+
+/**
+ * Heading, keyword and organisation filters from the sourcing sheet. Picking a heading narrows the keyword list to
+ * that heading's keywords; the count beside each keyword is how many tenders in the list matched it.
+ */
+function SheetFilters({
+  groups,
+  organisations,
+  found,
+  heading,
+  keyword,
+  organisation,
+  setHeading,
+  setKeyword,
+  setOrganisation,
+  labelled = false,
+}: {
+  groups: KeywordGroup[];
+  organisations: string[];
+  /** The matched keyword of every row in the list (before these filters). */
+  found: string[];
+  heading: string;
+  keyword: string;
+  organisation: string;
+  setHeading: (value: string) => void;
+  setKeyword: (value: string) => void;
+  setOrganisation: (value: string) => void;
+  labelled?: boolean;
+}) {
+  const counts = new Map<string, number>();
+  for (const word of found) if (word) counts.set(lower(word), (counts.get(lower(word)) ?? 0) + 1);
+  const inHeading = headingWords(groups, heading);
+  const headingCount = (group: KeywordGroup) => group.keywords.reduce((sum, word) => sum + (counts.get(lower(word)) ?? 0), 0);
+  const options = inHeading
+    ? (groups.find((item) => item.heading === heading)?.keywords ?? [])
+    : [...new Map(found.filter(Boolean).map((word) => [lower(word), word])).values()].sort((a, b) => a.localeCompare(b));
+  const wrap = (label: string, control: ReactNode) => (labelled ? <label>{label}{control}</label> : control);
+  return (
+    <>
+      {groups.length
+        ? wrap(
+            "Heading",
+            <select
+              value={heading}
+              aria-label="Keyword heading"
+              onChange={(event) => {
+                setHeading(event.target.value);
+                setKeyword("");
+              }}
+            >
+              <option value="">All headings</option>
+              {groups.map((group) => (
+                <option key={group.heading} value={group.heading}>
+                  {group.heading}
+                  {group.minCrore ? ` · above ₹${group.minCrore} Cr` : ""} ({headingCount(group)})
+                </option>
+              ))}
+            </select>,
+          )
+        : null}
+      {wrap(
+        "Keyword",
+        <select value={keyword} aria-label="Keyword" onChange={(event) => setKeyword(event.target.value)}>
+          <option value="">{inHeading ? `All ${heading} keywords` : "All keywords"}</option>
+          {options.map((word) => (
+            <option key={word} value={word}>
+              {word} ({counts.get(lower(word)) ?? 0})
+            </option>
+          ))}
+        </select>,
+      )}
+      {organisations.length
+        ? wrap(
+            "Organisation",
+            <select value={organisation} aria-label="Organisation" onChange={(event) => setOrganisation(event.target.value)}>
+              <option value="">All organisations</option>
+              {organisations.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>,
+          )
+        : null}
+    </>
+  );
+}
+
 /** GeM bids and searched-website tenders in one list, filtered by the search-result card. */
 function SearchMix({
   view,
@@ -606,7 +765,11 @@ function SearchMix({
   zoneDay,
   canRun,
   run,
+  groups,
+  organisations,
 }: {
+  groups: KeywordGroup[];
+  organisations: string[];
   view: string;
   onView: (view: "found" | "approved" | "rejected" | "today") => void;
   tenders: SiteTender[];
@@ -638,13 +801,17 @@ function SearchMix({
   const [size, setSize] = useState(25);
   const [source, setSource] = useState<"" | "site" | "gem">("");
   const [keyword, setKeyword] = useState("");
+  const [heading, setHeading] = useState("");
+  const [organisation, setOrganisation] = useState("");
   const [q, setQ] = useState("");
   const needle = q.trim().toLowerCase();
-  const keywords = [...new Set(statusRows.map((row) => (row.kind === "site" ? row.item.keyword : row.bid.keyword)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  const rows = statusRows.filter((row) => {
-    if (source && row.kind !== source) return false;
+  const inHeading = headingWords(groups, heading);
+  const sourceRows = statusRows.filter((row) => !source || row.kind === source);
+  const rows = sourceRows.filter((row) => {
     const word = row.kind === "site" ? row.item.keyword : row.bid.keyword;
-    if (keyword && word !== keyword) return false;
+    if (keyword && lower(word) !== lower(keyword)) return false;
+    if (inHeading && !inHeading.has(lower(word))) return false;
+    if (organisation && !fromOrganisation(row.kind === "site" ? `${row.item.organisation} ${row.item.title}` : `${row.bid.department} ${row.bid.ministry} ${row.bid.title}`, organisation)) return false;
     if (!needle) return true;
     const text =
       row.kind === "site"
@@ -657,16 +824,20 @@ function SearchMix({
   const filterOn = (key: string) => view === key || (key === "approved" && view === "conversion") || (key === "rejected" && (view === "ignored" || view === "excluded"));
   const activeFilters = [
     source ? { key: "source", label: source === "gem" ? "GeM" : "Websites", clear: () => setSource("") } : null,
+    heading ? { key: "heading", label: heading, clear: () => (setHeading(""), setKeyword("")) } : null,
     keyword ? { key: "keyword", label: keyword, clear: () => setKeyword("") } : null,
+    organisation ? { key: "organisation", label: organisation, clear: () => setOrganisation("") } : null,
     needle ? { key: "q", label: q.trim(), clear: () => setQ("") } : null,
   ].filter((item): item is { key: string; label: string; clear: () => void } => Boolean(item));
   const clearFilters = () => {
     setSource("");
     setKeyword("");
+    setHeading("");
+    setOrganisation("");
     setQ("");
   };
   // A new filter starts again on the first page.
-  useEffect(() => setPage(1), [view, source, keyword, q]);
+  useEffect(() => setPage(1), [view, source, keyword, heading, organisation, q]);
   const pages = Math.max(1, Math.ceil(rows.length / size));
   const current = Math.min(page, pages);
   const shownRows = rows.slice((current - 1) * size, current * size);
@@ -750,17 +921,18 @@ function SearchMix({
               <option value="gem">GeM</option>
             </select>
           </label>
-          <label>
-            Keyword
-            <select value={keyword} onChange={(event) => setKeyword(event.target.value)}>
-              <option value="">All keywords</option>
-              {keywords.map((word) => (
-                <option key={word} value={word}>
-                  {word}
-                </option>
-              ))}
-            </select>
-          </label>
+          <SheetFilters
+            labelled
+            groups={groups}
+            organisations={organisations}
+            found={sourceRows.map((row) => (row.kind === "site" ? row.item.keyword : row.bid.keyword))}
+            heading={heading}
+            keyword={keyword}
+            organisation={organisation}
+            setHeading={setHeading}
+            setKeyword={setKeyword}
+            setOrganisation={setOrganisation}
+          />
           <label className="mix-search">
             Search
             <input type="search" placeholder="Title, organisation, number…" value={q} onChange={(event) => setQ(event.target.value)} />
@@ -795,7 +967,7 @@ function SearchMix({
               <th>Source</th>
               <th>Tender</th>
               <th>Organisation</th>
-              <th>Keyword</th>
+              <th>Keyword · value</th>
               <th>Closes</th>
               <th>Status</th>
               <th>Actions</th>
@@ -847,6 +1019,7 @@ function SearchMix({
                     <td>{item.organisation || "—"}</td>
                     <td>
                       <span className="gem-chip small">{item.keyword}</span>
+                      <small className={`site-value ${item.tenderValue ? "" : "muted"}`}>{valueText(item.tenderValue)}</small>
                     </td>
                     <td className={closed ? "text-bad" : ""}>
                       {item.closingAt ? formatWhen(item.closingAt, timeZone) : "—"}
@@ -862,6 +1035,24 @@ function SearchMix({
                         <Link className="btn ghost" to={`/tenders/${item.tenderId}`}>
                           Open tender
                         </Link>
+                      ) : null}
+                      {canRun && item.status === "IMPORTED" && item.docCount === 0 && site?.method !== "NIC" ? (
+                        <Link className="btn" to={`/tenders/${item.tenderId}`} onClick={(event) => event.stopPropagation()}>
+                          Upload documents
+                        </Link>
+                      ) : null}
+                      {canRun && item.status === "IMPORTED" && item.docCount === 0 && site?.method === "NIC" ? (
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setOpenKey(key);
+                            scrollWhenReady(`docs-${item.id}`);
+                          }}
+                        >
+                          Get documents
+                        </button>
                       ) : null}
                       {canRun && item.status !== "IMPORTED" ? (
                         <form action={run("site-watch")} className="site-import-form">
@@ -1030,6 +1221,11 @@ export function SiteWatch({
   canRun: boolean;
 }) {
   const { portal, sites, tenders, runs, running, progress, stats } = data;
+  const keywordGroups = data.keywordGroups ?? [];
+  const organisationFilters = data.organisationFilters ?? [];
+  const [heading, setHeading] = useState("");
+  const [keywordFilter, setKeywordFilter] = useState("");
+  const [organisation, setOrganisation] = useState("");
   const [allKeywords, setAllKeywords] = useState(false);
   const [tab, setTab] = useState("NEW");
   const [openRow, setOpenRow] = useState("");
@@ -1046,7 +1242,7 @@ export function SiteWatch({
   const [params] = useSearchParams();
   const RESULT_KEYS = ["found", "approved", "conversion", "rejected", "ignored", "excluded", "today"] as const;
   const askedView = RESULT_KEYS.find((key) => key === params.get("results")) ?? "";
-  const [resultView, setResultView] = useState<"" | (typeof RESULT_KEYS)[number]>(askedView || "found");
+  const [resultView, setResultView] = useState<"" | (typeof RESULT_KEYS)[number]>(askedView || "");
   const [, tick] = useState(0);
 
   useEffect(() => {
@@ -1070,12 +1266,16 @@ export function SiteWatch({
   const siteOf = (id: string) => sites.find((site) => site.id === id);
   const counts = Object.fromEntries(TABS.map(([key]) => [key, key ? tenders.filter((item) => item.status === key).length : tenders.length]));
   const needle = query.trim().toLowerCase();
-  const shown = tenders
-    .filter((item) => !tab || item.status === tab)
-    .filter((item) => !siteFilter || item.siteId === siteFilter)
+  const inHeading = headingWords(keywordGroups, heading);
+  const tabbed = tenders.filter((item) => !tab || item.status === tab).filter((item) => !siteFilter || item.siteId === siteFilter);
+  const shown = tabbed
+    .filter((item) => !inHeading || inHeading.has(lower(item.keyword)))
+    .filter((item) => !keywordFilter || lower(item.keyword) === lower(keywordFilter))
+    .filter((item) => !organisation || fromOrganisation(`${item.organisation} ${item.title}`, organisation))
     .filter((item) => !needle || [item.title, item.refNo, item.portalTenderId, item.organisation, item.keyword, siteOf(item.siteId)?.host].join(" ").toLowerCase().includes(needle));
+  // One keyword per line (sheet keywords can hold commas); an older list is comma-separated.
   const keywords = portal.keywords
-    .split(/[,\n;]+/)
+    .split(portal.keywords.includes("\n") ? /\n+/ : /[,;]+/)
     .map((word) => word.trim())
     .filter(Boolean);
   const excludes = (portal.excludeWords || "")
@@ -1366,7 +1566,12 @@ export function SiteWatch({
   const todayKey = stats?.today ?? zoneDay(new Date());
   const gemToday = (gem?.bids ?? []).filter((bid) => zoneDay(bid.firstSeenAt) === todayKey).length;
   const siteToday = stats?.newToday ?? tenders.filter((item) => zoneDay(item.firstSeenAt) === todayKey).length;
+  // The list stays hidden until a card is clicked, so every card shows first; the open card's second click hides it again.
   const showResults = (view: "found" | "approved" | "conversion" | "rejected" | "ignored" | "excluded" | "today") => {
+    if (view === resultView) {
+      setResultView("");
+      return;
+    }
     setResultView(view);
     window.setTimeout(() => document.getElementById("search-mix")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
@@ -1765,6 +1970,17 @@ export function SiteWatch({
               </option>
             ))}
           </select>
+          <SheetFilters
+            groups={keywordGroups}
+            organisations={organisationFilters}
+            found={tabbed.map((item) => item.keyword)}
+            heading={heading}
+            keyword={keywordFilter}
+            organisation={organisation}
+            setHeading={setHeading}
+            setKeyword={setKeywordFilter}
+            setOrganisation={setOrganisation}
+          />
           <input type="search" placeholder="Search title, tender ID, organisation…" value={query} onChange={(event) => setQuery(event.target.value)} />
         </div>
       </div>
@@ -1776,7 +1992,7 @@ export function SiteWatch({
               <th>Website</th>
               <th>Tender</th>
               <th>Organisation</th>
-              <th>Keyword</th>
+              <th>Keyword · value</th>
               <th>Closes</th>
               <th>Status</th>
               <th>Actions</th>
@@ -1831,6 +2047,7 @@ export function SiteWatch({
                     <td>{item.organisation || "—"}</td>
                     <td>
                       <span className="gem-chip small">{item.keyword}</span>
+                      <small className={`site-value ${item.tenderValue ? "" : "muted"}`}>{valueText(item.tenderValue)}</small>
                     </td>
                     <td className={closed ? "text-bad" : ""}>
                       {item.closingAt ? formatWhen(item.closingAt, timeZone) : "—"}
@@ -1846,6 +2063,24 @@ export function SiteWatch({
                         <Link className="btn ghost" to={`/tenders/${item.tenderId}`}>
                           Open tender
                         </Link>
+                      ) : null}
+                      {canRun && item.status === "IMPORTED" && item.docCount === 0 && site?.method !== "NIC" ? (
+                        <Link className="btn" to={`/tenders/${item.tenderId}`} onClick={(event) => event.stopPropagation()}>
+                          Upload documents
+                        </Link>
+                      ) : null}
+                      {canRun && item.status === "IMPORTED" && item.docCount === 0 && site?.method === "NIC" ? (
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setOpenRow(item.id);
+                            scrollWhenReady(`docs-${item.id}`);
+                          }}
+                        >
+                          Get documents
+                        </button>
                       ) : null}
                       {canRun && item.status !== "IMPORTED" ? (
                         <form action={run("site-watch")} className="site-import-form">
@@ -1973,7 +2208,7 @@ export function SiteWatch({
         {resultView ? (
           <SearchMix
             view={resultView}
-            onView={showResults}
+            onView={(view) => setResultView(view)}
             tenders={tenders}
             bids={gem?.bids ?? []}
             gemTenders={gem?.tenders ?? []}
@@ -1983,6 +2218,8 @@ export function SiteWatch({
             zoneDay={zoneDay}
             canRun={canRun}
             run={run}
+            groups={keywordGroups}
+            organisations={organisationFilters}
           />
         ) : null}
         <h4 className="sk-heading">Website results ({sites.length})</h4>

@@ -1,3 +1,5 @@
+import { isYellowKeyword } from "./site-keywords";
+
 /**
  * GeM search keywords, from the "Tender Sourcing Keywords" sheet, grouped under its headings.
  * Left out on purpose: tender-document words (tender, RFP, procurement, rate contract…) and generic maintenance or
@@ -17,7 +19,10 @@ export const GEM_KEYWORD_GROUPS: Record<string, string[]> = {
   "Additional Keywords & Regional Organization Filters": ["hiring HEMM", "shifting coal", "loading by payloader", "transportation by tipper", "bulk handling at Indian ports"],
 };
 
-export const GEM_KEYWORDS = Object.values(GEM_KEYWORD_GROUPS).flat();
+/** The sheet's yellow rows (coal handling plant, CHP, generic maintenance) are not searched on GeM either. */
+export const GEM_KEYWORDS = Object.values(GEM_KEYWORD_GROUPS)
+  .flat()
+  .filter((word) => !isYellowKeyword(word));
 
 /** Product purchases that only mention ash, road toll work, and the sheet's "Exclude from Shortlisting" kinds of bid. */
 export const GEM_EXCLUDES = ["brick", "bricks", "portland", "ppc", "pozzolana", "toll", "fee plaza", "user fee", "spares", "spare parts", "MDO", "mine developer", "coal sale", "sale of coal", "coal auction"];

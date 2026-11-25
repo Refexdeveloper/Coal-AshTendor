@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { attachSourceDocuments, createTender, type Actor } from "./domain";
 import { FIRST_EXCLUDES, FIRST_KEYWORDS, GEM_EXCLUDES, GEM_KEYWORDS } from "./gem-keywords";
+import { isYellowKeyword } from "./site-keywords";
 import { mailNewSearchTenders, type FreshTender } from "./notify";
 
 /**
@@ -299,6 +300,9 @@ export async function gemPortal() {
     const data: Record<string, unknown> = {};
     if (same(existing.keywords || "", FIRST_KEYWORDS)) data.keywords = GEM_KEYWORDS.join(", ");
     if (same(existing.excludeWords || "", FIRST_EXCLUDES)) data.excludeWords = GEM_EXCLUDES.join(", ");
+    // The sheet's yellow rows are not searched: they leave the saved list.
+    const saved = String(data.keywords ?? existing.keywords ?? "").split(/[,\n;]+/).map((item) => item.trim()).filter(Boolean);
+    if (saved.some(isYellowKeyword)) data.keywords = saved.filter((word) => !isYellowKeyword(word)).join(", ");
     if (data.keywords && existing.maxPages > 5) data.maxPages = 5;
     return Object.keys(data).length ? db.portal.update({ where: { id: existing.id }, data }) : existing;
   }
@@ -451,7 +455,7 @@ async function scan(actorInput?: Actor) {
   const portal = await gemPortal();
   const actor = actorInput ?? ((await db.user.findFirst({ where: { role: "ADMIN", active: true } })) as Actor | null);
   if (!actor) throw new Error("No active administrator to record the GeM import.");
-  const keywords = splitList(portal.keywords || "");
+  const keywords = splitList(portal.keywords || "").filter((word) => !isYellowKeyword(word));
   const excludes = splitList(portal.excludeWords || "");
   const run = await db.crawlerRun.create({ data: { portalId: portal.id, status: "RUNNING" } });
   await db.portal.update({ where: { id: portal.id }, data: { lastStatus: "RUNNING", lastError: "" } });
