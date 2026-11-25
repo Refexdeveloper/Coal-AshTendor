@@ -1308,9 +1308,14 @@ function SearchMix({
                               }}
                             />
                           </label>
-                          <button className="btn" type="submit">
-                            {item.status === "FAILED" ? "Retry" : "Add as tender"}
-                          </button>
+                          <span className="site-send">
+                            <button className="btn" type="submit" name="line" value="ASH">
+                              Send for Ash
+                            </button>
+                            <button className="btn ghost" type="submit" name="line" value="COAL">
+                              Send for Coal
+                            </button>
+                          </span>
                         </form>
                       ) : null}
                       {canRun && item.status === "NEW" ? <IgnoreForm action={run("site-watch")} idName="siteTenderId" id={item.id} /> : null}
@@ -1397,9 +1402,14 @@ function SearchMix({
                             }}
                           />
                         </label>
-                        <button className="btn" type="submit">
-                          {bid.status === "FAILED" ? "Retry import" : "Import as tender"}
-                        </button>
+                        <span className="site-send">
+                          <button className="btn" type="submit" name="line" value="ASH">
+                            Send for Ash
+                          </button>
+                          <button className="btn ghost" type="submit" name="line" value="COAL">
+                            Send for Coal
+                          </button>
+                        </span>
                       </form>
                     ) : null}
                     {canRun && bid.status === "NEW" ? <IgnoreForm action={run("gem")} idName="bidId" id={bid.id} /> : null}
@@ -1482,7 +1492,7 @@ export function SiteWatch({
   const [params] = useSearchParams();
   const RESULT_KEYS = ["found", "approved", "conversion", "rejected", "ignored", "excluded", "today"] as const;
   const askedView = RESULT_KEYS.find((key) => key === params.get("results")) ?? "";
-  const [resultView, setResultView] = useState<"" | (typeof RESULT_KEYS)[number]>(askedView || "");
+  const [resultView, setResultView] = useState<"" | (typeof RESULT_KEYS)[number]>(askedView || "found");
   const [, tick] = useState(0);
 
   useEffect(() => {
@@ -1814,7 +1824,7 @@ export function SiteWatch({
   const todayKey = stats?.today ?? zoneDay(new Date());
   const gemToday = (gem?.bids ?? []).filter((bid) => bid.status !== "EXCLUDED" && zoneDay(bid.firstSeenAt) === todayKey).length;
   const siteToday = stats?.newToday ?? tenders.filter((item) => item.status !== "EXCLUDED" && zoneDay(item.firstSeenAt) === todayKey).length;
-  // The list stays hidden until a card is clicked, so every card shows first; the open card's second click hides it again.
+  // Total tenders in search is open on arrival. A second click on the open card hides its table.
   const showResults = (view: "found" | "approved" | "conversion" | "rejected" | "ignored" | "excluded" | "today") => {
     if (view === resultView) {
       setResultView("");
@@ -2372,9 +2382,14 @@ export function SiteWatch({
                               }}
                             />
                           </label>
-                          <button className="btn" type="submit">
-                            {item.status === "FAILED" ? "Retry" : "Add as tender"}
-                          </button>
+                          <span className="site-send">
+                            <button className="btn" type="submit" name="line" value="ASH">
+                              Send for Ash
+                            </button>
+                            <button className="btn ghost" type="submit" name="line" value="COAL">
+                              Send for Coal
+                            </button>
+                          </span>
                         </form>
                       ) : null}
                       {canRun && item.status === "NEW" ? (

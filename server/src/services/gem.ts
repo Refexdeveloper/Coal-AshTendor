@@ -397,12 +397,13 @@ function gemBidPage(doc: GemDoc, bidId: string) {
 }
 
 /** Creates the tender for one stored GeM bid. Used by auto-import and by the admin's Import button. An uploaded file is the tender document; the portal code is not required. */
-export async function importGemBid(actor: Actor, gemBidId: string, uploads: { name: string; type: string; buffer: Buffer }[] = []) {
+export async function importGemBid(actor: Actor, gemBidId: string, uploads: { name: string; type: string; buffer: Buffer }[] = [], line?: "ASH" | "COAL") {
   const bid = await db.gemBid.findUnique({ where: { id: gemBidId } });
   if (!bid) throw new Error("That GeM bid is not in the list.");
   if (bid.status === "IMPORTED" && bid.tenderId) {
     if (uploads.length) await attachSourceDocuments(actor, bid.tenderId, uploads, "NOTICE");
-    return { tenderId: bid.tenderId, recordId: "", already: true, note: uploads.length ? "The tender file was added." : "" };
+    if (line) await db.tender.update({ where: { id: bid.tenderId }, data: { businessLine: line } });
+    return { tenderId: bid.tenderId, recordId: "", already: true, note: line ? `Sent to ${line === "COAL" ? "Coal" : "Ash"}.` : uploads.length ? "The tender file was added." : "" };
   }
   const doc = JSON.parse(bid.raw || "{}") as GemDoc;
   const bidPage = gemBidPage(doc, bid.bidId);
@@ -427,6 +428,7 @@ export async function importGemBid(actor: Actor, gemBidId: string, uploads: { na
       externalTenderId: bid.bidNumber,
       source: "CRAWLER",
       files: uploads.length ? uploads : file ? [file] : [],
+      ...(line ? { businessLine: line } : {}),
       sourceUrl: bidPage,
       // What the GeM listing already states; OCR fills the rest from the bid document.
       known: {
@@ -456,6 +458,8 @@ export async function importGemBid(actor: Actor, gemBidId: string, uploads: { na
       if (failed.length) linkNote = `Linked documents not fetched: ${failed.join(", ")}. Visit GeM to get them: ${bidPage}`;
     }
     if (missing) linkNote = missing;
+    if (line && result.duplicate) await db.tender.update({ where: { id: result.tenderId }, data: { businessLine: line } });
+    if (line && !linkNote) linkNote = `Sent to the ${line === "COAL" ? "Coal" : "Ash"} team.`;
     await db.gemBid.update({ where: { id: bid.id }, data: { status: "IMPORTED", tenderId: result.tenderId, error: result.duplicate ? `Already on tender ${result.recordId}.` : linkNote } });
     return { tenderId: result.tenderId, recordId: result.recordId, already: result.duplicate, note: linkNote };
   } catch (error) {

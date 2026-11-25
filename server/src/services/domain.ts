@@ -410,6 +410,8 @@ export async function createTender(
     known?: Record<string, string>;
     /** The page the tender was found on, shown on the tender so its documents can be fetched by hand. */
     sourceUrl?: string;
+    /** Set when the person sends the result to Ash or Coal. Otherwise the text decides the team. */
+    businessLine?: BusinessLine;
   },
 ) {
   if (input.source === "MANUAL" && !CREATOR_ROLES.includes(actor.role)) {
@@ -495,6 +497,7 @@ export async function createTender(
       tenderRef: input.tenderRef.trim(),
       externalTenderId: input.externalTenderId.trim(),
       source: input.source,
+      ...(input.businessLine ? { businessLine: input.businessLine } : {}),
       ...(input.sourceUrl ? { sourceUrl: input.sourceUrl.slice(0, 1000) } : {}),
       overallStatus: "OCR_PROCESSING",
       ocrStatus: "PROCESSING",
@@ -545,7 +548,7 @@ export async function createTender(
     });
   }
   // The upload response returns now. The OCR POST keeps running, and the page stops loading when that response is stored.
-  void finishExtraction(tender.id, recordId, actor, input.source, stored).catch(async (error) => {
+  void finishExtraction(tender.id, recordId, actor, input.source, stored, input.businessLine).catch(async (error) => {
     console.error("OCR did not finish", error);
     const message = error instanceof Error ? error.message : "OCR request failed.";
     await db.tenderDocument.updateMany({ where: { tenderId: tender.id, ocrJson: "PENDING" }, data: { ocrJson: message } }).catch(() => undefined);
@@ -561,6 +564,7 @@ async function finishExtraction(
   actor: Actor,
   source: "MANUAL" | "CRAWLER",
   stored: { id: string; fileName: string; storedPath: string; pages: string[]; failed: boolean }[],
+  line?: BusinessLine,
 ) {
   const pages: PageText[] = [];
   const ocrHits: Record<string, FieldHit> = {};
@@ -611,8 +615,8 @@ async function finishExtraction(
 
   const calendar = await getCalendar();
   const coordinator = await db.user.findFirst({ where: { personKey: "coordinator", active: true } });
-  const line = await detectTenderLine(tenderId);
-  const routed = await db.tender.update({ where: { id: tenderId }, data: { businessLine: line } });
+  const chosen = line ?? (await detectTenderLine(tenderId));
+  const routed = await db.tender.update({ where: { id: tenderId }, data: { businessLine: chosen } });
   const listed = await ownersFor("DATA_VALIDATION", routed, "COORDINATOR");
   // The uploader can always finish validating their own upload.
   const validationOwners = [...new Set(source === "CRAWLER" ? listed : [actor.id, ...listed])];

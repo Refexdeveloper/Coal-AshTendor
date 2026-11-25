@@ -576,7 +576,7 @@ async function sessionFiles(id: string, token: string) {
  * opened here with the portal's code (`docToken`); they are sent to Unfyd OCR like any tender upload. With no
  * documents the tender is created from the listing alone. A tender already imported gets the new documents added.
  */
-export async function importSiteTender(actor: Actor, id: string, uploads: Upload[] = [], docToken = "") {
+export async function importSiteTender(actor: Actor, id: string, uploads: Upload[] = [], docToken = "", line?: "ASH" | "COAL") {
   const found = await db.siteTender.findUnique({ where: { id } });
   if (!found) throw new Error("That tender is not in the list.");
   const fromPortal = docToken ? await sessionFiles(id, docToken) : { files: [], skipped: [] as string[] };
@@ -587,6 +587,7 @@ export async function importSiteTender(actor: Actor, id: string, uploads: Upload
       await addDocuments(actor, found.tenderId as string, files, "NOTICE");
       await db.siteTender.update({ where: { id }, data: { error: "" } });
     }
+    if (line) await db.tender.update({ where: { id: found.tenderId }, data: { businessLine: line } });
     return { tenderId: found.tenderId as string, recordId: "", already: true, files: files.length, skipped: fromPortal.skipped, sourceUrl: "" };
   }
   const site = await db.watchSite.findUnique({ where: { id: found.siteId } });
@@ -606,6 +607,7 @@ export async function importSiteTender(actor: Actor, id: string, uploads: Upload
       externalTenderId: String(found.portalTenderId || found.tenderKey).slice(0, 190),
       source: "CRAWLER",
       files,
+      ...(line ? { businessLine: line } : {}),
       known: {
         work_description: String(found.title),
         submission_mode: "Electronic",
@@ -613,7 +615,9 @@ export async function importSiteTender(actor: Actor, id: string, uploads: Upload
         ...(closingText ? { bid_submission_end: closingText } : {}),
       },
     });
-    const note = result.duplicate ? `Already on tender ${result.recordId}.` : files.length ? "" : site?.method === "NIC" ? "No documents fetched: the website asks for a security code (or open them here with the code)." : "No documents fetched: this website only lists its tenders.";
+    if (line && result.duplicate) await db.tender.update({ where: { id: result.tenderId }, data: { businessLine: line } });
+    const sent = line ? ` Sent to the ${line === "COAL" ? "Coal" : "Ash"} team.` : "";
+    const note = result.duplicate ? `Already on tender ${result.recordId}.${sent}` : files.length ? sent.trim() : site?.method === "NIC" ? `No documents fetched: the website asks for a security code (or open them here with the code).${sent}` : `No documents fetched: this website only lists its tenders.${sent}`;
     await db.siteTender.update({ where: { id }, data: { status: "IMPORTED", tenderId: result.tenderId, error: note } });
     return { tenderId: result.tenderId as string, recordId: result.recordId as string, already: result.duplicate, files: files.length, skipped: fromPortal.skipped, sourceUrl };
   } catch (error) {

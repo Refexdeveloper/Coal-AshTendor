@@ -706,7 +706,8 @@ export async function gemAction(actor: User, formData: FormData): Promise<Action
     const bidId = String(formData.get("bidId") || "");
     if (intent === "import") {
       const uploads = (await filesFrom(formData, "files")).filter((file) => file.buffer.length);
-      const result = await gem.importGemBid(actor, bidId, uploads);
+      const line = formData.get("line") === "COAL" ? "COAL" : formData.get("line") === "ASH" ? "ASH" : undefined;
+      const result = await gem.importGemBid(actor, bidId, uploads, line);
       return {
         ok: result.already
           ? result.note || "This bid was already on a tender."
@@ -869,7 +870,8 @@ export async function siteWatchAction(actor: User, formData: FormData): Promise<
     const tenderId = String(formData.get("siteTenderId") || "");
     if (intent === "import") {
       const uploads = (await filesFrom(formData, "files")).filter((file) => file.buffer.length);
-      const result = await sites.importSiteTender(actor, tenderId, uploads, String(formData.get("docToken") || ""));
+      const line = formData.get("line") === "COAL" ? "COAL" : formData.get("line") === "ASH" ? "ASH" : undefined;
+      const result = await sites.importSiteTender(actor, tenderId, uploads, String(formData.get("docToken") || ""), line);
       const skipped = result.skipped.length ? ` Not sent for extraction: ${result.skipped.join(", ")}.` : "";
       const ok = result.already
         ? result.files

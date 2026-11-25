@@ -485,9 +485,14 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                             }}
                           />
                         </label>
-                        <button className="btn" type="submit">
-                          {bid.status === "FAILED" ? "Retry import" : "Import as tender"}
-                        </button>
+                        <span className="site-send">
+                          <button className="btn" type="submit" name="line" value="ASH">
+                            Send for Ash
+                          </button>
+                          <button className="btn ghost" type="submit" name="line" value="COAL">
+                            Send for Coal
+                          </button>
+                        </span>
                       </form>
                     ) : null}
                     {canRun && bid.status === "NEW" ? (
