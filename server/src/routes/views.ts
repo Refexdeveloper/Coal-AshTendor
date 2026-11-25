@@ -304,10 +304,13 @@ views.get("/portals", async (_req, res) => {
   const gem = await gemPortal();
   const sw = await import("../services/site-watch");
   const { SHEET_LINKS } = await import("../services/site-list");
-  const { SITE_KEYWORD_HEADINGS, SITE_ORGANISATION_FILTERS } = await import("../services/site-keywords");
-  const siteKeywordGroups = SITE_KEYWORD_HEADINGS;
+  const { parseKeywordHeadings, SITE_ORGANISATION_FILTERS } = await import("../services/site-keywords");
   await sw.clearStaleSiteRuns().catch(() => undefined);
+  // Live tenders only: results that have closed (or give no closing date) leave the review list.
+  await sw.retireClosedResults().catch(() => undefined);
   const sitePortal = await sw.siteWatchPortal();
+  // The saved keyword list under its headings (with any keyword a person added), for the filters and the keyword box.
+  const siteKeywordGroups = parseKeywordHeadings(sitePortal.keywords || "");
   const [watchSites, allSiteTenders, siteRuns] = await Promise.all([
     db.watchSite.findMany({ orderBy: { host: "asc" } }),
     db.siteTender.findMany({ orderBy: { firstSeenAt: "desc" } }),
@@ -333,7 +336,8 @@ views.get("/portals", async (_req, res) => {
   const siteStats = {
     total: allSiteTenders.length,
     byStatus: statusCount,
-    newToday: allSiteTenders.filter((item: { firstSeenAt: Date }) => dayKeyOf(new Date(item.firstSeenAt), zone) === todayKey).length,
+    // Tenders the search filtered out (exclude words, value below the heading's amount) are not new tenders to review.
+    newToday: allSiteTenders.filter((item: { firstSeenAt: Date; status: string }) => item.status !== "EXCLUDED" && dayKeyOf(new Date(item.firstSeenAt), zone) === todayKey).length,
     today: todayKey,
     keywords: [...keywordRank.values()].sort((a, b) => b.total - a.total || a.keyword.localeCompare(b.keyword)).map(({ sites, ...rest }) => ({ ...rest, sites: sites.size })),
   };

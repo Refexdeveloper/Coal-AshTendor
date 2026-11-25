@@ -748,6 +748,92 @@ export async function gemAction(actor: User, formData: FormData): Promise<Action
   }
 }
 
+/**
+ * Adds or removes a search keyword or exclude word on both searches (the tender websites and GeM). An exclude word
+ * also applies at once to the results already found: matching tenders still to review move to Excluded, and taking
+ * the word off brings back the ones it had excluded. A new keyword is searched on the next run.
+ */
+async function searchWords(
+  intent: string,
+  raw: string,
+  sitePortal: { id: string; keywords: string; excludeWords: string | null },
+  place: { heading: string; newHeading: string; minCrore: number; type?: string } = { heading: "", newHeading: "", minCrore: 0 },
+) {
+  const word = raw.replace(/\s+/g, " ").trim();
+  if (!word) throw new WorkflowError("Type a word first.");
+  if (word.length > 120) throw new WorkflowError("Keep it under 120 characters.");
+  const { formatKeywordHeadings, headingType, OTHER_HEADING, parseKeywordHeadings } = await import("./site-keywords");
+  const { siteExcludedBy } = await import("./site-watch");
+  const gem = await import("./gem");
+  const gemPortal = await gem.gemPortal();
+  const same = (item: string) => item.toLowerCase() === word.toLowerCase();
+  const commaList = (value: string | null) =>
+    String(value || "")
+      .split(/[,\n;]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  if (intent === "search-keyword" || intent === "search-unkeyword") {
+    const adding = intent === "search-keyword";
+    if (adding && /[,;]/.test(word)) throw new WorkflowError("Use a keyword without commas or semicolons.");
+    if (/^#/.test(word)) throw new WorkflowError("A keyword cannot start with #.");
+    // The website list keeps its headings: the word leaves every heading, and when added goes under the chosen one.
+    const groups = parseKeywordHeadings(sitePortal.keywords || "").map((group) => ({ ...group, keywords: group.keywords.filter((item) => !same(item)) }));
+    let heading = "";
+    if (adding) {
+      const fresh = place.newHeading.replace(/[|#\n]/g, " ").replace(/\s+/g, " ").trim();
+      if (place.heading === "__new" && !fresh) throw new WorkflowError("Type the new heading's name.");
+      heading = place.heading === "__new" ? fresh : place.heading || OTHER_HEADING;
+      let group = groups.find((item) => item.heading.toLowerCase() === heading.toLowerCase());
+      if (!group) {
+        const type = place.type === "Ash" || place.type === "Coal" ? place.type : headingType(heading);
+        groups.push((group = { heading, type, minCrore: place.heading === "__new" ? Math.max(0, place.minCrore) : 0, keywords: [] }));
+      }
+      heading = group.heading;
+      group.keywords.push(word);
+    }
+    const gemWords = commaList(gemPortal.keywords);
+    const nextGem = adding ? (gemWords.some(same) ? gemWords : [...gemWords, word]) : gemWords.filter((item) => !same(item));
+    if (!groups.some((group) => group.keywords.length) || !nextGem.length) throw new WorkflowError("Keep at least one keyword.");
+    await db.portal.update({ where: { id: sitePortal.id }, data: { keywords: formatKeywordHeadings(groups) } });
+    await db.portal.update({ where: { id: gemPortal.id }, data: { keywords: nextGem.join(", ") } });
+    return {
+      ok: adding ? `Keyword “${word}” added under ${heading} on the website and GeM searches. Press Re-run search to find its tenders.` : `Keyword “${word}” removed; it is not searched from the next run.`,
+    };
+  }
+  const adding = intent === "search-exclude";
+  const siteEx = commaList(sitePortal.excludeWords);
+  const gemEx = commaList(gemPortal.excludeWords);
+  await db.portal.update({ where: { id: sitePortal.id }, data: { excludeWords: (adding ? (siteEx.some(same) ? siteEx : [...siteEx, word]) : siteEx.filter((item) => !same(item))).join(", ") } });
+  await db.portal.update({ where: { id: gemPortal.id }, data: { excludeWords: (adding ? (gemEx.some(same) ? gemEx : [...gemEx, word]) : gemEx.filter((item) => !same(item))).join(", ") } });
+  let moved = 0;
+  if (adding) {
+    const note = `Title mentions "${word}".`;
+    for (const row of (await db.siteTender.findMany({ where: { status: "NEW" } })) as { id: string; title: string }[]) {
+      if (!siteExcludedBy(row.title, [word])) continue;
+      await db.siteTender.update({ where: { id: row.id }, data: { status: "EXCLUDED", error: note } });
+      moved += 1;
+    }
+    for (const row of (await db.gemBid.findMany({ where: { status: "NEW" } })) as { id: string; title: string }[]) {
+      if (!gem.excludedBy(row.title, [word])) continue;
+      await db.gemBid.update({ where: { id: row.id }, data: { status: "EXCLUDED", error: note } });
+      moved += 1;
+    }
+    return { ok: `Exclude word “${word}” added.${moved ? ` ${moved} result${moved === 1 ? "" : "s"} moved to Excluded.` : " No current result has it."}` };
+  }
+  const note = `Title mentions "${word}".`.toLowerCase();
+  for (const row of (await db.siteTender.findMany({ where: { status: "EXCLUDED" } })) as { id: string; error: string }[]) {
+    if (String(row.error || "").toLowerCase() !== note) continue;
+    await db.siteTender.update({ where: { id: row.id }, data: { status: "NEW", error: "" } });
+    moved += 1;
+  }
+  for (const row of (await db.gemBid.findMany({ where: { status: "EXCLUDED" } })) as { id: string; error: string }[]) {
+    if (String(row.error || "").toLowerCase() !== note) continue;
+    await db.gemBid.update({ where: { id: row.id }, data: { status: "NEW", error: "" } });
+    moved += 1;
+  }
+  return { ok: `Exclude word “${word}” removed.${moved ? ` ${moved} result${moved === 1 ? "" : "s"} it had excluded are back to review.` : ""}` };
+}
+
 export async function siteWatchAction(actor: User, formData: FormData): Promise<ActionState> {
   const sites = await import("./site-watch");
   const intent = String(formData.get("intent") || "");
@@ -766,6 +852,28 @@ export async function siteWatchAction(actor: User, formData: FormData): Promise<
         },
       });
       return { ok: "Tender sites watch settings saved." };
+    }
+    if (intent === "search-keyword" || intent === "search-unkeyword" || intent === "search-exclude" || intent === "search-unexclude") {
+      return await searchWords(intent, String(formData.get("word") || ""), portal, {
+        heading: String(formData.get("heading") || ""),
+        newHeading: String(formData.get("newHeading") || ""),
+        minCrore: Number(formData.get("minCrore")) || 0,
+        type: String(formData.get("type") || ""),
+      });
+    }
+    if (intent === "search-run") {
+      // One button for both searches: every website pass and the GeM pass start side by side in the background.
+      const gem = await import("./gem");
+      const started: string[] = [];
+      if (!sites.siteWatchRunning()) {
+        void sites.runSiteWatch().catch((error) => console.error("Tender sites watch failed", error));
+        started.push("websites");
+      }
+      if (!gem.gemRunning()) {
+        void gem.runGemWatch(actor).catch((error) => console.error("GeM watch failed", error));
+        started.push("GeM");
+      }
+      return { ok: started.length ? `Search started on the ${started.join(" and ")}. New matches appear in the list as they are found.` : "Both searches are already running; their results appear in the list as they are found." };
     }
     if (intent === "run" || intent === "run-site") {
       if (sites.siteWatchRunning()) return { ok: "A pass is already running. Its results appear here as they are found." };

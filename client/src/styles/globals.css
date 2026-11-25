@@ -3419,3 +3419,32 @@ tr.site-detail-row > td { background: var(--paper); padding: 0; }
 
 /* Tender sites watch: the tender value under the matched keyword */
 .site-value { display: block; margin-top: 4px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+
+/* Search results: the keyword / exclude-word box and the re-run button above the list */
+.search-words { display: grid; gap: 10px; margin: 4px 0 14px; padding: 14px 16px; border: 1px solid var(--line, rgba(0, 0, 0, 0.08)); border-radius: 14px; background: var(--surface-2, rgba(0, 0, 0, 0.02)); }
+.search-words .sw-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.search-words .sw-add { display: flex; gap: 8px; flex: 1 1 300px; }
+.search-words .sw-add input { flex: 1; min-width: 0; }
+.search-words .sw-run { margin-left: auto; }
+.search-words .sw-chips { align-items: center; }
+.search-words .sw-chip-form { display: inline; margin: 0; }
+.search-words .sw-add-keyword { flex: 3 1 560px; flex-wrap: wrap; }
+.search-words .sw-add-keyword input[name="word"] { flex: 2 1 220px; }
+.search-words .sw-add-keyword select { flex: 1 1 220px; min-width: 0; }
+.search-words .sw-add-keyword input[name="newHeading"] { flex: 1 1 160px; }
+.search-words .sw-crore { flex: 0 0 110px; width: 110px; }
+.search-words .sw-groups-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.search-words .sw-groups { display: grid; gap: 6px; }
+.search-words .sw-group { border: 1px solid var(--line, rgba(0, 0, 0, 0.08)); border-radius: 10px; background: var(--surface, #fff); }
+.search-words .sw-group > summary { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 9px 12px; cursor: pointer; list-style: none; }
+.search-words .sw-group > summary::-webkit-details-marker { display: none; }
+.search-words .sw-group > summary::before { content: "▸"; color: var(--muted); transition: transform 0.15s; }
+.search-words .sw-group[open] > summary::before { transform: rotate(90deg); }
+.search-words .sw-group-meta { color: var(--muted); font-size: 0.85rem; }
+.search-words .sw-group > .gem-chips, .search-words .sw-group > small { padding: 0 12px 10px; }
+.search-words .sw-excludes { display: grid; gap: 8px; padding-top: 4px; border-top: 1px dashed var(--line, rgba(0, 0, 0, 0.1)); }
+.search-words .sw-excludes .sw-add { max-width: 560px; }
+.search-words .sw-type { flex: 0 0 100px; }
+.search-words .sw-type-block { display: grid; gap: 6px; }
+.search-words .sw-type-title { margin: 6px 0 0; font-size: 0.82rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.search-words .sw-type-title small { text-transform: none; letter-spacing: 0; font-weight: 500; }

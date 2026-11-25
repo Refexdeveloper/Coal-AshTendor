@@ -38,6 +38,9 @@ const ADDED_COLUMNS: Record<string, [string, string][]> = {
     ["ignoredById", "VARCHAR(191) NOT NULL DEFAULT ''"],
     ["ignoredByName", "VARCHAR(191) NOT NULL DEFAULT ''"],
     ["ignoredAt", "DATETIME(3) NULL"],
+    // The "Estimated Bid Value" in the bid's PDF, in rupees (empty when the bid gives none), and when it was read.
+    ["bidValue", "DECIMAL(20,2) NULL"],
+    ["valueCheckedAt", "DATETIME(3) NULL"],
   ],
   WatchSite: [["note", "VARCHAR(500) NOT NULL DEFAULT ''"]],
   SiteTender: [

@@ -24,6 +24,8 @@ export type GemBid = {
   startAt: Date | null;
   endAt: Date | null;
   keyword: string;
+  /** The "Estimated Bid Value" in the bid's PDF, in rupees (null when the bid gives none or it is not read yet). */
+  bidValue?: number | string | null;
   status: "NEW" | "IMPORTED" | "IGNORED" | "EXCLUDED" | "FAILED";
   tenderId: string;
   error: string;

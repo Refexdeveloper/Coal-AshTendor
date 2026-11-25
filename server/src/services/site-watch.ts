@@ -3,7 +3,7 @@ import { db } from "../db";
 import { addDocuments, createTender, type Actor } from "./domain";
 import { allowedUpload } from "./files";
 import { GEM_EXCLUDES } from "./gem-keywords";
-import { isYellowKeyword, keywordList, minimumRupees, SITE_KEYWORD_SHEET, SITE_KEYWORDS } from "./site-keywords";
+import { isYellowKeyword, minimumRupees, parseKeywordHeadings, SHEET_KEYWORD_TEXT, SITE_KEYWORD_SHEET } from "./site-keywords";
 import { mailNewSearchTenders, type FreshTender } from "./notify";
 import { SITE_SEEDS } from "./site-list";
 
@@ -186,8 +186,6 @@ export function nicTenders(html: string, host: string): FoundTender[] {
   return out;
 }
 
-/** A plain company tender page: each table row, list item or link whose text reads like a tender. */
-const PAGE_TENDERISH = /tender|\bnit\b|notice inviting|\beoi\b|expression of interest|\brf[qp]\b|auction|\bbids?\b|enquiry|quotation|e-?procure/i;
 const PAGE_MONTHS = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec";
 /** Every date written in a row ("14.10.2026", "14-Oct-2026", "14 Oct, 2026", "2026-10-14"), as IST midnight. */
 export function pageDates(text: string) {
@@ -203,23 +201,27 @@ export function pageDates(text: string) {
   for (const m of text.matchAll(/\b(20\d{2})-(\d{2})-(\d{2})\b/g)) add(Number(m[1]), Number(m[2]), Number(m[3]));
   return out;
 }
-const asNicTime = (date: Date) => {
+const asNicTime = (date: Date, endOfDay = false) => {
   const ist = new Date(date.getTime() + 5.5 * 3600_000);
   const month = Object.keys(MONTHS)[ist.getUTCMonth()];
-  return `${String(ist.getUTCDate()).padStart(2, "0")}-${month[0].toUpperCase()}${month.slice(1)}-${ist.getUTCFullYear()} 12:00 AM`;
+  return `${String(ist.getUTCDate()).padStart(2, "0")}-${month[0].toUpperCase()}${month.slice(1)}-${ist.getUTCFullYear()} ${endOfDay ? "11:59 PM" : "12:00 AM"}`;
 };
-/** How old a dated row may be and still count: company pages keep years of past tenders below the open ones. */
-const PAGE_MAX_AGE_MS = 120 * 86400_000;
+/** Today's date at midnight, India time (a row dated today is still open today). */
+const startOfTodayIst = () => {
+  const ist = new Date(Date.now() + 5.5 * 3600_000);
+  return Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - 5.5 * 3600_000;
+};
 
 /**
- * Tender rows on a company's own tender page: table rows and list items that read like a tender (a tender word or a
- * date), plus stand-alone links not already inside such a row. Rows whose dates are all older than four months are
- * past tenders and are left out. The first date is kept as the published date, a later one as the closing date.
+ * Tender rows on a company's own tender page: table rows and list items, plus stand-alone links not already inside
+ * such a row. Only live tenders are kept: a row needs a date that has not passed, taken as its closing date (open to
+ * the end of that day); an earlier date in the row is its published date. Rows with no date, or only past dates, are
+ * left out, since company pages list their past tenders too.
  */
 export function pageTenders(html: string, base: string): FoundTender[] {
   const clean = html.replace(/<(script|style|noscript|svg|nav|header|footer)[\s\S]*?<\/\1>/gi, " ").replace(/<!--[\s\S]*?-->/g, " ");
   const host = new URL(base).host;
-  const cutoff = Date.now() - PAGE_MAX_AGE_MS;
+  const today = startOfTodayIst();
   const seen = new Set<string>();
   const rows: string[] = [];
   const out: FoundTender[] = [];
@@ -231,8 +233,9 @@ export function pageTenders(html: string, base: string): FoundTender[] {
     if (standalone && rows.some((row) => row.includes(text))) return;
     if (!standalone) rows.push(text);
     const dates = pageDates(text);
-    if (!PAGE_TENDERISH.test(text) && !dates.length) return;
-    if (dates.length && Math.max(...dates.map((date) => date.getTime())) < cutoff) return;
+    // Live tenders only: a company page lists past tenders too, so a row is kept only when it carries a date that
+    // has not passed (its closing date). A row with no date, or only past dates, cannot be shown as open.
+    if (!dates.length || Math.max(...dates.map((date) => date.getTime())) < today) return;
     let link = "";
     const href = /href\s*=\s*["']([^"'#][^"']*)["']/i.exec(block)?.[1];
     if (href && !/^(javascript|mailto|tel):/i.test(href)) {
@@ -252,8 +255,9 @@ export function pageTenders(html: string, base: string): FoundTender[] {
       title: text.slice(0, 2000),
       organisation: "",
       link,
-      published: sorted.length ? asNicTime(sorted[0]) : "",
-      closing: sorted.length > 1 ? asNicTime(sorted.at(-1)!) : "",
+      published: sorted.length > 1 && sorted[0].getTime() < sorted.at(-1)!.getTime() ? asNicTime(sorted[0]) : "",
+      // The latest date is taken as the closing date, open until the end of that day.
+      closing: asNicTime(sorted.at(-1)!, true),
       opening: "",
     });
   };
@@ -261,6 +265,30 @@ export function pageTenders(html: string, base: string): FoundTender[] {
   for (const match of clean.matchAll(/<li[\s>][\s\S]*?<\/li>/gi)) take(match[0], false);
   for (const match of clean.matchAll(/<a\s[^>]*>[\s\S]*?<\/a>/gi)) take(match[0], true);
   return out;
+}
+
+/**
+ * Live tenders only. Results still to review whose closing date has passed, or that have no closing date at all (a
+ * company page row that gives none), move to Excluded with the reason; so do GeM bids past their end date. Runs when
+ * the Portals page loads and before each pass, so a tender leaves the list once it closes.
+ */
+export async function retireClosedResults() {
+  const now = Date.now();
+  const when = (date: Date) => new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" }).format(date);
+  let moved = 0;
+  for (const row of (await db.siteTender.findMany({ where: { status: "NEW" } })) as { id: string; closingAt: Date | null }[]) {
+    const closes = row.closingAt ? new Date(row.closingAt) : null;
+    if (closes && closes.getTime() >= now) continue;
+    const error = closes ? `Closed on ${when(closes)}.` : "No closing date on the website, so it cannot be shown as a live tender.";
+    await db.siteTender.update({ where: { id: row.id }, data: { status: "EXCLUDED", error } });
+    moved += 1;
+  }
+  for (const bid of (await db.gemBid.findMany({ where: { status: "NEW" } })) as { id: string; endAt: Date | null }[]) {
+    if (!bid.endAt || new Date(bid.endAt).getTime() >= now) continue;
+    await db.gemBid.update({ where: { id: bid.id }, data: { status: "EXCLUDED", error: `Bid closed on ${when(new Date(bid.endAt))}.` } });
+    moved += 1;
+  }
+  return moved;
 }
 
 /** The settings row (keywords, exclude words, frequency) and the site list, created from the sheets the first time. */
@@ -275,7 +303,7 @@ export async function siteWatchPortal() {
     await db.watchSite.updateMany({ where: {}, data: { matched: 0 } }).catch(() => undefined);
     portal = await db.portal.update({
       where: { id: portal.id },
-      data: { keywords: SITE_KEYWORDS.join("\n"), excludeWords: excludes.join(", "), keywordSheet: SITE_KEYWORD_SHEET },
+      data: { keywords: SHEET_KEYWORD_TEXT(), excludeWords: excludes.join(", "), keywordSheet: SITE_KEYWORD_SHEET },
     });
   }
   if (!portal) {
@@ -284,7 +312,7 @@ export async function siteWatchPortal() {
         name: SITE_WATCH_NAME,
         url: "",
         category: "Tender websites",
-        keywords: SITE_KEYWORDS.join("\n"),
+        keywords: SHEET_KEYWORD_TEXT(),
         excludeWords: GEM_EXCLUDES.filter((word) => !/^(mdo|mine developer)$/i.test(word)).join(", "),
         keywordSheet: SITE_KEYWORD_SHEET,
         frequencyHours: 12,
@@ -359,8 +387,10 @@ type Site = { id: string; host: string; name: string; url: string; method: strin
 
 async function scan(onlySiteId?: string) {
   await clearStaleSiteRuns(true).catch(() => undefined);
+  await retireClosedResults().catch(() => undefined);
   const portal = await siteWatchPortal();
-  const keywords = keywordList(portal.keywords || "").filter((word) => !isYellowKeyword(word));
+  const headings = parseKeywordHeadings(portal.keywords || "");
+  const keywords = headings.flatMap((group) => group.keywords).filter((word) => !isYellowKeyword(word));
   const excludes = splitList(portal.excludeWords || "");
   const sites = ((await db.watchSite.findMany({ where: { enabled: true }, orderBy: { host: "asc" } })) as Site[]).filter(
     (site) => site.method !== "MANUAL" && (!onlySiteId || site.id === onlySiteId),
@@ -377,9 +407,12 @@ async function scan(onlySiteId?: string) {
     const hits = keywords.filter((word) => siteMatches(found.title, word));
     const keyword = hits[0];
     if (!keyword) return false;
+    // Live tenders only: one whose closing date has passed is not kept.
+    const closes = nicTime(found.closing).date;
+    if (closes && closes.getTime() < Date.now()) return false;
     const known = await db.siteTender.findFirst({ where: { tenderKey: found.key } });
     // The sheet asks for a tender value above an amount per heading; the lowest amount of the matching keywords counts.
-    const minimum = Math.min(...hits.map(minimumRupees));
+    const minimum = Math.min(...hits.map((word) => minimumRupees(headings, word)));
     let value: number | null = known?.tenderValue == null ? null : Number(known.tenderValue);
     let details: string | null = null;
     if (minimum > 0 && value === null && !known?.detailsAt && get && found.viewHref) {

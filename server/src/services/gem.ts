@@ -1,7 +1,7 @@
 import { db } from "../db";
 import { attachSourceDocuments, createTender, type Actor } from "./domain";
 import { FIRST_EXCLUDES, FIRST_KEYWORDS, GEM_EXCLUDES, GEM_KEYWORDS } from "./gem-keywords";
-import { isYellowKeyword } from "./site-keywords";
+import { isYellowKeyword, minimumRupees, parseKeywordHeadings, type KeywordHeading } from "./site-keywords";
 import { mailNewSearchTenders, type FreshTender } from "./notify";
 
 /**
@@ -73,6 +73,53 @@ export function excludedBy(title: string, excludes: string[]) {
   return excludes.find((word) => new RegExp(`\\b${word.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(text)) ?? null;
 }
 
+/** Marks a GeM watch already moved onto the website keyword list (its earlier results were re-checked once). */
+const GEM_ON_SITE_LIST = "site-list-1";
+
+/** "₹12.5 Cr" for an amount in rupees. */
+const crore = (rupees: number) => `₹${(rupees / 1e7).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
+
+/** The "Estimated Bid Value" printed in a bid's PDF, in rupees; null when the bid does not give one. */
+export function estimatedBidValue(text: string) {
+  const flat = text.replace(/\s+/g, " ");
+  for (const match of flat.matchAll(/Estimated Bid Value(?: in INR)?(?: \(Inclusive of all taxes\))?\s*:?\s*(?:₹|Rs\.?|INR)?\s*([\d,]+(?:\.\d+)?)/gi)) {
+    const amount = Number(match[1].replace(/,/g, ""));
+    if (Number.isFinite(amount) && amount > 0) return amount;
+  }
+  return null;
+}
+
+/** Reads a bid's estimated value from its PDF; null when the PDF does not open or gives no value. */
+async function readBidValue(doc: GemDoc) {
+  try {
+    const file = await downloadBidDocument(doc);
+    const { extractText } = await import("unpdf");
+    const result = await extractText(new Uint8Array(file.buffer), { mergePages: true });
+    return estimatedBidValue(String(result.text));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a bid is kept by the value rule of the website keyword headings: its title's keywords give the lowest amount
+ * it must be above. The value is read from the bid's PDF once; a bid that gives no value is kept.
+ */
+async function valueVerdict(headings: KeywordHeading[], keywords: string[], title: string, doc: GemDoc, known?: { bidValue?: unknown; valueCheckedAt?: unknown } | null) {
+  const hits = keywords.filter((word) => matches(title, word));
+  const minimum = hits.length ? Math.min(...hits.map((word) => minimumRupees(headings, word))) : 0;
+  let value = known?.bidValue == null ? null : Number(known.bidValue);
+  let checked = false;
+  if (minimum > 0 && value === null && !known?.valueCheckedAt) {
+    await sleep(PAUSE_MS);
+    value = await readBidValue(doc);
+    checked = true;
+  }
+  const below = minimum > 0 && value !== null && value <= minimum;
+  const note = below ? `Estimated bid value ${crore(value!)} is not above the ${crore(minimum)} the sheet asks for "${hits[0]}".` : "";
+  return { value, below, note, data: checked ? { bidValue: value, valueCheckedAt: new Date() } : {} };
+}
+
 /** A GeM session: the listing page sets the cookies and carries the form token the data call needs. */
 async function openSession() {
   const response = await fetch(`${BASE}/all-bids`, { headers: { "User-Agent": UA } });
@@ -87,7 +134,21 @@ async function openSession() {
   return { token, cookies };
 }
 
+/**
+ * One page of GeM search results. GeM's session token runs out during a long pass (it then answers 404), so a failed
+ * call opens a fresh session, shared by the keywords still to search, and tries once more.
+ */
 async function searchPage(session: { token: string; cookies: string }, keyword: string, page: number) {
+  try {
+    return await searchPageOnce(session, keyword, page);
+  } catch {
+    await sleep(2000);
+    Object.assign(session, await openSession());
+    return searchPageOnce(session, keyword, page);
+  }
+}
+
+async function searchPageOnce(session: { token: string; cookies: string }, keyword: string, page: number) {
   const payload = {
     page,
     param: { searchBid: keyword, searchType: "fullText" },
@@ -98,9 +159,10 @@ async function searchPage(session: { token: string; cookies: string }, keyword: 
     headers: { "User-Agent": UA, "X-Requested-With": "XMLHttpRequest", "Content-Type": "application/x-www-form-urlencoded", Cookie: session.cookies },
     body: new URLSearchParams({ payload: JSON.stringify(payload), csrf_bd_gem_nk: session.token }),
   });
-  if (!response.ok) throw new Error(`GeM search answered ${response.status}.`);
-  const data = (await response.json()) as { code?: number; message?: string; response?: { response?: { numFound: number; docs: GemDoc[] } } };
-  if (data.code === 404) return { total: 0, docs: [] as GemDoc[] };
+  // GeM answers a search with no bids as HTTP 404 with {"code":404,"message":"No data found"}: an empty result, not an error.
+  const data = (await response.json().catch(() => null)) as { code?: number; message?: string; response?: { response?: { numFound: number; docs: GemDoc[] } } } | null;
+  if (data?.code === 404) return { total: 0, docs: [] as GemDoc[] };
+  if (!response.ok || !data) throw new Error(`GeM search answered ${response.status}.`);
   if (data.code !== 200 || !data.response?.response) throw new Error(`GeM search failed: ${data.message ?? "unexpected reply"}.`);
   return { total: data.response.response.numFound, docs: data.response.response.docs };
 }
@@ -455,8 +517,12 @@ async function scan(actorInput?: Actor) {
   const portal = await gemPortal();
   const actor = actorInput ?? ((await db.user.findFirst({ where: { role: "ADMIN", active: true } })) as Actor | null);
   if (!actor) throw new Error("No active administrator to record the GeM import.");
-  const keywords = splitList(portal.keywords || "").filter((word) => !isYellowKeyword(word));
-  const excludes = splitList(portal.excludeWords || "");
+  // GeM is searched with the same keyword headings, amounts and exclude words as the tender websites.
+  const sitePortal = await (await import("./site-watch")).siteWatchPortal();
+  const headings = parseKeywordHeadings(sitePortal.keywords || "");
+  const keywords = headings.flatMap((group) => group.keywords).filter((word) => !isYellowKeyword(word));
+  const excludes = splitList(sitePortal.excludeWords || "");
+  const firstOnSiteList = portal.keywordSheet !== GEM_ON_SITE_LIST;
   const run = await db.crawlerRun.create({ data: { portalId: portal.id, status: "RUNNING" } });
   await db.portal.update({ where: { id: portal.id }, data: { lastStatus: "RUNNING", lastError: "" } });
   const summary = { checked: 0, matched: 0, newMatches: 0, excluded: 0, imported: 0, failed: 0, errors: [] as string[] };
@@ -467,8 +533,24 @@ async function scan(actorInput?: Actor) {
     // Bids come newest first, so a pass can stop at bids published before the last good pass (a day of overlap
     // covers late listings). The very first pass has no cutoff and reads up to the page limit.
     const lastGood = await db.crawlerRun.findFirst({ where: { portalId: portal.id, status: { in: ["SUCCESS", "PARTIAL"] } }, orderBy: { startedAt: "desc" } });
-    const since = lastGood ? new Date(new Date(lastGood.startedAt).getTime() - 864e5) : null;
+    // The first pass on the website list reads every keyword in full (its new keywords were never searched).
+    const since = lastGood && !firstOnSiteList ? new Date(new Date(lastGood.startedAt).getTime() - 864e5) : null;
     progress = { startedAt: new Date(), keywords: keywords.length, done: 0, active: [], pages: 0, checked: 0, matched: 0, imported: 0 };
+    if (firstOnSiteList) {
+      // Bids still to review from the earlier GeM list are checked against the new keywords, exclude words and amounts.
+      // Ones that no longer fit move to Excluded (with the reason), so nothing is deleted.
+      for (const bid of (await db.gemBid.findMany({ where: { status: "NEW" } })) as { id: string; title: string; raw: string; bidValue?: unknown; valueCheckedAt?: unknown }[]) {
+        const title = String(bid.title || "");
+        const word = keywords.find((item) => matches(title, item));
+        const exclude = excludedBy(title, excludes);
+        if (!word || exclude) {
+          await db.gemBid.update({ where: { id: bid.id }, data: { status: "EXCLUDED", error: word ? `Title mentions "${exclude}".` : "Not found by the current search keywords." } });
+          continue;
+        }
+        const verdict = await valueVerdict(headings, keywords, title, JSON.parse(bid.raw || "{}") as GemDoc, bid);
+        await db.gemBid.update({ where: { id: bid.id }, data: { ...verdict.data, keyword: word, ...(verdict.below ? { status: "EXCLUDED", error: verdict.note } : {}) } });
+      }
+    }
 
     const scanKeyword = async (keyword: string) => {
       progress!.active.push(keyword);
@@ -488,9 +570,16 @@ async function scan(actorInput?: Actor) {
             progress!.checked = summary.checked;
             const title = bidTitle(doc);
             if (!matches(title, keyword)) continue;
+            // Live bids only: one past its end date is not kept.
+            const endsAt = gemTime(first(doc, "final_end_date_sort")).date;
+            if (endsAt && endsAt.getTime() < Date.now()) continue;
             const bidId = String(first(doc, "b_id") ?? doc.id);
             const known = await db.gemBid.findFirst({ where: { bidId } });
-            const exclude = excludedBy(title, excludes);
+            const wordExclude = excludedBy(title, excludes);
+            // The amount is read only for bids still to review (or new ones) that no exclude word dropped.
+            const verdict = wordExclude || (known && known.status !== "NEW") ? null : await valueVerdict(headings, keywords, title, doc, known);
+            const exclude = wordExclude ?? (verdict?.below ? "value" : null);
+            const excludeNote = wordExclude ? `Title mentions "${wordExclude}".` : (verdict?.note ?? "");
             if (exclude) summary.excluded += 1;
             else summary.matched += 1;
             const end = gemTime(first(doc, "final_end_date_sort")).date;
@@ -509,12 +598,12 @@ async function scan(actorInput?: Actor) {
               lastSeenAt: new Date(),
             };
             if (known) {
-              await db.gemBid.update({ where: { id: known.id }, data: fields });
+              await db.gemBid.update({ where: { id: known.id }, data: { ...fields, ...(verdict?.data ?? {}), ...(verdict?.below ? { status: "EXCLUDED", error: excludeNote } : {}) } });
               continue;
             }
             // Two keywords searched side by side can find the same bid; the second one simply skips it.
             const created = await db.gemBid
-              .create({ data: { ...fields, bidId, keyword, status: exclude ? "EXCLUDED" : "NEW", error: exclude ? `Title mentions "${exclude}".` : "" } })
+              .create({ data: { ...fields, ...(verdict?.data ?? {}), bidId, keyword, status: exclude ? "EXCLUDED" : "NEW", error: excludeNote } })
               .catch(() => null);
             if (!created) continue;
             if (exclude) continue;
@@ -586,7 +675,7 @@ async function scan(actorInput?: Actor) {
       ...summary.errors,
     ].join("\n");
     await db.crawlerRun.update({ where: { id: run.id }, data: { status, finishedAt: new Date(), discovered: summary.newMatches, errorSummary } });
-    await db.portal.update({ where: { id: portal.id }, data: { lastStatus: status, lastScanAt: new Date(), lastError: summary.errors.join("\n").slice(0, 2000) } });
+    await db.portal.update({ where: { id: portal.id }, data: { lastStatus: status, lastScanAt: new Date(), lastError: summary.errors.join("\n").slice(0, 2000), keywordSheet: GEM_ON_SITE_LIST } });
     await mailNewSearchTenders(fresh);
     return summary;
   } catch (error) {

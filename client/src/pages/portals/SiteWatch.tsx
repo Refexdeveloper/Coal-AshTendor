@@ -60,7 +60,19 @@ type Run = {
   errorSummary: string;
 };
 /** A heading of the "Tender Sourcing Keywords" sheet and its searched keywords (the yellow rows are left out). */
-export type KeywordGroup = { heading: string; keywords: string[]; /** Tenders found by this heading must be worth more than this. */ minCrore?: number };
+export type KeywordGroup = {
+  heading: string;
+  keywords: string[];
+  /** Tenders found by this heading must be worth more than this. */
+  minCrore?: number;
+  /** Coal (the sheet's Coal tab) or Ash (its Ash headings); "Other" for keywords under no heading. */
+  type?: string;
+};
+
+/** The sheet's two kinds of work, in the order the filters list them. */
+const KEYWORD_TYPES = ["Coal", "Ash"];
+/** The type of the heading a matched keyword is under (the first one, when it is under two); "Other" when none. */
+const typeOfKeyword = (groups: KeywordGroup[], keyword: string) => groups.find((group) => group.keywords.some((word) => word.toLowerCase() === keyword.trim().toLowerCase()))?.type || "Other";
 
 /** "₹12.5 Cr" for a tender value in rupees, or a note when the portal gives none. */
 const valueText = (value: SiteTender["tenderValue"]) =>
@@ -600,16 +612,19 @@ const RESULT_TITLE: Record<string, string> = {
   conversion: "Approved",
   rejected: "Rejected",
   ignored: "Rejected on review",
-  excluded: "Excluded by words",
+  excluded: "Filtered out automatically (exclude words, below the heading's value, or closed)",
   today: "New tenders today",
 };
 
 function matchesResult(view: string, status: string, seen: Date | string, todayKey: string, zoneDay: (value: Date | string) => string) {
+  // Excluded rows were filtered out by the search itself (an exclude word, or a value below the heading's amount):
+  // nobody rejected them, so they are only in their own "filtered out" list, not in found, today or rejected.
+  if (view === "excluded") return status === "EXCLUDED";
+  if (status === "EXCLUDED") return false;
   if (view === "today") return zoneDay(seen) === todayKey;
   if (view === "approved" || view === "conversion") return status === "IMPORTED";
-  if (view === "rejected") return status === "IGNORED" || status === "EXCLUDED";
+  if (view === "rejected") return status === "IGNORED";
   if (view === "ignored") return status === "IGNORED";
-  if (view === "excluded") return status === "EXCLUDED";
   // All found is the review list. Rejected rows stay on the Rejected tab.
   return status !== "IGNORED" && status !== "EXCLUDED";
 }
@@ -673,6 +688,8 @@ function SheetFilters({
   groups,
   organisations,
   found,
+  type,
+  setType,
   heading,
   keyword,
   organisation,
@@ -685,6 +702,9 @@ function SheetFilters({
   organisations: string[];
   /** The matched keyword of every row in the list (before these filters). */
   found: string[];
+  /** Coal / Ash (the sheet's tabs); "" for both. */
+  type: string;
+  setType: (value: string) => void;
   heading: string;
   keyword: string;
   organisation: string;
@@ -697,12 +717,36 @@ function SheetFilters({
   for (const word of found) if (word) counts.set(lower(word), (counts.get(lower(word)) ?? 0) + 1);
   const inHeading = headingWords(groups, heading);
   const headingCount = (group: KeywordGroup) => group.keywords.reduce((sum, word) => sum + (counts.get(lower(word)) ?? 0), 0);
+  const typeCount = (name: string) => found.filter((word) => typeOfKeyword(groups, word) === name).length;
+  const types = [...KEYWORD_TYPES, ...(found.some((word) => typeOfKeyword(groups, word) === "Other") ? ["Other"] : [])];
+  const shownGroups = type ? groups.filter((group) => (group.type || "Other") === type) : groups;
   const options = inHeading
     ? (groups.find((item) => item.heading === heading)?.keywords ?? [])
-    : [...new Map(found.filter(Boolean).map((word) => [lower(word), word])).values()].sort((a, b) => a.localeCompare(b));
+    : [...new Map(found.filter((word) => word && (!type || typeOfKeyword(groups, word) === type)).map((word) => [lower(word), word])).values()].sort((a, b) => a.localeCompare(b));
   const wrap = (label: string, control: ReactNode) => (labelled ? <label>{label}{control}</label> : control);
   return (
     <>
+      {groups.length
+        ? wrap(
+            "Type",
+            <select
+              value={type}
+              aria-label="Coal or Ash"
+              onChange={(event) => {
+                setType(event.target.value);
+                setHeading("");
+                setKeyword("");
+              }}
+            >
+              <option value="">Coal and Ash</option>
+              {types.map((name) => (
+                <option key={name} value={name}>
+                  {name} ({typeCount(name)})
+                </option>
+              ))}
+            </select>,
+          )
+        : null}
       {groups.length
         ? wrap(
             "Heading",
@@ -714,8 +758,8 @@ function SheetFilters({
                 setKeyword("");
               }}
             >
-              <option value="">All headings</option>
-              {groups.map((group) => (
+              <option value="">{type ? `All ${type} headings` : "All headings"}</option>
+              {shownGroups.map((group) => (
                 <option key={group.heading} value={group.heading}>
                   {group.heading}
                   {group.minCrore ? ` · above ₹${group.minCrore} Cr` : ""} ({headingCount(group)})
@@ -752,6 +796,171 @@ function SheetFilters({
   );
 }
 
+/** Where a keyword without a heading goes (the server uses the same name). */
+const OTHER_HEADING = "Other keywords";
+
+/**
+ * The words both searches use (the tender websites and GeM), under the sheet's headings: add a keyword to a heading
+ * (or a new heading with its own minimum value), take one off, add or remove an exclude word, and run both searches
+ * again. An exclude word applies at once to the results already found; a new keyword needs a run.
+ */
+function SearchWords({
+  groups,
+  excludes,
+  running,
+  canEdit,
+  run,
+}: {
+  groups: KeywordGroup[];
+  excludes: string[];
+  running: boolean;
+  canEdit: boolean;
+  run: (formData: FormData) => Promise<void>;
+}) {
+  const [heading, setHeading] = useState(groups[0]?.heading ?? OTHER_HEADING);
+  const [openAll, setOpenAll] = useState<boolean | null>(null);
+  const total = groups.reduce((sum, group) => sum + group.keywords.length, 0);
+  const headings: KeywordGroup[] = groups.some((group) => group.heading === OTHER_HEADING) ? groups : [...groups, { heading: OTHER_HEADING, keywords: [], minCrore: 0, type: "Other" }];
+  const remove = (intent: string, word: string, label: string) =>
+    canEdit ? (
+      <form action={run} className="sw-chip-form">
+        <input type="hidden" name="intent" value={intent} />
+        <input type="hidden" name="word" value={word} />
+        <button type="submit" className="gem-chip-x" aria-label={`${label} ${word}`} title={label}>
+          ×
+        </button>
+      </form>
+    ) : null;
+  const amount = (minCrore?: number) => (minCrore ? `above ₹${minCrore} Cr` : "any value");
+  // "Expand all" / "Collapse all" re-mounts every heading with that state; otherwise each opens on its own.
+  const block = (key: string, title: string, sub: string, words: string[]) => (
+    <details key={`${key}-${openAll}`} className="sw-group" open={openAll ?? false}>
+      <summary>
+        <b>{title}</b>
+        <span className="sw-group-meta">
+          {sub} · {words.length} keyword{words.length === 1 ? "" : "s"}
+        </span>
+      </summary>
+      <div className="gem-chips">
+        {words.length ? (
+          words.map((word) => (
+            <span key={word} className="gem-chip">
+              {word}
+              {remove("search-unkeyword", word, "Stop searching")}
+            </span>
+          ))
+        ) : (
+          <small className="muted">No keywords yet.</small>
+        )}
+      </div>
+    </details>
+  );
+  return (
+    <section className="search-words" aria-label="Search keywords">
+      <div className="sw-actions">
+        {canEdit ? (
+          <form action={run} className="sw-add sw-add-keyword">
+            <input type="hidden" name="intent" value="search-keyword" />
+            <input name="word" placeholder="New keyword, e.g. fly ash lifting" aria-label="New search keyword" required maxLength={120} />
+            <select name="heading" aria-label="Heading for the keyword" value={heading} onChange={(event) => setHeading(event.target.value)}>
+              {[...KEYWORD_TYPES, "Other"].map((name) => {
+                const list = headings.filter((group) => (group.type || "Other") === name);
+                return list.length ? (
+                  <optgroup key={name} label={name}>
+                    {list.map((group) => (
+                      <option key={group.heading} value={group.heading}>
+                        {group.heading} ({amount(group.minCrore)})
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null;
+              })}
+              <option value="__new">＋ New heading…</option>
+            </select>
+            {heading === "__new" ? (
+              <>
+                <input name="newHeading" placeholder="Heading name" aria-label="New heading name" required maxLength={80} />
+                <input name="minCrore" type="number" min={0} step="0.5" placeholder="Min ₹ Cr" aria-label="Minimum tender value in crore" className="sw-crore" />
+                <select name="type" aria-label="Coal or Ash heading" defaultValue="Coal" className="sw-type">
+                  {KEYWORD_TYPES.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : null}
+            <button type="submit" className="btn">
+              Add keyword
+            </button>
+          </form>
+        ) : null}
+        <form action={run} className="sw-run">
+          <input type="hidden" name="intent" value="search-run" />
+          <button type="submit" className="btn" disabled={running}>
+            {running ? "Searching…" : "↻ Re-run search"}
+          </button>
+        </form>
+      </div>
+
+      <div className="sw-groups-head">
+        <span className="gem-chip-label">
+          Searching {total} keywords under {groups.length} headings
+        </span>
+        <button type="button" className="link-btn" onClick={() => setOpenAll((value) => !value)}>
+          {openAll ? "Collapse all" : "Expand all"}
+        </button>
+      </div>
+      {[...KEYWORD_TYPES, "Other"].map((name) => {
+        const list = groups.filter((group) => (group.type || "Other") === name);
+        if (!list.length) return null;
+        const words = list.reduce((sum, group) => sum + group.keywords.length, 0);
+        return (
+          <div key={name} className="sw-type-block">
+            <h5 className="sw-type-title">
+              {name}
+              <small className="muted">
+                {" "}
+                · {list.length} heading{list.length === 1 ? "" : "s"} · {words} keywords
+              </small>
+            </h5>
+            <div className="sw-groups">{list.map((group) => block(group.heading, group.heading, amount(group.minCrore), group.keywords))}</div>
+          </div>
+        );
+      })}
+
+      <div className="sw-excludes">
+        {canEdit ? (
+          <form action={run} className="sw-add">
+            <input type="hidden" name="intent" value="search-exclude" />
+            <input name="word" placeholder="Exclude word, e.g. spares" aria-label="New exclude word" required maxLength={120} />
+            <button type="submit" className="btn ghost">
+              Exclude word
+            </button>
+          </form>
+        ) : null}
+        <div className="gem-chips sw-chips">
+          <span className="gem-chip-label">Excluding ({excludes.length})</span>
+          {excludes.length ? (
+            excludes.map((word) => (
+              <span key={word} className="gem-chip off">
+                {word}
+                {remove("search-unexclude", word, "Stop excluding")}
+              </span>
+            ))
+          ) : (
+            <small className="muted">No exclude words.</small>
+          )}
+        </div>
+      </div>
+      <small className="muted">
+        The websites and GeM are searched with these same headings, amounts and exclude words (a GeM bid&apos;s value is its Estimated Bid Value). A heading&apos;s tenders are kept only above its value. An exclude word hides matching results straight away; a new keyword is
+        searched when you re-run.
+      </small>
+    </section>
+  );
+}
+
 /** GeM bids and searched-website tenders in one list, filtered by the search-result card. */
 function SearchMix({
   view,
@@ -767,9 +976,17 @@ function SearchMix({
   run,
   groups,
   organisations,
+  words,
+  type,
+  setType,
 }: {
+  /** Coal / Ash filter, kept by the page so the Total card's Coal and Ash counts can open the list on one. */
+  type: string;
+  setType: (value: string) => void;
   groups: KeywordGroup[];
   organisations: string[];
+  /** The search-keyword box, shown above the list. */
+  words?: ReactNode;
   view: string;
   onView: (view: "found" | "approved" | "rejected" | "today") => void;
   tenders: SiteTender[];
@@ -809,6 +1026,7 @@ function SearchMix({
   const sourceRows = statusRows.filter((row) => !source || row.kind === source);
   const rows = sourceRows.filter((row) => {
     const word = row.kind === "site" ? row.item.keyword : row.bid.keyword;
+    if (type && typeOfKeyword(groups, word) !== type) return false;
     if (keyword && lower(word) !== lower(keyword)) return false;
     if (inHeading && !inHeading.has(lower(word))) return false;
     if (organisation && !fromOrganisation(row.kind === "site" ? `${row.item.organisation} ${row.item.title}` : `${row.bid.department} ${row.bid.ministry} ${row.bid.title}`, organisation)) return false;
@@ -821,9 +1039,10 @@ function SearchMix({
   });
   const gemCount = rows.filter((row) => row.kind === "gem").length;
   const siteCount = rows.length - gemCount;
-  const filterOn = (key: string) => view === key || (key === "approved" && view === "conversion") || (key === "rejected" && (view === "ignored" || view === "excluded"));
+  const filterOn = (key: string) => view === key || (key === "approved" && view === "conversion") || (key === "rejected" && view === "ignored");
   const activeFilters = [
     source ? { key: "source", label: source === "gem" ? "GeM" : "Websites", clear: () => setSource("") } : null,
+    type ? { key: "type", label: type, clear: () => (setType(""), setHeading(""), setKeyword("")) } : null,
     heading ? { key: "heading", label: heading, clear: () => (setHeading(""), setKeyword("")) } : null,
     keyword ? { key: "keyword", label: keyword, clear: () => setKeyword("") } : null,
     organisation ? { key: "organisation", label: organisation, clear: () => setOrganisation("") } : null,
@@ -831,13 +1050,14 @@ function SearchMix({
   ].filter((item): item is { key: string; label: string; clear: () => void } => Boolean(item));
   const clearFilters = () => {
     setSource("");
+    setType("");
     setKeyword("");
     setHeading("");
     setOrganisation("");
     setQ("");
   };
   // A new filter starts again on the first page.
-  useEffect(() => setPage(1), [view, source, keyword, heading, organisation, q]);
+  useEffect(() => setPage(1), [view, source, type, keyword, heading, organisation, q]);
   const pages = Math.max(1, Math.ceil(rows.length / size));
   const current = Math.min(page, pages);
   const shownRows = rows.slice((current - 1) * size, current * size);
@@ -904,6 +1124,7 @@ function SearchMix({
           </small>
         </div>
       </div>
+      {words}
       <div className="tabs gem-tabs" role="tablist" aria-label="Tender list filter">
         {RESULT_VIEWS.map(([key, label]) => (
           <button key={key} type="button" role="tab" aria-selected={filterOn(key)} className={`tab ${filterOn(key) ? "active" : ""}`} onClick={() => onView(key)}>
@@ -926,6 +1147,8 @@ function SearchMix({
             groups={groups}
             organisations={organisations}
             found={sourceRows.map((row) => (row.kind === "site" ? row.item.keyword : row.bid.keyword))}
+            type={type}
+            setType={setType}
             heading={heading}
             keyword={keyword}
             organisation={organisation}
@@ -1127,6 +1350,7 @@ function SearchMix({
                   </td>
                   <td>
                     <span className="gem-chip small">{bid.keyword}</span>
+                    <small className={`site-value ${bid.bidValue ? "" : "muted"}`}>{valueText(bid.bidValue)}</small>
                   </td>
                   <td className={closed ? "text-bad" : ""}>
                     {bid.endAt ? formatWhen(bid.endAt, timeZone) : "—"}
@@ -1224,6 +1448,9 @@ export function SiteWatch({
   const keywordGroups = data.keywordGroups ?? [];
   const organisationFilters = data.organisationFilters ?? [];
   const [heading, setHeading] = useState("");
+  const [siteType, setSiteType] = useState("");
+  // The Coal / Ash filter of the search-result list (the Total card's Coal and Ash counts set it).
+  const [mixType, setMixType] = useState("");
   const [keywordFilter, setKeywordFilter] = useState("");
   const [organisation, setOrganisation] = useState("");
   const [allKeywords, setAllKeywords] = useState(false);
@@ -1269,15 +1496,16 @@ export function SiteWatch({
   const inHeading = headingWords(keywordGroups, heading);
   const tabbed = tenders.filter((item) => !tab || item.status === tab).filter((item) => !siteFilter || item.siteId === siteFilter);
   const shown = tabbed
+    .filter((item) => !siteType || typeOfKeyword(keywordGroups, item.keyword) === siteType)
     .filter((item) => !inHeading || inHeading.has(lower(item.keyword)))
     .filter((item) => !keywordFilter || lower(item.keyword) === lower(keywordFilter))
     .filter((item) => !organisation || fromOrganisation(`${item.organisation} ${item.title}`, organisation))
     .filter((item) => !needle || [item.title, item.refNo, item.portalTenderId, item.organisation, item.keyword, siteOf(item.siteId)?.host].join(" ").toLowerCase().includes(needle));
-  // One keyword per line (sheet keywords can hold commas); an older list is comma-separated.
+  // One keyword per line under "# Heading | min crore" lines (sheet keywords can hold commas); an older list is comma-separated.
   const keywords = portal.keywords
     .split(portal.keywords.includes("\n") ? /\n+/ : /[,;]+/)
     .map((word) => word.trim())
-    .filter(Boolean);
+    .filter((word) => word && !word.startsWith("#"));
   const excludes = (portal.excludeWords || "")
     .split(/[,\n;]+/)
     .map((word) => word.trim())
@@ -1554,18 +1782,21 @@ export function SiteWatch({
   // Search results across the website search and the GeM search: found, approved (imported), rejected, conversion, new today.
   const siteBy = stats?.byStatus ?? {};
   const gemBy = (gem?.bids ?? []).reduce<Record<string, number>>((acc, bid) => ({ ...acc, [bid.status]: (acc[bid.status] ?? 0) + 1 }), {});
-  const siteFound = stats?.total ?? tenders.length;
-  const gemFound = gem?.bids.length ?? 0;
+  // Found counts what the searches kept; the ones they filtered out (Excluded) are counted on their own.
+  const siteFound = (stats?.total ?? tenders.length) - (siteBy.EXCLUDED ?? 0);
+  const gemFound = (gem?.bids.length ?? 0) - (gemBy.EXCLUDED ?? 0);
   const foundTotal = siteFound + gemFound;
   const approvedSite = siteBy.IMPORTED ?? 0;
   const approvedGem = gemBy.IMPORTED ?? 0;
-  const reviewedOut = (siteBy.IGNORED ?? 0) + (gemBy.IGNORED ?? 0);
+  const reviewedSite = siteBy.IGNORED ?? 0;
+  const reviewedGem = gemBy.IGNORED ?? 0;
+  const reviewedOut = reviewedSite + reviewedGem;
   const excludedOut = (siteBy.EXCLUDED ?? 0) + (gemBy.EXCLUDED ?? 0);
   const conversion = foundTotal ? ((approvedSite + approvedGem) / foundTotal) * 100 : 0;
   const zoneDay = (value: Date | string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
   const todayKey = stats?.today ?? zoneDay(new Date());
-  const gemToday = (gem?.bids ?? []).filter((bid) => zoneDay(bid.firstSeenAt) === todayKey).length;
-  const siteToday = stats?.newToday ?? tenders.filter((item) => zoneDay(item.firstSeenAt) === todayKey).length;
+  const gemToday = (gem?.bids ?? []).filter((bid) => bid.status !== "EXCLUDED" && zoneDay(bid.firstSeenAt) === todayKey).length;
+  const siteToday = stats?.newToday ?? tenders.filter((item) => item.status !== "EXCLUDED" && zoneDay(item.firstSeenAt) === todayKey).length;
   // The list stays hidden until a card is clicked, so every card shows first; the open card's second click hides it again.
   const showResults = (view: "found" | "approved" | "conversion" | "rejected" | "ignored" | "excluded" | "today") => {
     if (view === resultView) {
@@ -1574,6 +1805,22 @@ export function SiteWatch({
     }
     setResultView(view);
     window.setTimeout(() => document.getElementById("search-mix")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+  // Found tenders (websites and GeM, not the filtered-out ones) by the type of their keyword's heading: Coal or Ash.
+  const typeCounts = (() => {
+    const counts = new Map<string, number>(KEYWORD_TYPES.map((name) => [name, 0]));
+    const add = (keyword: string) => {
+      const name = typeOfKeyword(keywordGroups, keyword);
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    };
+    for (const item of tenders) if (item.status !== "EXCLUDED") add(item.keyword);
+    for (const bid of gem?.bids ?? []) if (bid.status !== "EXCLUDED") add(bid.keyword);
+    return [...counts].filter(([name, count]) => KEYWORD_TYPES.includes(name) || count);
+  })();
+  /** Opens the found list on Coal or Ash (a second click on the same type while it is open closes the filter). */
+  const openType = (name: string) => {
+    setMixType((current) => (current === name && resultView === "found" ? "" : name));
+    if (resultView !== "found") showResults("found");
   };
   const resultCards: { key: string; icon: string; tone: string; value: string | number; label: string; sub: string; go: string; title: string; open: () => void; chips: { label: string; open: () => void }[]; bar?: number }[] = [
     {
@@ -1584,9 +1831,12 @@ export function SiteWatch({
       label: "Total tenders in search",
       sub: `${fmt(siteFound)} from websites · ${fmt(gemFound)} from GeM`,
       go: "View tenders →",
-      title: "Every tender the keyword searches found",
+      title: "Every tender the keyword searches found and kept",
       open: () => showResults("found"),
-      chips: [],
+      chips: [
+        ...typeCounts.map(([name, count]) => ({ label: `${name === "Coal" ? "⚫" : name === "Ash" ? "🔘" : "▫️"} ${name} ${fmt(count)}`, open: () => openType(name) })),
+        ...(excludedOut ? [{ label: `🚫 ${excludedOut} filtered out`, open: () => showResults("excluded") }] : []),
+      ],
     },
     {
       key: "approved",
@@ -1604,16 +1854,13 @@ export function SiteWatch({
       key: "rejected",
       icon: "⛔",
       tone: "red",
-      value: reviewedOut + excludedOut,
+      value: reviewedOut,
       label: "Rejected",
-      sub: `${reviewedOut} rejected on review · ${excludedOut} excluded by words`,
+      sub: `rejected on review · ${reviewedSite} websites + ${reviewedGem} GeM`,
       go: "View rejected →",
-      title: "Results rejected on review, or dropped by the exclude words",
+      title: "Results a person rejected on review (with the reason)",
       open: () => showResults("rejected"),
-      chips: [
-        { label: `👁 ${reviewedOut} on review`, open: () => showResults("ignored") },
-        { label: `🚫 ${excludedOut} excluded`, open: () => showResults("excluded") },
-      ],
+      chips: [],
     },
     {
       key: "conversion",
@@ -1774,8 +2021,8 @@ export function SiteWatch({
         >
           <input type="hidden" name="intent" value="settings" />
           <label className="wide">
-            Keywords (one per line or comma-separated)
-            <textarea name="keywords" rows={5} defaultValue={keywords.join("\n")} required />
+            Keywords, one per line. A line &quot;# Heading | 10&quot; starts a heading whose tenders must be above ₹10 Cr.
+            <textarea name="keywords" rows={8} defaultValue={portal.keywords.includes("\n") ? portal.keywords : keywords.join("\n")} required />
           </label>
           <label className="wide">
             Leave out tenders whose title has any of these words
@@ -1974,6 +2221,8 @@ export function SiteWatch({
             groups={keywordGroups}
             organisations={organisationFilters}
             found={tabbed.map((item) => item.keyword)}
+            type={siteType}
+            setType={setSiteType}
             heading={heading}
             keyword={keywordFilter}
             organisation={organisation}
@@ -2220,6 +2469,17 @@ export function SiteWatch({
             run={run}
             groups={keywordGroups}
             organisations={organisationFilters}
+            type={mixType}
+            setType={setMixType}
+            words={
+              <SearchWords
+                groups={keywordGroups}
+                excludes={excludes}
+                running={running || Boolean(gem?.running)}
+                canEdit={canEdit}
+                run={run("site-watch")}
+              />
+            }
           />
         ) : null}
         <h4 className="sk-heading">Website results ({sites.length})</h4>
