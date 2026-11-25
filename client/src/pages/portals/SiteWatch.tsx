@@ -45,6 +45,8 @@ export type SiteTender = {
   publishedAt: Date | null;
   closingAt: Date | null;
   keyword: string;
+  /** Ash or Coal when this search row was sent there. Empty follows the keyword heading. */
+  sentLine?: string;
   /** The tender value on the portal's tender page, in rupees (null when the portal gives none). */
   tenderValue?: number | string | null;
   status: "NEW" | "IMPORTED" | "IGNORED" | "EXCLUDED" | "FAILED";
@@ -252,6 +254,24 @@ const KEY_FACTS: [string, string][] = [
   ["Payment Mode", "Payment mode"],
 ];
 const fileTone = (name: string) => (/\.pdf$/i.test(name) ? "pdf" : /\.(xlsx?|csv)$/i.test(name) ? "sheet" : /\.docx?$/i.test(name) ? "word" : "other");
+
+/** Puts a search row into the Ash or Coal list on this page. It does not create a pipeline tender. */
+function SendLine({ action, idName, id, sent }: { action: (formData: FormData) => Promise<void>; idName: string; id: string; sent?: string }) {
+  return (
+    <span className="site-send">
+      {(["Ash", "Coal"] as const).map((line) => (
+        <form key={line} action={action}>
+          <input type="hidden" name="intent" value="send-line" />
+          <input type="hidden" name={idName} value={id} />
+          <input type="hidden" name="line" value={line} />
+          <button className={`btn ${line === "Coal" ? "ghost" : ""}`} type="submit" disabled={sent === line} title={`Show this search result under ${line}. It is not added to the pipeline.`}>
+            {sent === line ? `In ${line}` : `Send for ${line}`}
+          </button>
+        </form>
+      ))}
+    </span>
+  );
+}
 
 type DocState = { token: string; captcha: string; unlocked: boolean; documents: { index: number; name: string }[] };
 const post = async (path: string, body?: Record<string, string>) => {
@@ -688,6 +708,7 @@ function SheetFilters({
   groups,
   organisations,
   found,
+  rowTypes,
   type,
   setType,
   heading,
@@ -702,6 +723,8 @@ function SheetFilters({
   organisations: string[];
   /** The matched keyword of every row in the list (before these filters). */
   found: string[];
+  /** Ash or Coal for each row in `found`, when someone sent that row. Same length as `found`. */
+  rowTypes?: string[];
   /** Coal / Ash (the sheet's tabs); "" for both. */
   type: string;
   setType: (value: string) => void;
@@ -717,12 +740,13 @@ function SheetFilters({
   for (const word of found) if (word) counts.set(lower(word), (counts.get(lower(word)) ?? 0) + 1);
   const inHeading = headingWords(groups, heading);
   const headingCount = (group: KeywordGroup) => group.keywords.reduce((sum, word) => sum + (counts.get(lower(word)) ?? 0), 0);
-  const typeCount = (name: string) => found.filter((word) => typeOfKeyword(groups, word) === name).length;
-  const types = [...KEYWORD_TYPES, ...(found.some((word) => typeOfKeyword(groups, word) === "Other") ? ["Other"] : [])];
+  const typeAt = (word: string, index: number) => rowTypes?.[index] || typeOfKeyword(groups, word);
+  const typeCount = (name: string) => found.filter((word, index) => typeAt(word, index) === name).length;
+  const types = [...KEYWORD_TYPES, ...(found.some((word, index) => typeAt(word, index) === "Other") ? ["Other"] : [])];
   const shownGroups = type ? groups.filter((group) => (group.type || "Other") === type) : groups;
   const options = inHeading
     ? (groups.find((item) => item.heading === heading)?.keywords ?? [])
-    : [...new Map(found.filter((word) => word && (!type || typeOfKeyword(groups, word) === type)).map((word) => [lower(word), word])).values()].sort((a, b) => a.localeCompare(b));
+    : [...new Map(found.filter((word, index) => word && (!type || typeAt(word, index) === type)).map((word) => [lower(word), word])).values()].sort((a, b) => a.localeCompare(b));
   const wrap = (label: string, control: ReactNode) => (labelled ? <label>{label}{control}</label> : control);
   return (
     <>
@@ -1032,10 +1056,15 @@ function SearchMix({
   const [q, setQ] = useState("");
   const needle = q.trim().toLowerCase();
   const inHeading = headingWords(groups, heading);
+  const lineOf = (row: (typeof statusRows)[number]) => {
+    const sent = row.kind === "site" ? row.item.sentLine : row.bid.sentLine;
+    if (sent === "Ash" || sent === "Coal") return sent;
+    return typeOfKeyword(groups, row.kind === "site" ? row.item.keyword : row.bid.keyword);
+  };
   const sourceRows = statusRows.filter((row) => !source || row.kind === source);
   const rows = sourceRows.filter((row) => {
     const word = row.kind === "site" ? row.item.keyword : row.bid.keyword;
-    if (type && typeOfKeyword(groups, word) !== type) return false;
+    if (type && lineOf(row) !== type) return false;
     if (keyword && lower(word) !== lower(keyword)) return false;
     if (inHeading && !inHeading.has(lower(word))) return false;
     if (organisation && !fromOrganisation(row.kind === "site" ? `${row.item.organisation} ${row.item.title}` : `${row.bid.department} ${row.bid.ministry} ${row.bid.title}`, organisation)) return false;
@@ -1160,6 +1189,7 @@ function SearchMix({
             groups={groups}
             organisations={organisations}
             found={sourceRows.map((row) => (row.kind === "site" ? row.item.keyword : row.bid.keyword))}
+            rowTypes={sourceRows.map((row) => lineOf(row))}
             type={type}
             setType={setType}
             heading={heading}
@@ -1308,16 +1338,12 @@ function SearchMix({
                               }}
                             />
                           </label>
-                          <span className="site-send">
-                            <button className="btn" type="submit" name="line" value="ASH">
-                              Send for Ash
-                            </button>
-                            <button className="btn ghost" type="submit" name="line" value="COAL">
-                              Send for Coal
-                            </button>
-                          </span>
+                          <button className="btn" type="submit">
+                            {item.status === "FAILED" ? "Retry" : "Import as tender"}
+                          </button>
                         </form>
                       ) : null}
+                      {canRun && item.status !== "IGNORED" && item.status !== "EXCLUDED" ? <SendLine action={run("site-watch")} idName="siteTenderId" id={item.id} sent={item.sentLine} /> : null}
                       {canRun && item.status === "NEW" ? <IgnoreForm action={run("site-watch")} idName="siteTenderId" id={item.id} /> : null}
                       {canRun && item.status === "IGNORED" ? (
                         <form action={run("site-watch")}>
@@ -1402,16 +1428,12 @@ function SearchMix({
                             }}
                           />
                         </label>
-                        <span className="site-send">
-                          <button className="btn" type="submit" name="line" value="ASH">
-                            Send for Ash
-                          </button>
-                          <button className="btn ghost" type="submit" name="line" value="COAL">
-                            Send for Coal
-                          </button>
-                        </span>
+                        <button className="btn" type="submit">
+                          {bid.status === "FAILED" ? "Retry import" : "Import as tender"}
+                        </button>
                       </form>
                     ) : null}
+                    {canRun && bid.status !== "IGNORED" && bid.status !== "EXCLUDED" ? <SendLine action={run("gem")} idName="bidId" id={bid.id} sent={bid.sentLine} /> : null}
                     {canRun && bid.status === "NEW" ? <IgnoreForm action={run("gem")} idName="bidId" id={bid.id} /> : null}
                     {canRun && bid.status === "IGNORED" ? (
                       <form action={run("gem")}>
@@ -1523,7 +1545,7 @@ export function SiteWatch({
   const inHeading = headingWords(keywordGroups, heading);
   const tabbed = tenders.filter((item) => !tab || item.status === tab).filter((item) => !siteFilter || item.siteId === siteFilter);
   const shown = tabbed
-    .filter((item) => !siteType || typeOfKeyword(keywordGroups, item.keyword) === siteType)
+    .filter((item) => !siteType || (item.sentLine === "Ash" || item.sentLine === "Coal" ? item.sentLine : typeOfKeyword(keywordGroups, item.keyword)) === siteType)
     .filter((item) => !inHeading || inHeading.has(lower(item.keyword)))
     .filter((item) => !keywordFilter || lower(item.keyword) === lower(keywordFilter))
     .filter((item) => !organisation || fromOrganisation(`${item.organisation} ${item.title}`, organisation))
@@ -1842,12 +1864,12 @@ export function SiteWatch({
   // Found tenders (websites and GeM, not the filtered-out ones) by the type of their keyword's heading: Coal or Ash.
   const typeCounts = (() => {
     const counts = new Map<string, number>(KEYWORD_TYPES.map((name) => [name, 0]));
-    const add = (keyword: string) => {
-      const name = typeOfKeyword(keywordGroups, keyword);
+    const add = (keyword: string, sent?: string) => {
+      const name = sent === "Ash" || sent === "Coal" ? sent : typeOfKeyword(keywordGroups, keyword);
       counts.set(name, (counts.get(name) ?? 0) + 1);
     };
-    for (const item of tenders) if (item.status !== "EXCLUDED") add(item.keyword);
-    for (const bid of gem?.bids ?? []) if (bid.status !== "EXCLUDED") add(bid.keyword);
+    for (const item of tenders) if (item.status !== "EXCLUDED") add(item.keyword, item.sentLine);
+    for (const bid of gem?.bids ?? []) if (bid.status !== "EXCLUDED") add(bid.keyword, bid.sentLine);
     return [...counts].filter(([name, count]) => KEYWORD_TYPES.includes(name) || count);
   })();
   /** Opens the found list on Coal or Ash (a second click on the same type while it is open closes the filter). */
@@ -2254,6 +2276,7 @@ export function SiteWatch({
             groups={keywordGroups}
             organisations={organisationFilters}
             found={tabbed.map((item) => item.keyword)}
+            rowTypes={tabbed.map((item) => (item.sentLine === "Ash" || item.sentLine === "Coal" ? item.sentLine : typeOfKeyword(keywordGroups, item.keyword)))}
             type={siteType}
             setType={setSiteType}
             heading={heading}
@@ -2382,16 +2405,12 @@ export function SiteWatch({
                               }}
                             />
                           </label>
-                          <span className="site-send">
-                            <button className="btn" type="submit" name="line" value="ASH">
-                              Send for Ash
-                            </button>
-                            <button className="btn ghost" type="submit" name="line" value="COAL">
-                              Send for Coal
-                            </button>
-                          </span>
+                          <button className="btn" type="submit">
+                            {item.status === "FAILED" ? "Retry" : "Import as tender"}
+                          </button>
                         </form>
                       ) : null}
+                      {canRun && item.status !== "IGNORED" && item.status !== "EXCLUDED" ? <SendLine action={run("site-watch")} idName="siteTenderId" id={item.id} sent={item.sentLine} /> : null}
                       {canRun && item.status === "NEW" ? (
                         <IgnoreForm action={run("site-watch")} idName="siteTenderId" id={item.id} />
                       ) : null}

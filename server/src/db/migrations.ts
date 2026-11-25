@@ -41,6 +41,8 @@ const ADDED_COLUMNS: Record<string, [string, string][]> = {
     // The "Estimated Bid Value" in the bid's PDF, in rupees (empty when the bid gives none), and when it was read.
     ["bidValue", "DECIMAL(20,2) NULL"],
     ["valueCheckedAt", "DATETIME(3) NULL"],
+    // Ash or Coal inside the search results. Empty follows the keyword's heading. Not a pipeline tender.
+    ["sentLine", "VARCHAR(16) NOT NULL DEFAULT ''"],
   ],
   WatchSite: [["note", "VARCHAR(500) NOT NULL DEFAULT ''"]],
   SiteTender: [
@@ -53,6 +55,8 @@ const ADDED_COLUMNS: Record<string, [string, string][]> = {
     ["ignoredAt", "DATETIME(3) NULL"],
     // The tender value on the portal's tender page, in rupees (empty when the portal gives none).
     ["tenderValue", "DECIMAL(20,2) NULL"],
+    // Ash or Coal inside the search results. Empty follows the keyword's heading. Not a pipeline tender.
+    ["sentLine", "VARCHAR(16) NOT NULL DEFAULT ''"],
   ],
   Portal: [
     ["excludeWords", "TEXT NULL"],

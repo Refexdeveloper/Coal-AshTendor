@@ -706,8 +706,7 @@ export async function gemAction(actor: User, formData: FormData): Promise<Action
     const bidId = String(formData.get("bidId") || "");
     if (intent === "import") {
       const uploads = (await filesFrom(formData, "files")).filter((file) => file.buffer.length);
-      const line = formData.get("line") === "COAL" ? "COAL" : formData.get("line") === "ASH" ? "ASH" : undefined;
-      const result = await gem.importGemBid(actor, bidId, uploads, line);
+      const result = await gem.importGemBid(actor, bidId, uploads);
       return {
         ok: result.already
           ? result.note || "This bid was already on a tender."
@@ -716,6 +715,12 @@ export async function gemAction(actor: User, formData: FormData): Promise<Action
             : `${result.recordId} created from the GeM bid${result.note ? `. ${result.note}` : "; Unfyd is extracting the tender data from the bid document."}`,
         tenderId: result.tenderId,
       };
+    }
+    if (intent === "send-line") {
+      const line = formData.get("line") === "Coal" ? "Coal" : formData.get("line") === "Ash" ? "Ash" : "";
+      if (!line) throw new WorkflowError("Choose Ash or Coal.");
+      await db.gemBid.update({ where: { id: bidId }, data: { sentLine: line } });
+      return { ok: `This search result is now in the ${line} list. It was not added to the pipeline.` };
     }
     if (intent === "ignore" || intent === "restore") {
       await db.gemBid.update({ where: { id: bidId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "", ...ignoreFields(formData, actor, intent) } });
@@ -870,8 +875,7 @@ export async function siteWatchAction(actor: User, formData: FormData): Promise<
     const tenderId = String(formData.get("siteTenderId") || "");
     if (intent === "import") {
       const uploads = (await filesFrom(formData, "files")).filter((file) => file.buffer.length);
-      const line = formData.get("line") === "COAL" ? "COAL" : formData.get("line") === "ASH" ? "ASH" : undefined;
-      const result = await sites.importSiteTender(actor, tenderId, uploads, String(formData.get("docToken") || ""), line);
+      const result = await sites.importSiteTender(actor, tenderId, uploads, String(formData.get("docToken") || ""));
       const skipped = result.skipped.length ? ` Not sent for extraction: ${result.skipped.join(", ")}.` : "";
       const ok = result.already
         ? result.files
@@ -881,6 +885,12 @@ export async function siteWatchAction(actor: User, formData: FormData): Promise<
           ? `${result.recordId} created with ${result.files} document${result.files === 1 ? "" : "s"}; Unfyd is extracting the tender data.${skipped}`
           : `${result.recordId} created from the portal listing. No documents were fetched: visit the website to download them (${result.sourceUrl}), then add them to the tender.`;
       return { ok, tenderId: result.tenderId };
+    }
+    if (intent === "send-line") {
+      const line = formData.get("line") === "Coal" ? "Coal" : formData.get("line") === "Ash" ? "Ash" : "";
+      if (!line) throw new WorkflowError("Choose Ash or Coal.");
+      await db.siteTender.update({ where: { id: tenderId }, data: { sentLine: line } });
+      return { ok: `This search result is now in the ${line} list. It was not added to the pipeline.` };
     }
     if (intent === "ignore" || intent === "restore") {
       await db.siteTender.update({ where: { id: tenderId }, data: { status: intent === "ignore" ? "IGNORED" : "NEW", error: "", ...ignoreFields(formData, actor, intent) } });

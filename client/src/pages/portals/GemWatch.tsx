@@ -24,6 +24,8 @@ export type GemBid = {
   startAt: Date | null;
   endAt: Date | null;
   keyword: string;
+  /** Ash or Coal when this search row was sent there. Empty follows the keyword heading. */
+  sentLine?: string;
   /** The "Estimated Bid Value" in the bid's PDF, in rupees (null when the bid gives none or it is not read yet). */
   bidValue?: number | string | null;
   status: "NEW" | "IMPORTED" | "IGNORED" | "EXCLUDED" | "FAILED";
@@ -485,14 +487,9 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                             }}
                           />
                         </label>
-                        <span className="site-send">
-                          <button className="btn" type="submit" name="line" value="ASH">
-                            Send for Ash
-                          </button>
-                          <button className="btn ghost" type="submit" name="line" value="COAL">
-                            Send for Coal
-                          </button>
-                        </span>
+                        <button className="btn" type="submit">
+                          {bid.status === "FAILED" ? "Retry import" : "Import as tender"}
+                        </button>
                       </form>
                     ) : null}
                     {canRun && bid.status === "NEW" ? (
