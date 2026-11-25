@@ -78,7 +78,25 @@ export function IgnoreForm({ action, idName, id }: { action: (formData: FormData
   );
 }
 
-/** What was recorded when a result was ignored. */
+/** The full ignore record, shown in the opened row: the reason, the comment, and who wrote it. */
+export function IgnoreDetail({ item }: { item: { status?: string; ignoreReason?: string; ignoreComment?: string | null; ignoredByName?: string; ignoredAt?: string | Date | null } }) {
+  if ((item.status && item.status !== "IGNORED") || (!item.ignoreReason && !item.ignoreComment)) return null;
+  const when = item.ignoredAt ? new Date(item.ignoredAt).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+  return (
+    <section className="ignore-detail">
+      <h4>Why it was ignored</h4>
+      {item.ignoreReason ? <p className="ignore-reason">{item.ignoreReason}</p> : null}
+      {item.ignoreComment ? <p className="ignore-comment">{item.ignoreComment}</p> : null}
+      {item.ignoredByName || when ? (
+        <small>
+          {item.ignoredByName}
+          {item.ignoredByName && when ? " · " : ""}
+          {when}
+        </small>
+      ) : null}
+    </section>
+  );
+}
 export function IgnoredNote({ item }: { item: { ignoreReason?: string; ignoreComment?: string | null; ignoredByName?: string; ignoredAt?: string | Date | null } }) {
   if (!item.ignoreReason) return null;
   const when = item.ignoredAt ? new Date(item.ignoredAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "";

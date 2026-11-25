@@ -708,3 +708,50 @@ export async function emailsFor(userIds: string[]) {
   const users = await db.user.findMany({ where: { id: { in: userIds }, active: true } });
   return users.map((user) => ({ email: user.email, name: user.name }));
 }
+
+/** Who reviews a new search result. CC sees the same mail. */
+const NEW_TENDER_TO = ["vishesh.h@refex.co.in", "lokesh.b@refex.co.in", "prasanth.p@refex.co.in"];
+const NEW_TENDER_CC = ["dinesh@refex.co.in", "susmitha.s@refex.co.in"];
+
+export type FreshTender = {
+  source: string;
+  number: string;
+  title: string;
+  organisation: string;
+  keyword: string;
+  closes: string;
+};
+
+const closesText = (value: string) => value || "not set";
+
+/** One mail when a search pass finds new tenders: the count, each tender, and a button to the review list. */
+export async function mailNewSearchTenders(found: FreshTender[]) {
+  if (!found.length) return;
+  const { appLink } = await import("./refexone");
+  const link = appLink("/portals?results=found");
+  const count = found.length;
+  const noun = count === 1 ? "tender" : "tenders";
+  const listed = found.slice(0, 30);
+  const lines = listed.map(
+    (item, index) =>
+      `${index + 1}. ${item.source} · ${item.number || "No number"}\n${item.title}\n${item.organisation || "—"}\nCloses ${closesText(item.closes)} · keyword ${item.keyword || "—"}`,
+  );
+  const more = found.length > listed.length ? `\n\nAnd ${found.length - listed.length} more. They are on the review list.` : "";
+  const greeting = `Hi Team,\n\nToday ${count} new ${noun} came. Please review.`;
+  await deliver({
+    to: NEW_TENDER_TO.join(","),
+    toName: "Vishesh, Lokesh and Prasanth",
+    cc: NEW_TENDER_CC,
+    subject: `Today ${count} new ${noun} — please review`,
+    text: `${greeting}\n\n${lines.join("\n\n")}${more}\n\nReview the new tenders: ${link}`,
+    link,
+    content: {
+      headline: `Today ${count} new ${noun}`,
+      intro: "Hi Team. Please review the new tenders.",
+      body: `Today ${count} new ${noun} came. Please review.\n\n${lines.join("\n\n")}${more}`,
+      next: { label: "Review", note: "Open the list and choose Import as tender or Ignore." },
+      cta: { label: "Review the new tenders", url: link },
+    },
+    log: { eventType: "NEW_TENDERS", note: `${count} new from the search` },
+  }).catch((error) => console.error("New tender mail failed", error));
+}

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { AppShell } from "@client/layout/AppShell";
 import { Loading } from "@client/components/base/loading";
@@ -9,7 +9,8 @@ import { PageBoundary } from "./PageBoundary";
 export default function AppLayout() {
   const { data, error, reload } = useApi<Session>("/me");
   const { pathname } = useLocation();
-  useEffect(() => {
+  useLayoutEffect(() => {
+    history.scrollRestoration = "manual";
     window.scrollTo(0, 0);
   }, [pathname]);
   if (!data) {

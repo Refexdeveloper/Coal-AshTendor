@@ -595,7 +595,12 @@ export default function TenderPage() {
       {tab === "details" ? (
         <>
           <div className="detail-split">
-            <NoticePane document={notice ?? tender.documents[0] ?? null} />
+            <NoticePane
+              document={notice ?? tender.documents[0] ?? null}
+              tenderId={tender.id}
+              canUpload={!notice && (EDITOR_ROLES.includes(actor.role) || actor.id === tender.createdById)}
+              reload={() => void reload()}
+            />
             <FieldEditor
               tenderId={tender.id}
               fields={editorFields}
@@ -997,7 +1002,30 @@ function OcrResults({ documents }: { documents: TenderDocument[] }) {
   );
 }
 
-function NoticePane({ document }: { document: TenderDocument | null }) {
+function NoticeUpload({ tenderId, reload }: { tenderId: string; reload: () => void }) {
+  const [state, action] = useActionState(async (previous: ActionState, formData: FormData) => {
+    const result = await taskAction(previous, formData);
+    if (result?.ok) reload();
+    return result;
+  }, null as ActionState);
+  return (
+    <form action={action} className="stack">
+      <p className="empty">Choose the tender notice. It is stored on this tender. No portal code is needed.</p>
+      {state?.error ? <p className="banner bad">{state.error}</p> : null}
+      <input type="hidden" name="tenderId" value={tenderId} />
+      <input type="hidden" name="docType" value="NOTICE" />
+      <label>
+        Tender file
+        <input name="files" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.doc,.docx,.txt" required />
+      </label>
+      <Submit name="intent" value="add-docs">
+        Add tender file
+      </Submit>
+    </form>
+  );
+}
+
+function NoticePane({ document, tenderId, canUpload, reload }: { document: TenderDocument | null; tenderId: string; canUpload: boolean; reload: () => void }) {
   const name = document?.fileName ?? "";
   const mime = (document?.mimeType ?? "").toLowerCase();
   const lower = name.toLowerCase();
@@ -1025,7 +1053,8 @@ function NoticePane({ document }: { document: TenderDocument | null }) {
       ) : null}
       {document && image ? <img className="notice-frame" alt={name} src={src} /> : null}
       {document && !pdf && !image ? <p className="empty">This file cannot be shown here. Use Open to view it.</p> : null}
-      {document ? null : <p className="empty">Upload the tender notice on the Documents tab to see it beside these fields.</p>}
+      {!document && canUpload ? <NoticeUpload tenderId={tenderId} reload={reload} /> : null}
+      {!document && !canUpload ? <p className="empty">Upload the tender notice on the Documents tab to see it beside these fields.</p> : null}
     </aside>
   );
 }

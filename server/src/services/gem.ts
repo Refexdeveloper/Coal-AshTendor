@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { attachSourceDocuments, createTender, type Actor } from "./domain";
 import { FIRST_EXCLUDES, FIRST_KEYWORDS, GEM_EXCLUDES, GEM_KEYWORDS } from "./gem-keywords";
+import { mailNewSearchTenders, type FreshTender } from "./notify";
 
 /**
  * GeM bid watch. Searches the open bids on bidplus.gem.gov.in ("All Bids") for each keyword, keeps the bids whose
@@ -329,21 +330,26 @@ function gemBidPage(doc: GemDoc, bidId: string) {
   return `${BASE}/${path}/${id}`;
 }
 
-/** Creates the tender for one stored GeM bid. Used by auto-import and by the admin's Import button. */
-export async function importGemBid(actor: Actor, gemBidId: string) {
+/** Creates the tender for one stored GeM bid. Used by auto-import and by the admin's Import button. An uploaded file is the tender document; the portal code is not required. */
+export async function importGemBid(actor: Actor, gemBidId: string, uploads: { name: string; type: string; buffer: Buffer }[] = []) {
   const bid = await db.gemBid.findUnique({ where: { id: gemBidId } });
   if (!bid) throw new Error("That GeM bid is not in the list.");
-  if (bid.status === "IMPORTED" && bid.tenderId) return { tenderId: bid.tenderId, recordId: "", already: true };
+  if (bid.status === "IMPORTED" && bid.tenderId) {
+    if (uploads.length) await attachSourceDocuments(actor, bid.tenderId, uploads, "NOTICE");
+    return { tenderId: bid.tenderId, recordId: "", already: true, note: uploads.length ? "The tender file was added." : "" };
+  }
   const doc = JSON.parse(bid.raw || "{}") as GemDoc;
   const bidPage = gemBidPage(doc, bid.bidId);
   try {
-    // When GeM does not give the bid PDF, the tender is still created from the listing, with the link to fetch it by hand.
+    // A file chosen on Import is the tender document. GeM is asked for its PDF only when nothing was uploaded.
     let file: { name: string; type: string; buffer: Buffer } | null = null;
     let missing = "";
-    try {
-      file = await downloadBidDocument(doc);
-    } catch (error) {
-      missing = `Bid document not downloaded from GeM (${error instanceof Error ? error.message : String(error)}). Visit GeM to get it: ${bidPage}`;
+    if (!uploads.length) {
+      try {
+        file = await downloadBidDocument(doc);
+      } catch (error) {
+        missing = `Bid document not downloaded from GeM (${error instanceof Error ? error.message : String(error)}). Visit GeM to get it: ${bidPage}`;
+      }
     }
     const buyer = bid.department && bid.department !== "NA" ? bid.department : bid.ministry;
     const end = gemTime(first(doc, "final_end_date_sort"));
@@ -354,7 +360,7 @@ export async function importGemBid(actor: Actor, gemBidId: string) {
       tenderRef: bid.bidNumber,
       externalTenderId: bid.bidNumber,
       source: "CRAWLER",
-      files: file ? [file] : [],
+      files: uploads.length ? uploads : file ? [file] : [],
       sourceUrl: bidPage,
       // What the GeM listing already states; OCR fills the rest from the bid document.
       known: {
@@ -450,6 +456,7 @@ async function scan(actorInput?: Actor) {
   const run = await db.crawlerRun.create({ data: { portalId: portal.id, status: "RUNNING" } });
   await db.portal.update({ where: { id: portal.id }, data: { lastStatus: "RUNNING", lastError: "" } });
   const summary = { checked: 0, matched: 0, newMatches: 0, excluded: 0, imported: 0, failed: 0, errors: [] as string[] };
+  const fresh: FreshTender[] = [];
   let imports = 0;
   try {
     const session = await openSession();
@@ -508,6 +515,14 @@ async function scan(actorInput?: Actor) {
             if (!created) continue;
             if (exclude) continue;
             summary.newMatches += 1;
+            fresh.push({
+              source: "GeM",
+              number: fields.bidNumber,
+              title: fields.title,
+              organisation: [fields.department, fields.ministry].filter((part) => part && part !== "NA").join(", "),
+              keyword,
+              closes: end ? new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(end) : "",
+            });
             if (portal.autoImport && imports < portal.maxImports) {
               imports += 1;
               await sleep(PAUSE_MS);
@@ -568,12 +583,14 @@ async function scan(actorInput?: Actor) {
     ].join("\n");
     await db.crawlerRun.update({ where: { id: run.id }, data: { status, finishedAt: new Date(), discovered: summary.newMatches, errorSummary } });
     await db.portal.update({ where: { id: portal.id }, data: { lastStatus: status, lastScanAt: new Date(), lastError: summary.errors.join("\n").slice(0, 2000) } });
+    await mailNewSearchTenders(fresh);
     return summary;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await db.crawlerRun.update({ where: { id: run.id }, data: { status: "FAILED", finishedAt: new Date(), discovered: summary.newMatches, errorSummary: message } });
     await db.portal.update({ where: { id: portal.id }, data: { lastStatus: "FAILED", lastScanAt: new Date(), lastError: message } });
     await db.crawlerException.create({ data: { runId: run.id, portalId: portal.id, kind: "Portal unavailable", detail: message.slice(0, 1000) } });
+    await mailNewSearchTenders(fresh);
     throw error;
   }
 }

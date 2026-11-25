@@ -4,7 +4,7 @@ import type { CalendarJson, CrawlerException, Portal } from "@client/lib/types";
 import { LoadFailed, Loading } from "@client/components/base/loading";
 import { useNoticeAction } from "@client/components/feature/notice-action";
 import { IngestForm } from "@client/components/feature/ingest-form";
-import { GemWatch, type GemData } from "./GemWatch";
+import { type GemData } from "./GemWatch";
 import { SiteWatch, type SitesData } from "./SiteWatch";
 
 const KINDS = [
@@ -40,7 +40,6 @@ export default function PortalsPage() {
       {query.notice ? <p className="banner good">{query.notice}</p> : null}
       {query.error ? <p className="banner bad">{query.error}</p> : null}
       <div id="websites-top" />
-      <GemWatch gem={gem} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit canKeywords canRun />
       {sites ? <SiteWatch data={sites} gem={gem} timeZone={calendar.timeZone} run={run} reload={() => void reload()} canEdit canRun /> : null}
       <h2 className="section-title">Other portals</h2>
       <div className="table-wrap">

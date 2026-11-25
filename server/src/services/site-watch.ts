@@ -3,6 +3,7 @@ import { db } from "../db";
 import { addDocuments, createTender, type Actor } from "./domain";
 import { allowedUpload } from "./files";
 import { GEM_EXCLUDES, GEM_KEYWORDS } from "./gem-keywords";
+import { mailNewSearchTenders, type FreshTender } from "./notify";
 import { SITE_SEEDS } from "./site-list";
 
 /**
@@ -330,6 +331,7 @@ async function scan(onlySiteId?: string) {
   const run = await db.crawlerRun.create({ data: { portalId: portal.id, status: "RUNNING" } });
   await db.portal.update({ where: { id: portal.id }, data: { lastStatus: "RUNNING", lastError: "" } });
   const summary = { sites: sites.length, organisations: 0, checked: 0, matched: 0, newMatches: 0, excluded: 0, errors: [] as string[] };
+  const fresh: FreshTender[] = [];
   progress = { startedAt: new Date(), sites: sites.length, done: 0, active: [], organisations: 0, checked: 0, matched: 0 };
 
   const keep = async (site: Site, found: FoundTender) => {
@@ -361,7 +363,17 @@ async function scan(onlySiteId?: string) {
     const created = await db.siteTender
       .create({ data: { ...fields, tenderKey: found.key.slice(0, 250), keyword, status: exclude ? "EXCLUDED" : "NEW", error: exclude ? `Title mentions "${exclude}".` : "" } })
       .catch(() => null);
-    if (created && !exclude) summary.newMatches += 1;
+    if (created && !exclude) {
+      summary.newMatches += 1;
+      fresh.push({
+        source: site.name,
+        number: fields.portalTenderId,
+        title: fields.title,
+        organisation: fields.organisation,
+        keyword,
+        closes: fields.closingAt ? new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(fields.closingAt) : "",
+      });
+    }
     return !exclude;
   };
 
@@ -432,11 +444,13 @@ async function scan(onlySiteId?: string) {
     ].join("\n");
     await db.crawlerRun.update({ where: { id: run.id }, data: { status, finishedAt: new Date(), discovered: summary.newMatches, errorSummary } });
     await db.portal.update({ where: { id: portal.id }, data: { lastStatus: status, lastScanAt: new Date(), lastError: summary.errors.join("\n").slice(0, 2000) } });
+    await mailNewSearchTenders(fresh);
     return summary;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await db.crawlerRun.update({ where: { id: run.id }, data: { status: "FAILED", finishedAt: new Date(), discovered: summary.newMatches, errorSummary: message } });
     await db.portal.update({ where: { id: portal.id }, data: { lastStatus: "FAILED", lastScanAt: new Date(), lastError: message } });
+    await mailNewSearchTenders(fresh);
     throw error;
   }
 }

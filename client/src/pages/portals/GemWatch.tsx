@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { apiUrl } from "@client/api/client";
 import { formatWhen } from "@client/utils/calendar";
 import { GemResults } from "@client/components/feature/gem-results";
-import { ErrorNote, IgnoreForm, IgnoredNote } from "@client/components/feature/ignore-form";
+import { ErrorNote, IgnoreDetail, IgnoreForm, IgnoredNote } from "@client/components/feature/ignore-form";
 import type { Portal } from "@client/lib/types";
 
 const PdfViewer = lazy(() => import("@client/components/feature/pdf-viewer"));
@@ -467,9 +467,22 @@ export function GemWatch({ gem, timeZone, run, reload, canEdit, canKeywords, can
                       </Link>
                     ) : null}
                     {canRun && bid.status !== "IMPORTED" ? (
-                      <form action={run("gem")}>
+                      <form action={run("gem")} className="site-import-form">
                         <input type="hidden" name="intent" value="import" />
                         <input type="hidden" name="bidId" value={bid.id} />
+                        <input type="hidden" name="openTender" value="1" />
+                        <label className="btn ghost site-import-files" title="Tender file. No portal code is needed. It is stored as the tender document." data-count="">
+                          Tender file
+                          <input
+                            type="file"
+                            name="files"
+                            accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.doc,.docx,.txt"
+                            onChange={(event) => {
+                              const count = event.currentTarget.files?.length ?? 0;
+                              event.currentTarget.parentElement!.dataset.count = count ? ` (${count})` : "";
+                            }}
+                          />
+                        </label>
                         <button className="btn" type="submit">
                           {bid.status === "FAILED" ? "Retry import" : "Import as tender"}
                         </button>

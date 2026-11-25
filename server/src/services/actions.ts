@@ -694,11 +694,14 @@ export async function gemAction(actor: User, formData: FormData): Promise<Action
     }
     const bidId = String(formData.get("bidId") || "");
     if (intent === "import") {
-      const result = await gem.importGemBid(actor, bidId);
+      const uploads = (await filesFrom(formData, "files")).filter((file) => file.buffer.length);
+      const result = await gem.importGemBid(actor, bidId, uploads);
       return {
         ok: result.already
-          ? "This bid was already on a tender."
-          : `${result.recordId} created from the GeM bid${result.note ? `. ${result.note}` : "; Unfyd is extracting the tender data from the bid document."}`,
+          ? result.note || "This bid was already on a tender."
+          : uploads.length
+            ? `${result.recordId} created with the tender file; Unfyd is extracting the tender data from it.`
+            : `${result.recordId} created from the GeM bid${result.note ? `. ${result.note}` : "; Unfyd is extracting the tender data from the bid document."}`,
         tenderId: result.tenderId,
       };
     }
