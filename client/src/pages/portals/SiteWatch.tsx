@@ -655,6 +655,16 @@ function SearchMix({
   const gemCount = rows.filter((row) => row.kind === "gem").length;
   const siteCount = rows.length - gemCount;
   const filterOn = (key: string) => view === key || (key === "approved" && view === "conversion") || (key === "rejected" && (view === "ignored" || view === "excluded"));
+  const activeFilters = [
+    source ? { key: "source", label: source === "gem" ? "GeM" : "Websites", clear: () => setSource("") } : null,
+    keyword ? { key: "keyword", label: keyword, clear: () => setKeyword("") } : null,
+    needle ? { key: "q", label: q.trim(), clear: () => setQ("") } : null,
+  ].filter((item): item is { key: string; label: string; clear: () => void } => Boolean(item));
+  const clearFilters = () => {
+    setSource("");
+    setKeyword("");
+    setQ("");
+  };
   // A new filter starts again on the first page.
   useEffect(() => setPage(1), [view, source, keyword, q]);
   const pages = Math.max(1, Math.ceil(rows.length / size));
@@ -731,23 +741,53 @@ function SearchMix({
         ))}
       </div>
       <div className="gem-toolbar">
-        <div className="gem-toolbar-end">
-          <select value={source} onChange={(event) => setSource(event.target.value as "" | "site" | "gem")} aria-label="Source">
-            <option value="">All sources</option>
-            <option value="site">Websites</option>
-            <option value="gem">GeM</option>
-          </select>
-          <select value={keyword} onChange={(event) => setKeyword(event.target.value)} aria-label="Keyword">
-            <option value="">All keywords</option>
-            {keywords.map((word) => (
-              <option key={word} value={word}>
-                {word}
-              </option>
-            ))}
-          </select>
-          <input type="search" placeholder="Search title, organisation, number…" value={q} onChange={(event) => setQ(event.target.value)} aria-label="Search these results" />
+        <div className="gem-toolbar-end mix-filters-bar">
+          <label>
+            Source
+            <select value={source} onChange={(event) => setSource(event.target.value as "" | "site" | "gem")}>
+              <option value="">All sources</option>
+              <option value="site">Websites</option>
+              <option value="gem">GeM</option>
+            </select>
+          </label>
+          <label>
+            Keyword
+            <select value={keyword} onChange={(event) => setKeyword(event.target.value)}>
+              <option value="">All keywords</option>
+              {keywords.map((word) => (
+                <option key={word} value={word}>
+                  {word}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="mix-search">
+            Search
+            <input type="search" placeholder="Title, organisation, number…" value={q} onChange={(event) => setQ(event.target.value)} />
+            {q ? (
+              <button type="button" className="mix-search-x" aria-label="Clear search" onClick={() => setQ("")}>
+                ×
+              </button>
+            ) : null}
+          </label>
         </div>
       </div>
+      {activeFilters.length ? (
+        <div className="gem-chips mix-active">
+          <span className="gem-chip-label">Showing</span>
+          {activeFilters.map((item) => (
+            <span key={item.key} className="gem-chip">
+              {item.label}
+              <button type="button" className="gem-chip-x" aria-label={`Remove ${item.label}`} onClick={item.clear}>
+                ×
+              </button>
+            </span>
+          ))}
+          <button type="button" className="link-btn" onClick={clearFilters}>
+            Clear all
+          </button>
+        </div>
+      ) : null}
       <div className="table-wrap flat">
         <table className="gem-table">
           <thead>
