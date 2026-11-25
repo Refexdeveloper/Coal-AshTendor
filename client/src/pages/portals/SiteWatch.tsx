@@ -548,7 +548,8 @@ function matchesResult(view: string, status: string, seen: Date | string, todayK
   if (view === "rejected") return status === "IGNORED" || status === "EXCLUDED";
   if (view === "ignored") return status === "IGNORED";
   if (view === "excluded") return status === "EXCLUDED";
-  return true;
+  // All found is the review list. Rejected rows stay on the Rejected tab.
+  return status !== "IGNORED" && status !== "EXCLUDED";
 }
 
 /** Clicking a row opens it, except clicks on its links, buttons and forms. */
