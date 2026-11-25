@@ -985,7 +985,7 @@ function SearchMix({
   setType: (value: string) => void;
   groups: KeywordGroup[];
   organisations: string[];
-  /** The search-keyword box, shown above the list. */
+  /** The search-keyword box, shown under the tender table. */
   words?: ReactNode;
   view: string;
   onView: (view: "found" | "approved" | "rejected" | "today") => void;
@@ -1064,7 +1064,10 @@ function SearchMix({
   const goTo = (next: number) => {
     setPage(Math.min(Math.max(1, next), pages));
     setOpenKey("");
-    document.getElementById("search-mix")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    (document.getElementById("search-results-table") || document.getElementById("search-mix"))?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   };
   const pager =
     rows.length > 0 ? (
@@ -1116,7 +1119,7 @@ function SearchMix({
     ) : null;
   return (
     <div className="search-mix" id="search-mix">
-      <div className="site-list-head">
+      <div className="site-list-head" id="search-results-table">
         <div>
           <h3>{RESULT_TITLE[view] ?? "Tenders"}</h3>
           <small className="muted">
@@ -1124,7 +1127,6 @@ function SearchMix({
           </small>
         </div>
       </div>
-      {words}
       <div className="tabs gem-tabs" role="tablist" aria-label="Tender list filter">
         {RESULT_VIEWS.map(([key, label]) => (
           <button key={key} type="button" role="tab" aria-selected={filterOn(key)} className={`tab ${filterOn(key) ? "active" : ""}`} onClick={() => onView(key)}>
@@ -1415,6 +1417,8 @@ function SearchMix({
         </table>
       </div>
       {pager}
+      {/* Keywords sit under the table so card clicks land on the tender list, not the keyword editor. */}
+      {words}
     </div>
   );
 }
@@ -1474,7 +1478,11 @@ export function SiteWatch({
 
   useEffect(() => {
     if (!askedView) return;
-    const go = () => document.getElementById("search-mix")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const go = () =>
+      (document.getElementById("search-results-table") || document.getElementById("search-mix"))?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
     const later = window.setTimeout(go, 700);
     return () => window.clearTimeout(later);
   }, [askedView]);
@@ -1804,7 +1812,13 @@ export function SiteWatch({
       return;
     }
     setResultView(view);
-    window.setTimeout(() => document.getElementById("search-mix")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    // Wait for SearchMix to mount, then scroll to the tender table (not the keyword editor).
+    window.setTimeout(() => {
+      (document.getElementById("search-results-table") || document.getElementById("search-mix"))?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 50);
   };
   // Found tenders (websites and GeM, not the filtered-out ones) by the type of their keyword's heading: Coal or Ash.
   const typeCounts = (() => {
