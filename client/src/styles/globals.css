@@ -3274,11 +3274,12 @@ tr.site-detail-row > td { background: var(--paper); padding: 0; }
 .search-mix { margin-top: 16px; display: grid; gap: 10px; }
 .search-mix .table-wrap { margin: 0; }
 
-/* Ignore with a reason and a comment */
-.ignore-form { display: grid; gap: 6px; min-width: 220px; padding: 10px; border-radius: 12px; border: 1px solid #fecaca; background: #fff7f7; text-align: left; }
-.ignore-form label { display: grid; gap: 3px; font-size: 0.72rem; font-weight: 700; color: #64748b; }
-.ignore-form select, .ignore-form textarea { font: inherit; font-size: 0.82rem; padding: 6px 8px; border-radius: 8px; border: 1px solid #dbe3ee; background: #fff; color: #0f172a; }
-.ignore-actions { display: flex; gap: 6px; }
+/* Ignore with a reason and a required comment, in a popup */
+.ignore-pop { display: grid; gap: 0; text-align: left; }
+.ignore-pop label { display: grid; gap: 4px; margin: 0 0 14px; font-size: 0.78rem; font-weight: 700; color: #64748b; }
+.ignore-pop select, .ignore-pop textarea { font: inherit; font-size: 0.92rem; font-weight: 500; padding: 8px 10px; border-radius: 8px; border: 1px solid #dbe3ee; background: #fff; color: #0f172a; width: 100%; }
+.ignore-pop textarea { min-height: 96px; resize: vertical; }
+.ignore-pop .req { color: #b91c1c; text-decoration: none; }
 .ignored-note { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; padding: 6px 8px; border-radius: 8px; background: #f8fafc; border: 1px solid #e2e8f0; font-size: 0.76rem; color: #334155; max-width: 260px; }
 .ignored-note b { color: #b91c1c; font-size: 0.76rem; }
 .ignored-note span { overflow-wrap: anywhere; }
