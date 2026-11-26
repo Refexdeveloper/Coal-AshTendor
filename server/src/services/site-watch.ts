@@ -547,6 +547,93 @@ async function scan(onlySiteId?: string) {
   }
 }
 
+/** Letters and digits only, so "tn/stps-sc/2026-27/323 -" finds "TN/STPS-SC/2026-27/323(Fuel)". */
+const numberKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * Puts one open tender of an NIC website, named by its tender ID ("2026_RRVUN_594878_1") or reference number
+ * ("TN/STPS-SC/2026-27/323"), into the Ash or Coal list of the search results, even when no keyword found it.
+ * The website is given by its address or host and must be in the master list. Organisations whose short name is in
+ * the number are read first; the rest follow one at a time with a pause, as in a normal pass.
+ */
+export async function addSiteTenderByNumber(website: string, number: string, line: "Ash" | "Coal", keyword = "Added by number", options: { keepLine?: boolean } = {}) {
+  const want = numberKey(number);
+  if (want.length < 4) throw new Error("Type the tender ID or reference number.");
+  let host = website.trim().toLowerCase();
+  try {
+    host = new URL(/^https?:\/\//.test(host) ? host : `https://${host}`).host;
+  } catch {
+    throw new Error("Type the website address, for example https://eproc.rajasthan.gov.in/nicgep/app.");
+  }
+  const site = (await db.watchSite.findFirst({ where: { host } })) ?? (await db.watchSite.findFirst({ where: { host: host.replace(/^www\./, "") } }));
+  if (!site) throw new Error(`${host} is not in the website list.`);
+  if (site.method !== "NIC") throw new Error(`${site.host} has no tender list that can be read by number. Add it from the website by hand.`);
+  const already = ((await db.siteTender.findMany({ where: { siteId: site.id } })) as { id: string; title: string; refNo: string; portalTenderId: string }[]).find(
+    (row) => numberKey(row.portalTenderId) === want || numberKey(row.refNo).startsWith(want),
+  );
+  if (already) {
+    if (!options.keepLine) await db.siteTender.update({ where: { id: already.id }, data: { sentLine: line } });
+    return { already: true, title: String(already.title || number) };
+  }
+  const get = session(String(site.url));
+  const portalUrl = `${site.url}?page=FrontEndTendersByOrganisation&service=page`;
+  const orgs = nicOrganisations(await get(portalUrl)).filter((org) => org.count > 0);
+  const hinted = (org: { name: string }) => {
+    const code = numberKey(org.name.split(/[\s-]/)[0] ?? "");
+    return code.length >= 3 && want.includes(code) ? 0 : 1;
+  };
+  orgs.sort((a, b) => hinted(a) - hinted(b));
+  for (const org of orgs) {
+    await sleep(PAUSE_MS);
+    let list: FoundTender[];
+    try {
+      list = nicTenders(await get(org.href), site.host);
+    } catch {
+      continue;
+    }
+    const found = list.find((row) => numberKey(row.tenderId) === want || numberKey(row.refNo).startsWith(want));
+    if (!found) continue;
+    let fields: [string, string][] = [];
+    let details: string | null = null;
+    if (found.viewHref) {
+      try {
+        await sleep(PAUSE_MS);
+        const view = nicTenderView(await get(found.viewHref));
+        fields = view.fields;
+        details = JSON.stringify({ fetchedAt: new Date().toISOString(), ...view, portalUrl });
+      } catch {
+        /* the row is kept without the portal's details */
+      }
+    }
+    // NIC lists some tenders with the reference number as the title; the work description says what it is.
+    const description = fields.find(([label]) => label === "Work Description")?.[1];
+    const title = (found.title === found.refNo && description ? description : found.title) || description || found.refNo;
+    const value = tenderValueOf(fields);
+    await db.siteTender.create({
+      data: {
+        siteId: site.id,
+        tenderKey: found.key.slice(0, 250),
+        portalTenderId: found.tenderId.slice(0, 190),
+        refNo: found.refNo.slice(0, 2000),
+        title: title.slice(0, 4000),
+        organisation: (found.organisation || org.name).slice(0, 2000),
+        link: "",
+        publishedAt: nicTime(found.published).date,
+        closingAt: nicTime(found.closing).date,
+        openingAt: nicTime(found.opening).date,
+        keyword,
+        status: "NEW",
+        error: "",
+        sentLine: line,
+        ...(value !== null ? { tenderValue: value } : {}),
+        ...(details ? { details, detailsAt: new Date() } : {}),
+      },
+    });
+    return { already: false, title };
+  }
+  throw new Error(`${number} is not among the open tenders on ${site.host}. It may have closed, or the number may be different.`);
+}
+
 type Upload = { name: string; type: string; buffer: Buffer };
 
 /** The files of an unlocked portal document session that can go on a tender (PDF, image, Excel, text; not ZIP), at most 20 MB each. */

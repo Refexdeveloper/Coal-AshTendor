@@ -1165,6 +1165,32 @@ function SearchMix({
           </small>
         </div>
       </div>
+      {canRun ? (
+        <details className="add-by-number">
+          <summary>Add tender by number</summary>
+          <form action={run("site-watch")} className="gem-toolbar-end mix-filters-bar">
+            <input type="hidden" name="intent" value="add-number" />
+            <label>
+              Bid number / tender ID
+              <input name="number" required placeholder="GEM/2026/B/8218205 or 2026_RRVUN_594878_1" />
+            </label>
+            <label>
+              Website (not needed for GeM)
+              <input name="website" placeholder="https://eproc.rajasthan.gov.in/nicgep/app" />
+            </label>
+            <label>
+              List
+              <select name="line" defaultValue="Coal">
+                <option value="Coal">Coal</option>
+                <option value="Ash">Ash</option>
+              </select>
+            </label>
+            <button className="btn" type="submit" title="Reads the tender from GeM or the website and puts it in this list. It is not added to the pipeline.">
+              Add
+            </button>
+          </form>
+        </details>
+      ) : null}
       {/* One compact row (add keyword, exclude word, re-run); the full keyword list opens only on request. */}
       {words}
       <div className="tabs gem-tabs" role="tablist" aria-label="Tender list filter">

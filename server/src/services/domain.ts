@@ -720,7 +720,17 @@ export async function updateFields(actor: Actor, tenderId: string, values: Recor
     if (!(field.fieldKey in values)) continue;
     const next = values[field.fieldKey].trim();
     const previous = effectiveValue(field);
-    if (next === previous) continue;
+    if (next === previous) {
+      // A conflicting value the person keeps and sends for review is their answer: it is confirmed, not a conflict.
+      if (mode === "validate" && field.validationStatus === "CONFLICT" && next) {
+        await db.tenderField.update({
+          where: { id: field.id },
+          data: { correctedValue: next, correctedAt: new Date(), correctedById: actor.id, validationStatus: next === NOT_FOUND ? "NOT_FOUND" : "VALIDATED", conflictNote: "" },
+        });
+        changes.push(`${field.label}: kept "${next}" (conflict resolved)`);
+      }
+      continue;
+    }
     const definition = TENDER_FIELDS.find((item) => item.key === field.fieldKey);
     // "Select" submits a blank. Save for later must not wipe a choice the user left unselected.
     if (!next && previous && definition?.options && (mode === "save" || !listedChoice(previous, [...definition.options, NOT_FOUND]))) continue;

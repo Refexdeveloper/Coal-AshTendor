@@ -859,6 +859,21 @@ export async function siteWatchAction(actor: User, formData: FormData): Promise<
       }
       return { ok: started.length ? `Search started on the ${started.join(" and ")}. New matches appear in the list as they are found.` : "Both searches are already running; their results appear in the list as they are found." };
     }
+    if (intent === "add-number") {
+      // A GeM bid number or an NIC tender ID / reference number, put straight into the Ash or Coal list.
+      const number = String(formData.get("number") || "").trim().replace(/[\s-]+$/, "");
+      const line = formData.get("line") === "Ash" ? "Ash" : "Coal";
+      const website = String(formData.get("website") || "").trim();
+      if (!number) throw new WorkflowError("Type the GeM bid number or the tender ID.");
+      const isGem = /^GEM\/\d{4}\/[A-Z]\/\d+$/i.test(number);
+      if (!isGem && !website) throw new WorkflowError("For a website tender, give the website address as well (for example https://eproc.rajasthan.gov.in/nicgep/app).");
+      try {
+        const result = isGem ? await (await import("./gem")).addGemBidByNumber(number, line) : await sites.addSiteTenderByNumber(website, number, line);
+        return { ok: result.already ? `${number} was already in the list; it is now under ${line}.` : `${number} added under ${line}: ${result.title}` };
+      } catch (error) {
+        throw new WorkflowError(error instanceof Error ? error.message : String(error));
+      }
+    }
     if (intent === "run" || intent === "run-site") {
       if (sites.siteWatchRunning()) return { ok: "A pass is already running. Its results appear here as they are found." };
       const siteId = intent === "run-site" ? String(formData.get("siteId") || "") : undefined;

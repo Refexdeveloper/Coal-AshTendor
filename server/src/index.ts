@@ -47,6 +47,8 @@ async function main() {
       setInterval(() => void maybeScheduledSync(), 15 * 60 * 1000).unref();
     }
     startDailyReportSchedule();
+    // Tenders listed by number in code (listed-tenders.ts) go into the search results; reads GeM and the portals in the background.
+    void import("./services/listed-tenders").then(({ addListedTenders }) => addListedTenders()).catch((error) => console.error("[tenders] Listed tenders were not added:", error));
   });
   // An OCR extract can take several minutes. Do not close the upload request while that result is still coming.
   server.requestTimeout = 0;

@@ -148,11 +148,11 @@ async function searchPage(session: { token: string; cookies: string }, keyword: 
   }
 }
 
-async function searchPageOnce(session: { token: string; cookies: string }, keyword: string, page: number) {
+async function searchPageOnce(session: { token: string; cookies: string }, keyword: string, page: number, bidStatusType = "ongoing_bids") {
   const payload = {
     page,
     param: { searchBid: keyword, searchType: "fullText" },
-    filter: { bidStatusType: "ongoing_bids", byType: "all", highBidValue: "", byEndDate: { from: "", to: "" }, sort: "Bid-Start-Date-Latest" },
+    filter: { bidStatusType, byType: "all", highBidValue: "", byEndDate: { from: "", to: "" }, sort: "Bid-Start-Date-Latest" },
   };
   const response = await fetch(`${BASE}/all-bids-data`, {
     method: "POST",
@@ -394,6 +394,51 @@ function gemBidPage(doc: GemDoc, bidId: string) {
   const evalType = Number(first(doc, "b_eval_type") ?? 0);
   const path = type === 5 ? "showdirectradocumentPdf" : type === 2 && evalType > 0 ? "showradocumentPdf" : "showbidDocument";
   return `${BASE}/${path}/${id}`;
+}
+
+/**
+ * Puts one GeM bid, named by its number ("GEM/2026/B/8218205"), into the Ash or Coal list of the search results,
+ * even when no keyword found it. Reads the bid from GeM's All Bids search. A bid already in the list keeps its review
+ * status and is only moved to the line asked for.
+ */
+export async function addGemBidByNumber(number: string, line: "Ash" | "Coal", keyword = "Added by number", options: { keepLine?: boolean } = {}) {
+  const bidNumber = number.trim().toUpperCase();
+  const known = await db.gemBid.findFirst({ where: { bidNumber } });
+  if (known) {
+    if (!options.keepLine) await db.gemBid.update({ where: { id: known.id }, data: { sentLine: line } });
+    return { already: true, title: String(known.title || bidNumber) };
+  }
+  const session = await openSession();
+  let doc: GemDoc | undefined;
+  for (const status of ["ongoing_bids", "all"]) {
+    const result = await searchPageOnce(session, bidNumber, 1, status).catch(() => ({ docs: [] as GemDoc[] }));
+    doc = result.docs.find((item) => String(first(item, "b_bid_number") ?? "").toUpperCase() === bidNumber);
+    if (doc) break;
+    await sleep(PAUSE_MS);
+  }
+  if (!doc) throw new Error(`GeM has no bid numbered ${bidNumber}.`);
+  const portal = await gemPortal();
+  const title = bidTitle(doc) || bidNumber;
+  await db.gemBid.create({
+    data: {
+      portalId: portal.id,
+      bidId: String(first(doc, "b_id") ?? doc.id),
+      bidNumber,
+      title: title.slice(0, 2000),
+      ministry: String(first(doc, "ba_official_details_minName") ?? ""),
+      department: String(first(doc, "ba_official_details_deptName") ?? ""),
+      bidType: Number(first(doc, "b_bid_type") ?? 0) || null,
+      quantity: Number(first(doc, "b_total_quantity") ?? 0) || null,
+      startAt: gemTime(first(doc, "final_start_date_sort")).date,
+      endAt: gemTime(first(doc, "final_end_date_sort")).date,
+      raw: JSON.stringify(doc),
+      keyword,
+      status: "NEW",
+      error: "",
+      sentLine: line,
+    },
+  });
+  return { already: false, title };
 }
 
 /** Creates the tender for one stored GeM bid. Used by auto-import and by the admin's Import button. An uploaded file is the tender document; the portal code is not required. */

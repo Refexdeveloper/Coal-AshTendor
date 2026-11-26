@@ -180,7 +180,11 @@ export function FieldEditor({
       })}
       {locked ? null : validationTaskId ? (
         <div className="sticky-save verify-bar">
-          {conflicts ? <span className="text-bad verify-note">Correct the {conflicts} conflicting field{conflicts === 1 ? "" : "s"} (red) before sending.</span> : null}
+          {conflicts ? (
+            <span className="text-bad verify-note">
+              Check the {conflicts} conflicting field{conflicts === 1 ? "" : "s"} (red). The value shown is what gets sent.
+            </span>
+          ) : null}
           <label className="check">
             <input type="checkbox" name="confirmed" value="yes" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
             I have checked these fields against the notice
