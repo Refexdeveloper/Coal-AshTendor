@@ -14,6 +14,8 @@ const ACTIONS: Record<string, Action> = {
   "save-calendar": actions.saveCalendarAction,
   "add-holiday": actions.addHolidayAction,
   "add-user": actions.addUserAction,
+  "create-api-token": actions.createApiTokenAction,
+  "revoke-api-token": actions.revokeApiTokenAction,
   "update-user-access": actions.updateUserAccessAction,
   "sync-refexone-users": actions.syncRefexOneUsersAction,
   "resend-email": actions.resendEmailAction,

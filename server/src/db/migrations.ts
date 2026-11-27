@@ -80,6 +80,20 @@ const ADDED_COLUMNS: Record<string, [string, string][]> = {
 
 /** Tables added after the first release, created when missing. */
 const ADDED_TABLES: string[] = [
+  `CREATE TABLE IF NOT EXISTS \`ApiToken\` (
+  \`id\` VARCHAR(191) NOT NULL,
+  \`name\` VARCHAR(191) NOT NULL DEFAULT '',
+  \`prefix\` VARCHAR(32) NOT NULL DEFAULT '',
+  \`tokenHash\` VARCHAR(64) NOT NULL,
+  \`userId\` VARCHAR(191) NOT NULL,
+  \`createdById\` VARCHAR(191) NOT NULL DEFAULT '',
+  \`createdAt\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  \`lastUsedAt\` DATETIME(3) NULL,
+  \`revokedAt\` DATETIME(3) NULL,
+  PRIMARY KEY (\`id\`),
+  UNIQUE KEY \`ApiToken_tokenHash_key\` (\`tokenHash\`),
+  KEY \`ApiToken_userId_idx\` (\`userId\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
   `CREATE TABLE IF NOT EXISTS \`WhatsAppLog\` (
   \`id\` VARCHAR(191) NOT NULL,
   \`tenderId\` VARCHAR(191) NOT NULL DEFAULT '',

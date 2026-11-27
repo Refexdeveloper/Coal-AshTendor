@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { ROLES } from "@client/lib/labels";
 import { ApiError, apiGet, apiPost, postAction, useApi } from "@client/api/client";
 import { useActor } from "@client/api/session";
@@ -6,6 +6,17 @@ import type { PublicUser } from "@client/lib/types";
 import { LoadFailed, Loading } from "@client/components/base/loading";
 import { useFormPending } from "@client/components/base/submit";
 import { useNoticeAction } from "@client/components/feature/notice-action";
+
+type ApiTokenRow = {
+  id: string;
+  name: string;
+  prefix: string;
+  userName: string;
+  userEmail: string;
+  createdAt: Date;
+  lastUsedAt: Date | null;
+  revokedAt: Date | null;
+};
 
 type Data = {
   calendar: { workStart: string; workEnd: string; workingDays: string } | null;
@@ -19,6 +30,7 @@ type Data = {
   tenders: { id: string; recordId: string; projectName: string; clientName: string }[];
   guarantees: { id: string; bgNumber: string; beneficiary: string; bgType: string; bank: string }[];
   bonds: { id: string; bondNumber: string; customer: string; kind: string; insurer: string }[];
+  apiTokens: ApiTokenRow[];
   refexone: {
     configured: boolean;
     lastSync: { at: Date; by: string; summary: SyncSummary | null } | null;
@@ -56,7 +68,7 @@ export default function AdminPage() {
   const { data, error, reload } = useApi<Data>("/admin");
   if (actor.role !== "ADMIN") return <p className="panel">Administration is limited to the system administrator.</p>;
   if (!data) return error ? <LoadFailed error={error} retry={reload} /> : <Loading />;
-  const { calendar, holidays, policies, settings, escalations, templates, users, tenderCount, tenders, guarantees, bonds, refexone, sso } = data;
+  const { calendar, holidays, policies, settings, escalations, templates, users, tenderCount, tenders, guarantees, bonds, apiTokens, refexone, sso } = data;
   const days = new Set((calendar?.workingDays ?? "1,2,3,4,5").split(","));
   return (
     <>
@@ -184,6 +196,7 @@ export default function AdminPage() {
       </form>
       <TenderData tenders={tenders} count={tenderCount} run={run} />
       <RegisterData guarantees={guarantees} bonds={bonds} run={run} />
+      <ApiTokensPanel tokens={apiTokens ?? []} users={users} reload={reload} />
       <RefexOneSsoPanel sso={sso} />
       <RefexOnePanel refexone={refexone} users={users} run={run} error={query.error} />
       <section className="panel stack" id="people">
@@ -800,6 +813,149 @@ function TodayReportPanel() {
       {result?.ok ? <p className="banner good">{result.ok}</p> : null}
       {result?.error ? <p className="banner bad">{result.error}</p> : null}
       {showing && preview ? <iframe className="mail-preview report-preview" title={preview.subject} srcDoc={preview.html} sandbox="" /> : null}
+    </section>
+  );
+}
+
+/** Non-expiring Bearer tokens so another app can call GET/POST APIs. The secret is shown once. */
+function ApiTokensPanel({ tokens, users, reload }: { tokens: ApiTokenRow[]; users: PublicUser[]; reload: () => void }) {
+  const [name, setName] = useState("");
+  const [userId, setUserId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [fresh, setFresh] = useState<string>("");
+  const [note, setNote] = useState<{ ok?: string; error?: string } | null>(null);
+  const active = users.filter((user) => user.active);
+  const docsHref = `${window.location.origin}/api/docs`;
+
+  async function create(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setNote(null);
+    setFresh("");
+    try {
+      const form = new FormData();
+      form.set("name", name.trim());
+      if (userId) form.set("userId", userId);
+      const result = await postAction("create-api-token", form);
+      if (result?.error) setNote({ error: result.error });
+      else {
+        setNote({ ok: result?.ok });
+        if (result?.apiToken) setFresh(result.apiToken);
+        setName("");
+        reload();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke(id: string, label: string) {
+    if (!window.confirm(`Revoke “${label}”? Apps using it will get 401 until you create a new token.`)) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const form = new FormData();
+      form.set("id", id);
+      const result = await postAction("revoke-api-token", form);
+      setNote(result?.error ? { error: result.error } : { ok: result?.ok });
+      reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel stack" id="api-tokens">
+      <h2>API tokens</h2>
+      <p className="muted">
+        Create a non-expiring token for another app. Send it as <code>Authorization: Bearer …</code> on GET and POST calls (tenders, documents, create-tender).
+        Open the <a href={docsHref} target="_blank" rel="noreferrer">Swagger docs</a> to try the same APIs. The full token is shown only once when you create it.
+      </p>
+      <form className="form-grid" onSubmit={(event) => void create(event)}>
+        <label>
+          Name
+          <input value={name} onChange={(event) => setName(event.target.value)} required placeholder="Partner app" minLength={2} />
+        </label>
+        <label>
+          Acts as
+          <select value={userId} onChange={(event) => setUserId(event.target.value)}>
+            <option value="">Me (system administrator)</option>
+            {active.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.name} · {user.role}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="btn" type="submit" disabled={busy || name.trim().length < 2}>
+          {busy ? "Creating…" : "Create token"}
+        </button>
+      </form>
+      {note?.ok ? <p className="banner good">{note.ok}</p> : null}
+      {note?.error ? <p className="banner bad">{note.error}</p> : null}
+      {fresh ? (
+        <div className="stack">
+          <p className="banner good">Copy this token now. It cannot be shown again.</p>
+          <label>
+            Token
+            <textarea readOnly rows={3} value={fresh} onFocus={(event) => event.currentTarget.select()} />
+          </label>
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => {
+              void navigator.clipboard.writeText(fresh);
+              setNote({ ok: "Token copied." });
+            }}
+          >
+            Copy token
+          </button>
+        </div>
+      ) : null}
+      <div className="table-wrap flat">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Prefix</th>
+              <th>Acts as</th>
+              <th>Last used</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {tokens.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="empty">
+                  No API tokens yet.
+                </td>
+              </tr>
+            ) : null}
+            {tokens.map((row) => (
+              <tr key={row.id}>
+                <td>{row.name}</td>
+                <td>
+                  <code>{row.prefix}…</code>
+                </td>
+                <td>
+                  {row.userName}
+                  {row.userEmail ? <small className="muted"> · {row.userEmail}</small> : null}
+                </td>
+                <td>{row.lastUsedAt ? new Date(row.lastUsedAt).toLocaleString() : "Never"}</td>
+                <td>{row.revokedAt ? <span className="pill bad">Revoked</span> : <span className="pill good">Active</span>}</td>
+                <td>
+                  {!row.revokedAt ? (
+                    <button type="button" className="btn ghost" disabled={busy} onClick={() => void revoke(row.id, row.name)}>
+                      Revoke
+                    </button>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

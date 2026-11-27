@@ -3,6 +3,7 @@ import { db, type User } from "../db";
 import { COOKIE, readSession, signSession } from "../utils/token";
 import { allowedOrigins } from "./cors";
 import { noteRequest } from "../services/user-activity";
+import { userFromBearer } from "../services/api-tokens";
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -10,18 +11,24 @@ declare module "express-serve-static-core" {
   }
 }
 
+/**
+ * Who is calling: Authorization Bearer (admin API token) first, otherwise the signed session cookie.
+ * Bearer does not set a cookie; the browser SSO path stays unchanged.
+ */
 export async function loadActor(req: Request) {
+  const fromToken = await userFromBearer(req.get("authorization") || undefined);
+  if (fromToken) return fromToken;
   const userId = await readSession(req.cookies?.[COOKIE]);
   if (!userId) return null;
   const user = await db.user.findUnique({ where: { id: userId } });
   return user?.active ? user : null;
 }
 
-/** Rejects the request with 401 unless a signed-in, active user is on the session cookie. */
+/** Rejects the request with 401 unless a signed-in, active user is on the session cookie or a Bearer API token. */
 export async function requireActor(req: Request, res: Response, next: NextFunction) {
   const user = await loadActor(req);
   if (!user) {
-    res.status(401).json({ error: "Sign in required" });
+    res.status(401).json({ error: "Sign in required. Use a session cookie or Authorization: Bearer <api-token>." });
     return;
   }
   req.actor = user;

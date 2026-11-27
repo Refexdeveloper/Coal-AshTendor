@@ -478,6 +478,22 @@ CREATE TABLE IF NOT EXISTS `GemBid` (
   KEY `GemBid_status_idx` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Non-expiring API tokens for other apps. The secret is shown once; only the hash is stored.
+CREATE TABLE IF NOT EXISTS `ApiToken` (
+  `id` VARCHAR(191) NOT NULL,
+  `name` VARCHAR(191) NOT NULL DEFAULT '',
+  `prefix` VARCHAR(32) NOT NULL DEFAULT '',
+  `tokenHash` VARCHAR(64) NOT NULL,
+  `userId` VARCHAR(191) NOT NULL,
+  `createdById` VARCHAR(191) NOT NULL DEFAULT '',
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `lastUsedAt` DATETIME(3) NULL,
+  `revokedAt` DATETIME(3) NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ApiToken_tokenHash_key` (`tokenHash`),
+  KEY `ApiToken_userId_idx` (`userId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ISB copies (EMD and PBG surety bonds), linked to a bond by the digits of its bond number.
 CREATE TABLE IF NOT EXISTS `BondDocument` (
   `id` VARCHAR(191) NOT NULL,

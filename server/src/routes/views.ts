@@ -373,7 +373,8 @@ views.get("/admin", async (req, res) => {
     res.status(403).json({ error: "Administration is limited to the system administrator." });
     return;
   }
-  const [calendar, holidays, policies, settings, escalations, templates, users, tenders, guarantees, bonds] = await Promise.all([
+  const { listApiTokens } = await import("../services/api-tokens");
+  const [calendar, holidays, policies, settings, escalations, templates, users, tenders, guarantees, bonds, apiTokens] = await Promise.all([
     db.calendarSettings.findUnique({ where: { id: "default" } }),
     db.holiday.findMany({ orderBy: { date: "asc" } }),
     db.slaPolicy.findMany({ orderBy: { stage: "asc" } }),
@@ -384,6 +385,7 @@ views.get("/admin", async (req, res) => {
     db.tender.findMany({ orderBy: { updatedAt: "desc" }, select: { id: true, recordId: true, projectName: true, clientName: true } }),
     db.bankGuarantee.findMany({ orderBy: [{ serialNo: "asc" }] }),
     db.suretyBond.findMany({ orderBy: [{ kind: "asc" }, { serialNo: "asc" }] }),
+    listApiTokens(),
   ]);
   res.json({
     calendar,
@@ -409,6 +411,16 @@ views.get("/admin", async (req, res) => {
       customer: row.customer,
       kind: row.kind,
       insurer: row.insurer,
+    })),
+    apiTokens: apiTokens.map((row) => ({
+      id: row.id,
+      name: row.name,
+      prefix: row.prefix,
+      userName: row.userName,
+      userEmail: row.userEmail,
+      createdAt: row.createdAt,
+      lastUsedAt: row.lastUsedAt,
+      revokedAt: row.revokedAt,
     })),
     refexone: { configured: directoryConfigured(), lastSync: await lastSync(), schedule: await syncSchedule() },
     sso: ssoStatus(req),

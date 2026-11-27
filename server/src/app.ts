@@ -11,6 +11,7 @@ import { authRouter } from "./routes/auth";
 import { refexOneLoginUrl, refexOneReady, safeNext, serviceProviderMetadata, ssoStatus } from "./services/refexone";
 import { actionRoutes } from "./routes/actions";
 import { files } from "./routes/files";
+import { openapi } from "./routes/openapi";
 import { views } from "./routes/views";
 
 export function createApp() {
@@ -41,6 +42,8 @@ export function createApp() {
   });
 
   app.use("/api/auth", authRouter);
+  // Integration docs are public; calling the APIs still needs a Bearer token or a session cookie.
+  app.use("/api", openapi);
 
   app.get("/auth/refexone/saml", (req, res) => {
     res.type("application/xml").send(serviceProviderMetadata(req));

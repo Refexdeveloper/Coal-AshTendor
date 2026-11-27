@@ -248,6 +248,33 @@ export async function addUserAction(actor: User, formData: FormData): Promise<Ac
   }
 }
 
+/** Creates a non-expiring Bearer token for another app. The secret is in apiToken and is shown only this once. */
+export async function createApiTokenAction(actor: User, formData: FormData): Promise<ActionState> {
+  const denied = adminOnly(actor);
+  if (denied) return denied;
+  try {
+    const { createApiToken } = await import("./api-tokens");
+    const result = await createApiToken(actor, String(formData.get("name") || ""), String(formData.get("userId") || ""));
+    return {
+      ok: `API token “${result.name}” created for ${result.userName}. Copy it now — it is not shown again.`,
+      apiToken: result.token,
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function revokeApiTokenAction(actor: User, formData: FormData): Promise<ActionState> {
+  const denied = adminOnly(actor);
+  if (denied) return denied;
+  try {
+    const { revokeApiToken } = await import("./api-tokens");
+    return await revokeApiToken(actor, String(formData.get("id") || ""));
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 export async function updateUserAccessAction(actor: User, formData: FormData): Promise<ActionState> {
   const denied = adminOnly(actor);
   if (denied) return denied;

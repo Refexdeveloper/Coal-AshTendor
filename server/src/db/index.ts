@@ -81,6 +81,7 @@ const MODELS: Record<string, string> = {
   siteTender: "SiteTender",
   userActivity: "UserActivity",
   whatsAppLog: "WhatsAppLog",
+  apiToken: "ApiToken",
 };
 
 const RELATIONS: Record<string, Record<string, Relation>> = {
@@ -196,6 +197,7 @@ export interface Db {
   siteTender: Model;
   userActivity: Model;
   whatsAppLog: Model;
+  apiToken: Model;
   $transaction<T>(work: (tx: Db) => Promise<T>): Promise<T>;
   $transaction<T>(work: Lazy<T>[]): Promise<T[]>;
   $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Lazy<unknown>;
